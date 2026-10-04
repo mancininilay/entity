@@ -1284,6 +1284,14 @@
                   "type": "bool"
                 }
               },
+              "deposit": {
+                "description": "Whether the species deposits current; false makes passive test particles that are pushed but do not act on the fields [fork:P1.3/CH1]",
+                "type": "boolean",
+                "default": true,
+                "x-entity": {
+                  "type": "bool"
+                }
+              },
               "radiative_drag": {
                 "description": "Radiation reaction to use for the species",
                 "type": "string",

@@ -53,6 +53,9 @@ namespace ntt {
     const unsigned short m_npld_r;
     const unsigned short m_npld_i;
 
+    // Whether the species deposits current (false: passive test particles)
+    const bool m_deposit;
+
   public:
     ParticleSpecies()
       : m_index { 0u }
@@ -66,7 +69,8 @@ namespace ntt {
       , m_radiative_drag_flags { RadiativeDrag::NONE }
       , m_emission_policy_flag { EmissionType::NONE }
       , m_npld_r { 0 }
-      , m_npld_i { 0 } {}
+      , m_npld_i { 0 }
+      , m_deposit { true } {}
 
     /**
      * @brief Constructor for the particle species container.
@@ -82,6 +86,7 @@ namespace ntt {
      * @param emission_policy_flag The emission policy assigned for the species.
      * @param npld_r The number of real-valued payloads for the species
      * @param npld_i The number of integer-valued payloads for the species
+     * @param deposit Whether the species deposits current (default: true)
      */
     ParticleSpecies(spidx_t             index,
                     const std::string&  label,
@@ -95,7 +100,8 @@ namespace ntt {
                     RadiativeDragFlags  radiative_drag_flags,
                     EmissionTypeFlag    emission_policy_flag,
                     unsigned short      npld_r,
-                    unsigned short      npld_i)
+                    unsigned short      npld_i,
+                    bool                deposit = true)
       : m_index { index }
       , m_label { label }
       , m_mass { m }
@@ -108,7 +114,8 @@ namespace ntt {
       , m_radiative_drag_flags { radiative_drag_flags }
       , m_emission_policy_flag { emission_policy_flag }
       , m_npld_r { npld_r }
-      , m_npld_i { npld_i } {
+      , m_npld_i { npld_i }
+      , m_deposit { deposit } {
       if (use_tracking) {
 #if !defined(MPI_ENABLED)
         raise::ErrorIf(m_npld_i < 1,
@@ -195,6 +202,11 @@ namespace ntt {
       return m_npld_i;
     }
 
+    [[nodiscard]]
+    auto deposit() const -> bool {
+      return m_deposit;
+    }
+
     /* reporter -------------------------------------------------------------- */
     auto Report() const -> std::string {
       std::string report;
@@ -235,6 +247,7 @@ namespace ntt {
                          "%s",
                          EmissionType::to_string(emission_policy_flag()).c_str());
       reporter::AddParam(report, 6, "Tracking", "%s", use_tracking() ? "ON" : "OFF");
+      reporter::AddParam(report, 6, "Deposit", "%s", deposit() ? "ON" : "OFF");
       reporter::AddParam(report, 6, "# of real-value payloads", "%d", npld_r());
       reporter::AddParam(report, 6, "# of integer-value payloads", "%d", npld_i());
       return report;

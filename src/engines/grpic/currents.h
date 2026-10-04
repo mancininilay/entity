@@ -181,7 +181,8 @@ namespace ntt {
       // kernels/deposition/currents/tiled.hpp for the full coverage argument.
       for (auto& species : domain.species) {
         if ((species.pusher() == ParticlePusher::NONE) or
-            (species.npart() == 0) or cmp::AlmostZero_host(species.charge())) {
+            (species.npart() == 0) or cmp::AlmostZero_host(species.charge()) or
+            (not species.deposit())) {
           continue;
         }
         const auto& layout = species.tile_layout();
@@ -221,7 +222,8 @@ namespace ntt {
         domain.fields.cur0);
       for (auto& species : domain.species) {
         if ((species.pusher() == ParticlePusher::NONE) or
-            (species.npart() == 0) or cmp::AlmostZero_host(species.charge())) {
+            (species.npart() == 0) or cmp::AlmostZero_host(species.charge()) or
+            (not species.deposit())) {
           continue;
         }
         logger::Checkpoint(

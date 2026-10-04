@@ -145,6 +145,7 @@ namespace ntt {
      * @param emission_policy_flag The emission policy assigned for the species
      * @param npld_r The number of real-valued payloads for the species
      * @param npld_i The number of integer-valued payloads for the species
+     * @param deposit Whether the species deposits current (default: true)
      */
     Particles(spidx_t             index,
               const std::string&  label,
@@ -158,7 +159,8 @@ namespace ntt {
               RadiativeDragFlags  radiative_drag_flags,
               EmissionTypeFlag    emission_policy_flag,
               unsigned short      npld_r,
-              unsigned short      npld_i);
+              unsigned short      npld_i,
+              bool                deposit = true);
 
     /**
      * @brief Constructor for the particle container
@@ -178,7 +180,8 @@ namespace ntt {
                   spec.radiative_drag_flags(),
                   spec.emission_policy_flag(),
                   spec.npld_r(),
-                  spec.npld_i()) {}
+                  spec.npld_i(),
+                  spec.deposit()) {}
 
     Particles(const Particles&)            = delete;
     Particles& operator=(const Particles&) = delete;

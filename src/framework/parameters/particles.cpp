@@ -130,6 +130,8 @@ namespace ntt {
                                                 "n_payloads_real",
                                                 static_cast<unsigned short>(0));
       const auto use_tracking   = toml::find_or(sp, "tracking", false);
+      // [fork:P1.3/CH1] passive species: pushed but not depositing current
+      const auto deposit        = toml::find_or(sp, "deposit", true);
       auto       npayloads_int  = toml::find_or(sp,
                                          "n_payloads_int",
                                          static_cast<unsigned short>(0));
@@ -221,7 +223,8 @@ namespace ntt {
                              radiative_drag_flags,
                              emission_policy_flag,
                              npayloads_real,
-                             npayloads_int);
+                             npayloads_int,
+                             deposit);
     }
 
   } // namespace params

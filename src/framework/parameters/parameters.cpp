@@ -156,7 +156,8 @@ namespace ntt {
                                particle_species.radiative_drag_flags(),
                                particle_species.emission_policy_flag(),
                                particle_species.npld_r(),
-                               particle_species.npld_i());
+                               particle_species.npld_i(),
+                               particle_species.deposit());
       idxM1++;
     }
     set("particles.species", new_species);

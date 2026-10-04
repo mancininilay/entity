@@ -28,7 +28,8 @@ namespace ntt {
                              RadiativeDragFlags  radiative_drag_flags,
                              EmissionTypeFlag    emission_policy_flag,
                              unsigned short      npld_r,
-                             unsigned short      npld_i)
+                             unsigned short      npld_i,
+                             bool                deposit)
     : ParticleArrays { index }
     , ParticleSpecies { index,
                         label,
@@ -42,7 +43,8 @@ namespace ntt {
                         radiative_drag_flags,
                         emission_policy_flag,
                         npld_r,
-                        npld_i } {
+                        npld_i,
+                        deposit } {
 
     if constexpr (D == Dim::_1D or D == Dim::_2D or D == Dim::_3D) {
       i1       = array_t<int*> { label + "_i1", maxnpart };
