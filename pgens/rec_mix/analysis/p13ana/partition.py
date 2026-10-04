@@ -1,0 +1,246 @@
+"""Energy partition in the downstream mask (P1.3 tech spec III.5).
+
+Active and passive schemas are separate functions on purpose (Codex R4): tracer
+sums can never enter a physical fraction.
+
+Two estimators are provided for every quantity:
+
+* ``hist``   : from the masked spectra and the geometric bin centres, exactly
+               as the p1.1 script ``extractfi.py`` (continuity with p1.1);
+* ``direct`` : from the double-precision moment sums written by rec_mix
+               (the primary P1.3 estimator).
+
+Energies are kinetic, in m_e c^2, per particle.
+"""
+
+from __future__ import annotations
+
+import numpy as np
+
+from .readers import bin_centres
+
+# species roles (1-based indices) of the two layouts
+ACTIVE = {"leptons": [4, 5, 7, 8], "ions": [6, 9], "sheet": [1, 2, 3]}
+PASSIVE = {"leptons": [4, 5, 7, 8], "tracers": [3, 6, 9], "sheet": [1, 2]}
+
+
+def _mass(meta, s):
+    return float(meta["species"][s - 1]["mass"])
+
+
+# Validity of the bulk-corrected energies (Codex IC5). The box-mean bulk
+# velocity of n particles biases |b|^2 by tr Cov(beta)/n; rec_mix subtracts the
+# sample variance (unbiased for n >= 2) but clipping and the nonlinear Lorentz
+# factor leave a residual bias, measured in tests/test_safeguards.py
+# (test_ic5_estimator_bias_bound): at n >= 20 the bias of the bulk energy is
+# <= 1.2% of eps-tilde (asserted < 1.5%), at n = 1 it is 100%. A population's eps-tilde is therefore reported only if the fraction of
+# its masked particles in boxes with n < nmin (meta bulk.nmin, default 20) is
+# at most MAX_LOWOCC; the bound on the bias is then ~ MAX_LOWOCC + 1.2%.
+# Otherwise the value is NaN with status "invalid_low_occupancy"; the
+# unchecked numbers stay available under "*_unchecked" for diagnosis only.
+#
+# Window sensitivity (IC5): eps-tilde is a scale-dependent quantity (random
+# motion below the box scale), not a converged one. Format 3 outputs also carry
+# Kb_own at window 1; "epst_<pop>_window_change" = (eps-tilde(w) -
+# eps-tilde(1))/eps-tilde(w) is reported with every value, not judged.
+MAX_LOWOCC = 0.02
+
+
+def _bulk_status(out, species, N, max_lowocc, col="Nlowocc"):
+    if col not in out.names:
+        return "unknown_occupancy", np.nan
+    lo = sum(out.m(col)[s - 1] for s in species)
+    frac = lo / N if N > 0 else np.nan
+    return ("valid" if (np.isfinite(frac) and frac <= max_lowocc) else
+            "invalid_low_occupancy"), frac
+
+
+# --------------------------------------------------------------------------
+# Active schema
+# --------------------------------------------------------------------------
+def active_partition(meta: dict, out, estimator: str = "direct",
+                     max_lowocc: float = MAX_LOWOCC) -> dict:
+    """f_i, eps_e, eps_i, eps-tilde (own and all-species bulk) from one output.
+    eps-tilde with the own-species bulk is NaN unless its occupancy is valid."""
+    if meta["layout"] != "active":
+        raise ValueError("active_partition needs an active-layout run")
+    lep, ion = ACTIVE["leptons"], ACTIVE["ions"]
+    mu = _mass(meta, ion[0])
+    if estimator == "hist":
+        eb = bin_centres(meta)
+        cl = sum(out.hist[s - 1] for s in lep)
+        ci = sum(out.hist[s - 1] for s in ion)
+        Nl, Ni = cl.sum(), ci.sum()
+        Kl, Ki = (cl * eb).sum(), mu * (ci * eb).sum()
+    elif estimator == "direct":
+        N, K = out.m("N"), out.m("K")
+        Nl, Ni = sum(N[s - 1] for s in lep), sum(N[s - 1] for s in ion)
+        Kl, Ki = sum(K[s - 1] for s in lep), sum(K[s - 1] for s in ion)
+    else:
+        raise ValueError(estimator)
+    res = {
+        "N_pm": Nl, "N_i": Ni, "K_pm": Kl, "K_i": Ki,
+        "f_i": Ki / (Ki + Kl) if (Ki + Kl) > 0 else np.nan,
+        "eps_e": Kl / Nl if Nl > 0 else np.nan,
+        "eps_i": Ki / Ni if Ni > 0 else np.nan,
+    }
+    if estimator == "direct":
+        tags = ("own", "all") + (("own_raw",) if "Kb_own_raw" in out.names else ())
+        for tag in tags:
+            Kb = out.m(f"Kb_{tag}")
+            Kbl = sum(Kb[s - 1] for s in lep)
+            Kbi = sum(Kb[s - 1] for s in ion)
+            res[f"epst_e_{tag}"] = (Kl - Kbl) / Nl if Nl > 0 else np.nan
+            res[f"epst_i_{tag}"] = (Ki - Kbi) / Ni if Ni > 0 else np.nan
+        for pop, sp, Npop in (("e", lep, Nl), ("i", ion, Ni)):
+            status, frac = _bulk_status(out, sp, Npop, max_lowocc)
+            res[f"epst_{pop}_status"] = status
+            res[f"{pop}_low_occupancy_fraction"] = frac
+            for tag in ("own", "own_raw"):
+                key = f"epst_{pop}_{tag}"
+                if key in res:
+                    res[key + "_unchecked"] = res[key]
+                    if status != "valid":
+                        res[key] = np.nan
+            _window(res, out, f"epst_{pop}", sp, Kl if pop == "e" else Ki, Npop, max_lowocc)
+        res["ion_low_occupancy_fraction"] = res["i_low_occupancy_fraction"]
+    return res
+
+
+def _window(d, out, key, species, K, N, max_lowocc):
+    """Add eps-tilde at window 1 (own bulk, validity from Nlowocc_w1) and the
+    relative change from window 1 to the configured window."""
+    if "Kb_own_w1" not in out.names or not N > 0:
+        return
+    Kb1 = sum(out.m("Kb_own_w1")[s - 1] for s in species)
+    e1 = (K - Kb1) / N
+    st, fr = _bulk_status(out, species, N, max_lowocc, "Nlowocc_w1")
+    d[key + "_own_w1_unchecked"] = e1
+    d[key + "_own_w1"] = e1 if st == "valid" else np.nan
+    d[key + "_w1_status"] = st
+    e = d.get(key + "_own_unchecked", np.nan)
+    d[key + "_window_change"] = (e - e1) / e if e else np.nan
+
+
+# --------------------------------------------------------------------------
+# Passive schema
+# --------------------------------------------------------------------------
+def passive_partition(meta: dict, out, estimator: str = "direct",
+                      max_lowocc: float = MAX_LOWOCC) -> dict:
+    """Leptons (eps_e) and, per tracer mass separately, eps_i and eps-tilde_i.
+    No fraction involving tracer sums is defined."""
+    if meta["layout"] != "testprtl":
+        raise ValueError("passive_partition needs a testprtl-layout run")
+    lep = PASSIVE["leptons"]
+    res = {"tracers": {}}
+    if estimator == "hist":
+        eb = bin_centres(meta)
+        cl = sum(out.hist[s - 1] for s in lep)
+        Nl, Kl = cl.sum(), (cl * eb).sum()
+    else:
+        N, K = out.m("N"), out.m("K")
+        Nl, Kl = sum(N[s - 1] for s in lep), sum(K[s - 1] for s in lep)
+    res.update({"N_pm": Nl, "K_pm": Kl, "eps_e": Kl / Nl if Nl > 0 else np.nan})
+    if estimator == "direct":
+        Kb = {t: out.m(f"Kb_{t}") for t in ("own", "all")}
+        for t in ("own", "all"):
+            res[f"epst_e_{t}"] = (Kl - sum(Kb[t][s - 1] for s in lep)) / Nl if Nl > 0 else np.nan
+        status, frac = _bulk_status(out, lep, Nl, max_lowocc)
+        res["epst_e_status"], res["e_low_occupancy_fraction"] = status, frac
+        res["epst_e_own_unchecked"] = res["epst_e_own"]
+        if status != "valid":
+            res["epst_e_own"] = np.nan
+        _window(res, out, "epst_e", lep, Kl, Nl, max_lowocc)
+    for s in PASSIVE["tracers"]:
+        m = _mass(meta, s)
+        if estimator == "hist":
+            c = out.hist[s - 1]
+            Ns, Ks = c.sum(), m * (c * eb).sum()
+        else:
+            Ns, Ks = out.m("N")[s - 1], out.m("K")[s - 1]
+        d = {"mass": m, "N": Ns, "K": Ks, "eps_i": Ks / Ns if Ns > 0 else np.nan}
+        if estimator == "direct":
+            # Kb_all is undefined (NaN) for non-depositing tracers: the
+            # depositing-species velocity applied to the tracer mass is not a
+            # bulk energy of the tracer population
+            d["epst_i_own"] = (Ks - Kb["own"][s - 1]) / Ns if Ns > 0 else np.nan
+            d["epst_i_own_raw"] = (Ks - out.m("Kb_own_raw")[s - 1]) / Ns \
+                if (Ns > 0 and "Kb_own_raw" in out.names) else np.nan
+            status, frac = _bulk_status(out, [s], Ns, max_lowocc)
+            d["epst_status"], d["low_occupancy_fraction"] = status, frac
+            for key in ("epst_i_own", "epst_i_own_raw"):
+                d[key + "_unchecked"] = d[key]
+                if status != "valid":
+                    d[key] = np.nan
+            _window(d, out, "epst_i", [s], Ks, Ns, max_lowocc)
+        res["tracers"][s] = d
+    return res
+
+
+# --------------------------------------------------------------------------
+# Time series and the p1.1 steady-state protocol (last 50 outputs)
+# --------------------------------------------------------------------------
+def series(meta, outs, func, keys, **kw):
+    rows = [func(meta, o, **kw) for o in outs]
+    t = np.array([o.time for o in outs])
+    step = np.array([o.step for o in outs])
+    return {"time": t, "step": step, **{k: np.array([r[k] for r in rows]) for k in keys}}
+
+
+def steady(x: np.ndarray, n: int = 50, nan_policy: str = "propagate") -> tuple[float, float]:
+    """Mean and (population) temporal standard deviation of the last n values.
+    nan_policy="propagate" (default): any invalid value in the window makes the
+    result NaN, so an invalid measurement (e.g. eps-tilde at low occupancy) never
+    enters an average silently. nan_policy="omit" reproduces extractfi.py
+    (np.nanmean, np.nanstd) for the p1.1 continuity comparison."""
+    x = np.asarray(x, float)[-n:]
+    if nan_policy == "omit":
+        return float(np.nanmean(x)), float(np.nanstd(x))
+    if nan_policy != "propagate":
+        raise ValueError(nan_policy)
+    return float(np.mean(x)), float(np.std(x))
+
+
+def block_error(x: np.ndarray, nblocks: int = 5) -> float:
+    """Standard error of the mean from `nblocks` contiguous blocks (III.9)."""
+    x = np.asarray(x, float)
+    x = x[np.isfinite(x)]
+    if x.size < nblocks:
+        return np.nan
+    b = np.array([blk.mean() for blk in np.array_split(x, nblocks)])
+    return float(b.std(ddof=1) / np.sqrt(nblocks))
+
+
+# --------------------------------------------------------------------------
+# p1.1 Tristan spectra (continuity, C1.10): exact port of extractfi.py
+# --------------------------------------------------------------------------
+def tristan_active_partition(spec: dict, mu: float) -> dict:
+    eb = spec["ebins"]
+    cl = sum(spec["counts"][s] for s in (4, 5, 7, 8))
+    ci = sum(spec["counts"][s] for s in (6, 9))
+    Nl, Ni = cl.sum(), ci.sum()
+    El, Ei = (cl * eb).sum(), mu * (ci * eb).sum()
+    return {
+        "f_i": Ei / (El + Ei) if (El + Ei) > 0 else np.nan,
+        "eps_e": El / Nl if Nl > 0 else np.nan,
+        "eps_i": Ei / Ni if Ni > 0 else np.nan,
+        "N_pm": Nl, "N_i": Ni,
+    }
+
+
+def compare(xE: float, xT: float, sE: float, sT: float, delta_rel: float) -> dict:
+    """Tolerance formula (III.9): |X_E - X_T| <= max(delta_rel |X_T|, 2 s_comb)."""
+    scomb = float(np.hypot(sE, sT))
+    tol = max(delta_rel * abs(xT), 2.0 * scomb)
+    return {"diff": xE - xT, "tol": tol, "pass": abs(xE - xT) <= tol,
+            "ratio_to_tol": abs(xE - xT) / tol if tol > 0 else np.inf}
+
+
+def mixing_from_counts(lower, upper):
+    """Mask definition (P13-D13): M = 2 min(D_lo, D_up)/(D_lo + D_up) with D the
+    total particle count of the side species; 0 where both are empty."""
+    lo = np.asarray(lower, float)
+    up = np.asarray(upper, float)
+    s = lo + up
+    with np.errstate(invalid="ignore", divide="ignore"):
+        return np.where(s > 0, 2 * np.minimum(lo, up) / s, 0.0)

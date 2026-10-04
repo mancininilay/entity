@@ -9,8 +9,8 @@ Author: Claude. Reviewer: Codex (A3).
 
 ```
 cmake -B build -D pgen=rec_mix -D precision=single -D output=ON [-D mpi=ON] ...
-python3 pgens/rec_mix/make_input.py --name c2a --layout active --sigma 40 --q 0.1 --mu 25
-python3 pgens/rec_mix/make_input.py --name c2d --layout testprtl --sigma 160 --test-masses 25 100 400
+python3 pgens/rec_mix/make_input.py --name c2a --layout active --sigma 40 --q 0.1 --mu 25 --decomposition 4 8
+python3 pgens/rec_mix/make_input.py --name c2d --layout testprtl --sigma 160 --test-masses 25 100 400 --decomposition 4 8
 mpirun -n <N> build/src/entity.xc -input c2a.toml
 ```
 
@@ -18,11 +18,35 @@ mpirun -n <N> build/src/entity.xc -input c2a.toml
 the 9-species table, MATCH widths, outputs and checkpoints. The generator refuses
 `[scales]` that disagree with the physical inputs (relative 1e-4).
 
+* **Pusher.** Every species gets `pusher = "Vay"` (`--pusher`; D3). Entity's
+  default would be Boris.
+* **Capacity** (Codex IC2). Entity allocates `maxnpart` for every species on
+  every domain. `make_input.py` therefore needs the decomposition
+  (`--decomposition N1D N2D`, both > 0) and sizes each species for the largest
+  local domain: upstream species `--reserve` (3) times their nominal per-cell
+  density, sheet species `--sheet-reserve` (2) times the rejection-sampling trial
+  density (eta times upstream), tracers both halves. It prints the particle-array
+  memory per domain (2D single precision: 54 B per slot with one integer
+  payload, two more int slots with MPI tracking; sorting and communication
+  buffers come on top) and refuses more than `--max-gib-per-domain` (30).
+  `--maxnpart` overrides the estimate. Example: C2-a on [4, 8] domains,
+  15.1 GiB per domain. The generator writes the fill fraction npart/maxnpart
+  (max over ranks) of every species into each user output and warns above 80%;
+  the injector and the load stop cleanly when a species would exceed its
+  capacity ("capacity guard").
+
 Requirements checked at start-up: 2D Minkowski; `extent = [[0, N1], [0, N2]]` with
-unit cells (Tristan cell units); x1 PERIODIC at start, x2 MATCH + ABSORB; 9 species
-with the layout's masses and charges; `n_payloads_int >= 1` for every species (the
-control-volume flag uses the last integer slot); tracers (`testprtl`) must have
-`deposit = false` (fork change CH1).
+unit cells (Tristan cell units); x1 PERIODIC at start (or MATCH + ABSORB when
+resuming past t_open), x2 MATCH + ABSORB; 9 species with the layout's masses and
+charges; every species pushed with Vay (unless `allow_any_pusher`);
+`n_payloads_int >= 1` for every species (the control-volume flag uses the last
+integer slot); tracers (`testprtl`) must have `deposit = false` (fork change
+CH1). After the load: zero net charge in every cell (C1.3a; co-located pairs).
+
+**Restarts.** Entity takes `[setup]` from the checkpoint's meta file, not from
+the restart input (`src/framework/simulation.cpp`), so every key below is
+fixed at the first start; `[output]`, `[checkpoint]`, the runtime and the
+boundaries come from the restart input.
 
 ## Coordinates (P1.3 D29)
 
@@ -51,7 +75,7 @@ species draw the same random numbers with or without them.
 | key | default | meaning |
 |---|---|---|
 | `layout` | "active" | "active" or "testprtl" |
-| `sheet_init` | "legacy" | "legacy": T_cs = 0.5 sigma0 (1 + b_g^2)/(eta D); "balanced": T_cs = 0.5 sigma0/eta |
+| `sheet_init` | "legacy" | "legacy": T_cs = 0.5 sigma0 (1 + b_g^2)/(eta D) (p1.1); "balanced": T_cs = 0.5 sigma0 Gamma_d/eta, so that the transverse stress eta n0 T_cs/Gamma_d equals B0^2/8pi |
 | `sigma`, `q`, `mu` | | p1.1 sigma (total mass), q = n_i/n_e-, mu (active only) |
 | `test_masses`, `test_temperatures` | species masses, theta_up | tracers (testprtl); temperatures are physical kT |
 | `dup_cells` | 5 | d_up in cells |
@@ -66,9 +90,12 @@ species draw the same random numbers with or without them.
 | `cv_margin` | 10 | cells |
 | `line_halfwidth` | 3 | midline rows j0 - 3 ... j0 + 2 (cell centres) |
 | `spec_min`, `spec_max`, `spec_num` | 1e-3, 1e5, 300 | log bins of gamma - 1 |
-| `bulk_window` | 2 | half-width of the top-hat box for bulk velocities (Tristan smooth_window) |
+| `bulk_window` | 2 | half-width of the top-hat box for bulk velocities (Tristan smooth_window), at most N_GHOSTS = 2 |
+| `bulk_nmin` | 20 | own-species box occupancy below which a particle counts in `Nlowocc` |
 | `inj_avg_cells` | 11 | rows averaged by the injector |
 | `inject`, `load_tracers` | true, true | test switches (C0.4, C1.7) |
+| `allow_any_pusher` | false | test switch: accept species not pushed with Vay |
+| `cv_payload_slot` | last | integer payload slot of the CV flag |
 
 ## Algorithms (ports of the Tristan routines)
 
@@ -88,31 +115,61 @@ species draw the same random numbers with or without them.
   with x2 >= N2 - padding u = (0, 0.1, 0); beyond padding - nfilter they are removed.
 * **Boundaries** (D23): Entity MATCH. x2 walls: initial field, E -> 0. x1 walls:
   periodic until t_open, then MATCH to the reconnected targets and ABSORB.
-  Restarts past t_open re-open at the first post-step.
+  For a restart past t_open, give x1 as MATCH + ABSORB in the restart input (no
+  step runs with periodic x1; refused before t_open). With periodic x1 in the
+  restart input the walls re-open at the first post-step, with a warning.
 
-## Outputs (`<simulation.name>/usr/`, little-endian)
+## Outputs (`<simulation.name>/usr/`, little-endian; format 3)
 
-* `recmix.meta.json`: species and roles, inputs, derived scales, mask definition,
-  bins, moment names, CV box, midline layout, git hash.
-* `recmix.<step>.bin` every `usr_interval` (step label = Entity's output label):
-  `"P13RMX01"`, int64 step, float64 time, int32 (nspec, nbins, nmom, 0),
-  float64 (masked cells, total cells), float64 hist[nspec][nbins],
-  float64 moms[nspec][nmom]. Moments (double, over masked cells unless noted):
-  N, K = sum w m (gamma - 1), G = sum w gamma, U1-3 = sum w u, B1-3 = sum w beta,
-  Nunder/Eunder and Nover/Eover (particles clamped into the end bins and their
-  energy), Nskip (gamma - 1 = 0, outside the log histogram), Kb_own and Kb_all
-  (bulk kinetic energy, below), Ntot and Ktot (whole domain, unmasked).
-* `cvbudget.bin` (appended): per record float64 step, time, segment_start, 0, then
-  per species (N_cv, I_cv = sum_CV m (gamma - 1), in_E, out_E, in_N, out_N since the
-  previous record), U_EM in the CV, integrated outward Poynting flux. Energies in
-  m_e c^2 per unit-weight macroparticle: U = (sigma0 ppc0/2) sum(e^2 + b^2) over the
-  Yee components owned by CV cells, flux = sigma0 ppc0 (e x b).n dl dt.
-  W_s = Delta I_s - (in_E - out_E); Delta U + flux = -sum_s W_s.
-* `midline.<step>.bin` every `line_interval`: `"P13MID01"`, int64 step, float64
-  time, int32 (N1, nrows, 6, j_first), float32 rows[nrows][6][N1] (E1 E2 E3 B1 B2 B3
-  at cell centres, same arithmetic as the field output), float32 E3[N1] on the
-  nodes (i, j0) and B2[N1] at (i + 1/2, j0) of the midplane node line.
-* Custom field outputs `mixing` and `mask` (add to `output.fields.custom`).
+* `recmix.meta.json`: format version, run id, species (roles, mass, charge,
+  deposit flag, pusher, maxnpart), inputs, derived scales, mask definition, bins,
+  moment names, bulk-estimator settings, CV box and record layout, midline
+  layout, git hash. Rewritten at every process start.
+* `segments.jsonl` (appended): one line per process start: `run_id` (52 bits,
+  random), `start_label` (0 for a fresh start, the checkpoint label when
+  resuming), `resuming`, time, checkpoint path, git hash.
+* `fields_manifest.jsonl` (appended): `{label, run_id}` for each Entity field
+  output that contains a rec_mix custom field (`mixing`, `mask`, `count_s`).
+* `recmix.<label>.bin` every `usr_interval` (label = Entity's output label,
+  step + 1): `"P13RMX02"`, int64 label, float64 time, uint64 run_id, int32
+  (nspec, nbins, nmom, 0), float64 (masked cells, total cells), float64
+  hist[nspec][nbins], float64 moms[nspec][nmom], float64 fill[nspec]
+  (npart/maxnpart, max over ranks). Moments (double, over masked cells unless
+  noted): N, K = sum w m (gamma - 1), G = sum w gamma, U1-3 = sum w u,
+  B1-3 = sum w beta, Nunder/Eunder and Nover/Eover (particles clamped into the
+  end bins and their energy), Nskip (gamma - 1 = 0, outside the log histogram),
+  Kb_own and Kb_all (bulk kinetic energy, below), Ntot and Ktot (whole domain,
+  unmasked), Kb_own_raw (without the variance correction), Nlowocc (masked
+  particles whose own-species box holds fewer than `bulk_nmin` particles),
+  Kb_own_w1 and Nlowocc_w1 (the same with window 1, for the window sensitivity).
+  Format 1 (`"P13RMX01"`: no run id, no fill) is still read.
+* `cvbudget.bin` (appended): records of 61 float64: label, time, segment_start,
+  run_id, then per species (N_cv, I_cv = sum_CV m (gamma - 1), in_E, out_E, in_N,
+  out_N since the previous record), U_EM in the CV, the integrated outward
+  Poynting flux and the integrated field-side work of the (filtered) current
+  W_J. Records at every user output and at every process start
+  (segment_start = 1). Energies in m_e c^2 per unit-weight macroparticle:
+  U = (sigma0 ppc0/2) sum(e^2 + b^2) over the Yee components owned by CV cells,
+  flux = sigma0 ppc0 (e x b).n dl dt. W_s = Delta I_s - (in_E - out_E).
+  Residuals over the depositing species (C1.14): r_F = Delta U + flux + W_J,
+  r_C = sum_s W_s - W_J, r_total = r_F + r_C.
+* `midline.<label>.bin` every `line_interval`: `"P13MID02"`, int64 label,
+  float64 time, uint64 run_id, int32 (N1, nrows, 6, j_first), float32
+  rows[nrows][6][N1] (E1 E2 E3 B1 B2 B3 at cell centres, same arithmetic as the
+  field output), float32 E3[N1] on the nodes (i, j0) and B2[N1] at (i + 1/2, j0)
+  of the midplane node line.
+* Custom field outputs `mixing`, `mask` and `count_<s>` (raw particle count of
+  species s, for C1.16).
+
+**Provenance after restarts** (Codex IC3). A file or record written by the
+segment with `run_id` k at label s is valid if and only if s <= `start_label`
+of every later segment in `segments.jsonl`. This rejects the outputs of an
+abandoned future after a rollback restart, also before the new segment has
+caught up and after a cadence change, and everything of an earlier run when
+a fresh run reuses the directory. `p13ana.readers` applies the rule to the
+spectra, midlines, CV records and (through `fields_manifest.jsonl`) to
+Entity's field files. Entity's particle, spectra and stats files carry no
+writer id: move the later ones aside after a rollback before reading them.
 
 ### Mask
 
@@ -136,6 +193,20 @@ outputs the mean 3-velocity of **each species**:
   `V_...` (Tristan velx) with the same top-hat smoothing (`order = 4`,
   `method = "const"`, i.e. 5 x 5 cells).
 
-## Tests
+Validity (Codex IC5): the analysis reports eps-tilde of a population only if at
+most 2% of its masked particles sit in boxes with fewer than `bulk_nmin` (20)
+particles; otherwise NaN with status `invalid_low_occupancy`. At n >= 20 the
+variance-corrected estimator is biased by at most ~1.2% of eps-tilde. eps-tilde
+depends on the window (it measures random motion below the box scale); the
+change from window 1 to `bulk_window` is reported with every value.
 
-See `Resources/p1.3/technical-spec.md` V.2 and the implementation status there.
+## Analysis and tests
+
+* `analysis/`: the `p13ana` package (readers, partition, CV budget, zones,
+  inflow, regimes, neutrality), versioned with the generator; data-free tests
+  `python3 -m pytest analysis/tests` and the C1 check scripts.
+* `tests/harness.py`: the reproducible C0/C1 harness (inputs from
+  `make_input.py` with explicit seeds, runs, pre-registered tolerances,
+  `results.json`). See its docstring for the builds it needs.
+
+Specification and status: `Resources/p1.3/technical-spec.md`, V.2 and Part VIII.
