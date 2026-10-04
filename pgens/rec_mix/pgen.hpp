@@ -55,6 +55,7 @@
   #include <mpi.h>
 #endif
 
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -484,7 +485,9 @@ namespace user {
         NTOT,           // sum w over the whole domain (unmasked)
         KTOT,           // sum w m (gamma - 1) over the whole domain
         KB_OWN_RAW,     // Kb_own without the variance correction (= stock V_s)
-        NLOWOCC,        // masked N_s in cells whose own-species box has < 10 particles
+        NLOWOCC,        // masked N_s in cells whose own-species box has < bulk_nmin particles
+        KB_OWN_W1,      // Kb_own with window 1 (3 x 3 box): window sensitivity (IC5)
+        NLOWOCC_W1,     // Nlowocc with window 1
         NMOM
       };
 
@@ -492,7 +495,7 @@ namespace user {
         return { "N",      "K",     "G",      "U1",     "U2",     "U3",
                  "B1",     "B2",    "B3",     "Nunder", "Eunder", "Nover",
                  "Eover",  "Nskip", "Kb_own", "Kb_all", "Ntot",   "Ktot",
-                 "Kb_own_raw", "Nlowocc" };
+                 "Kb_own_raw", "Nlowocc", "Kb_own_w1", "Nlowocc_w1" };
       }
     } // namespace mom
 
@@ -679,8 +682,10 @@ namespace user {
     double              spec_min { 1e-3 }, spec_max { 1e5 };
     int                 spec_num { 300 };
     int                 bulk_window { 2 }, inj_avg_cells { 11 };
+    int                 bulk_nmin { 20 }; // box occupancy below which the bulk estimate is flagged
     bool                inject_on { true }, load_tracers { true }; // test switches
     int                 cv_slot_cfg { -1 }; // user int payload slot of the CV flag (-1: last)
+    bool                allow_any_pusher { false };
 
     /* --- derived ------------------------------------------------------ */
     int    N1 { 0 }, N2 { 0 };
@@ -703,6 +708,8 @@ namespace user {
     double                 cv_flux_int { 0.0 }, cv_jwork_int { 0.0 };
     timestep_t             cv_last_step { 0 };
     std::filesystem::path  usr_dir;
+    std::uint64_t          run_id { 0 }, start_label { 0 };
+    timestep_t             last_field_noted { static_cast<timestep_t>(-1) };
 
     recmix::InitFields<D> init_flds;
 
@@ -812,8 +819,12 @@ namespace user {
       spec_max       = getReal("spec_max", 1e5);
       spec_num       = getInt("spec_num", 300);
       bulk_window    = getInt("bulk_window", 2);
+      bulk_nmin      = getInt("bulk_nmin", 20);
       inj_avg_cells  = getInt("inj_avg_cells", 11);
       cv_slot_cfg    = getInt("cv_payload_slot", -1);
+      allow_any_pusher = has("allow_any_pusher")
+                           ? params.template get<bool>("setup.allow_any_pusher")
+                           : false;
       inject_on      = has("inject") ? params.template get<bool>("setup.inject") : true;
       load_tracers   = has("load_tracers") ? params.template get<bool>("setup.load_tracers")
                                            : true;
@@ -900,7 +911,10 @@ namespace user {
       } else if (sheet_init == "legacy") {
         T_cs = 0.5 * sigma0 * (1.0 + b_guide * b_guide) / (eta * Dmass);
       } else {
-        T_cs = 0.5 * sigma0 / eta;
+        // pressure balance with the drifting sheet: the transverse stress of a
+        // population boosted along x3 is n_rest kT = n_lab kT / Gamma_d, so
+        // eta n0 T_cs / Gamma_d = B0^2/8pi requires T_cs = sigma0 Gamma_d/(2 eta)
+        T_cs = 0.5 * sigma0 * std::sqrt(1.0 + u_d * u_d) / eta;
       }
       init_flds = recmix::InitFields<D> { static_cast<real_t>(a_cells),
                                           static_cast<real_t>(y0),
@@ -990,6 +1004,13 @@ namespace user {
         raise::ErrorIf(std::abs(spc.charge() - exp_ch) > 1e-6f,
                        fmt::format("rec_mix: species %d must have charge %g", s + 1, exp_ch),
                        HERE);
+        raise::ErrorIf(not allow_any_pusher and not(spc.pusher() & ParticlePusher::VAY),
+                       fmt::format("rec_mix: species %d uses the %s pusher; the continuity "
+                                   "numerics require Vay (D3). Set pusher = \"Vay\" (or "
+                                   "setup.allow_any_pusher = true for tests)",
+                                   s + 1,
+                                   ParticlePusher::to_string(spc.pusher()).c_str()),
+                       HERE);
         if (is_lepton) {
           raise::ErrorIf(std::abs(spc.mass() - 1.0f) > 1e-6f,
                          fmt::format("rec_mix: species %d must have mass 1", s + 1),
@@ -1059,9 +1080,30 @@ namespace user {
 
       usr_dir = std::filesystem::path(params.template get<std::string>("simulation.name")) /
                 "usr";
+      // provenance of every user output (Codex IC3): a 52-bit run id (exact in a
+      // double) per process start, written into every file and record, and a
+      // segment manifest; a file written by segment k at label s is valid iff
+      // s <= start_label of every later segment
+      start_label = params.template get<bool>("checkpoint.is_resuming")
+                      ? static_cast<std::uint64_t>(
+                          params.template get<timestep_t>("checkpoint.start_step"))
+                      : 0;
+      {
+        std::uint64_t r = static_cast<std::uint64_t>(
+          std::chrono::system_clock::now().time_since_epoch().count());
+        r ^= static_cast<std::uint64_t>(std::random_device {}()) << 21;
+        run_id = recmix::splitmix64(r) & ((1ULL << 52) - 1ULL);
+        if (run_id == 0) {
+          run_id = 1;
+        }
+#if defined(MPI_ENABLED)
+        MPI_Bcast(&run_id, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD);
+#endif
+      }
       if (recmix::mpi_rank() == 0) {
         std::filesystem::create_directories(usr_dir);
         WriteMeta();
+        WriteSegment();
       }
       Report();
     }
@@ -1090,12 +1132,42 @@ namespace user {
       info(o.str());
     }
 
+    void WriteSegment() const {
+      std::ofstream f(usr_dir / "segments.jsonl", std::ios::app);
+      const auto    now = std::chrono::duration_cast<std::chrono::seconds>(
+                       std::chrono::system_clock::now().time_since_epoch())
+                       .count();
+      f << "{\"run_id\": " << run_id << ", \"start_label\": " << start_label
+        << ", \"resuming\": "
+        << (params.template get<bool>("checkpoint.is_resuming") ? "true" : "false")
+        << ", \"unix_time\": " << now << ", \"simulation_name\": \""
+        << params.template get<std::string>("simulation.name") << "\""
+        << ", \"checkpoint_read_path\": \""
+        << params.template get<std::string>("checkpoint.read_path") << "\""
+#if defined(ENTITY_GIT_HASH)
+        << ", \"entity_git_hash\": \"" << ENTITY_GIT_HASH << "\""
+#endif
+        << ", \"format_version\": 3}\n";
+    }
+
+    // Entity's own field files carry no writer id: record (label, run id) when
+    // a field output containing the custom fields is written
+    void NoteFieldOutput(timestep_t finished_step) {
+      if (recmix::mpi_rank() != 0 or finished_step == last_field_noted) {
+        return;
+      }
+      last_field_noted = finished_step;
+      std::ofstream f(usr_dir / "fields_manifest.jsonl", std::ios::app);
+      f << "{\"label\": " << finished_step + 1 << ", \"run_id\": " << run_id << "}\n";
+    }
+
     void WriteMeta() const {
       const auto& sp = metadomain.species_params();
       std::ofstream f(usr_dir / "recmix.meta.json");
       f.precision(12);
       f << "{\n";
-      f << "  \"format_version\": 2,\n";
+      f << "  \"format_version\": 3,\n";
+      f << "  \"run_id\": " << run_id << ",\n";
 #if defined(ENTITY_GIT_HASH)
       f << "  \"entity_git_hash\": \"" << ENTITY_GIT_HASH << "\",\n";
 #endif
@@ -1125,6 +1197,8 @@ namespace user {
         f << "    {\"index\": " << s + 1 << ", \"label\": \"" << sp[s].label()
           << "\", \"mass\": " << sp[s].mass() << ", \"charge\": " << sp[s].charge()
           << ", \"deposit\": " << (sp[s].deposit() ? "true" : "false")
+          << ", \"pusher\": \"" << ParticlePusher::to_string(sp[s].pusher()) << "\""
+          << ", \"maxnpart\": " << sp[s].maxnpart()
           << ", \"role\": \"" << rnames[role[s]] << "\"}" << (s + 1 < sp.size() ? "," : "")
           << "\n";
       }
@@ -1155,10 +1229,13 @@ namespace user {
            "1), beta_b,s = per-species mean 3-velocity in a (2w+1)^2 top-hat box\", "
            "\"Kb_all\": \"same with the mass-weighted mean 3-velocity of all "
            "depositing species (Tristan velx)\", \"window\": "
-        << bulk_window << "},\n";
+        << bulk_window << ", \"nmin\": " << bulk_nmin
+        << ", \"Kb_own_raw\": \"uncorrected |b|^2 (equals the stock V_s estimate)\""
+        << ", \"Nlowocc\": \"masked particles in own-species boxes with fewer than nmin particles\""
+        << ", \"Kb_own_w1\": \"Kb_own with window 1 (window sensitivity)\"},\n";
       f << "  \"cv\": {\"x1\": [" << cv1a << ", " << cv1b << "], \"x2\": [" << cv2a << ", "
         << cv2b << "], \"record_doubles\": " << 4 + 6 * 9 + 3
-        << ", \"record_layout\": \"step, time, segment_start, 0, 9 x (Ncv, Icv, inE, outE, "
+        << ", \"record_layout\": \"step, time, segment_start, run_id, 9 x (Ncv, Icv, inE, outE, "
            "inN, outN), U_EM, int Poynting out dt, int field-side current work dt\""
         << ", \"payload_int_slot\": " << cv_slot_cfg << "},\n";
       f << "  \"midline\": {\"rows_first\": " << static_cast<int>(y0) - line_halfwidth
@@ -1303,6 +1380,72 @@ namespace user {
       return theta_up / static_cast<double>(metadomain.species_params()[s - 1].mass());
     }
 
+    // max over ranks of npart/maxnpart per species (IC2 monitoring)
+    auto FillFractions(const Domain<S, M>& dom, bool warn) const -> std::vector<double> {
+      std::vector<double> fill(9, 0.0);
+      for (auto s = 0u; s < 9; ++s) {
+        fill[s] = static_cast<double>(dom.species[s].npart()) /
+                  static_cast<double>(dom.species[s].maxnpart());
+        fill[s] = recmix::all_max(fill[s]);
+      }
+      if (warn) {
+        for (auto s = 0u; s < 9; ++s) {
+          if (fill[s] > 0.8) {
+            info(fmt::format("WARNING: species %d fills %.0f%% of maxnpart on some domain",
+                             s + 1,
+                             100.0 * fill[s]));
+          }
+        }
+      }
+      return fill;
+    }
+
+    // C1.3a: the load is exactly neutral cell by cell (co-located pairs)
+    void LoadChargeCheck(const Domain<S, M>& dom) const {
+      const auto n1 = static_cast<int>(dom.mesh.n_active(in::x1));
+      const auto n2 = static_cast<int>(dom.mesh.n_active(in::x2));
+      Kokkos::View<double**> rho("rec_mix::rho0", n1, n2);
+      for (auto s = 0u; s < 9; ++s) {
+        const auto& sp = dom.species[s];
+        if (sp.npart() == 0 or not sp.deposit()) {
+          continue;
+        }
+        const double q   = sp.charge();
+        const auto   i1  = sp.i1;
+        const auto   i2  = sp.i2;
+        const auto   w   = sp.weight;
+        const auto   tag = sp.tag;
+        Kokkos::parallel_for(
+          "rec_mix::LoadCharge",
+          sp.rangeActiveParticles(),
+          Lambda(prtlidx_t p) {
+            if (tag(p) == ParticleTag::alive) {
+              Kokkos::atomic_add(&rho(i1(p), i2(p)), q * static_cast<double>(w(p)));
+            }
+          });
+      }
+      double mx { 0.0 }, tot { 0.0 };
+      Kokkos::parallel_reduce(
+        "rec_mix::LoadChargeMax",
+        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({ 0, 0 }, { n1, n2 }),
+        Lambda(int i, int j, double& m) {
+          const double a = math::abs(rho(i, j));
+          m              = (a > m) ? a : m;
+        },
+        Kokkos::Max<double>(mx));
+      Kokkos::parallel_reduce(
+        "rec_mix::LoadChargeSum",
+        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({ 0, 0 }, { n1, n2 }),
+        Lambda(int i, int j, double& t) { t += rho(i, j); },
+        tot);
+      mx = recmix::all_max(mx);
+      info(fmt::format("C1.3a load neutrality: max |net charge| per cell = %g e, domain "
+                       "net charge = %g e (both 0 for co-located pairs)",
+                       mx,
+                       tot));
+      raise::ErrorIf(mx > 0.0, "rec_mix: the load is not neutral cell by cell", HERE);
+    }
+
     /* ------------------------------------------------------------------ */
     void InitPrtls(Domain<S, M>& dom) {
       auto rng = host_rng(dom, 0xFFFFFFFFULL, 0);
@@ -1360,6 +1503,12 @@ namespace user {
           }
         }
       }
+      LoadChargeCheck(dom);
+      const auto fill = FillFractions(dom, false);
+      info(fmt::format("load: max fill npart/maxnpart per species = "
+                       "%.3f %.3f %.3f | %.3f %.3f %.3f | %.3f %.3f %.3f",
+                       fill[0], fill[1], fill[2], fill[3], fill[4], fill[5],
+                       fill[6], fill[7], fill[8]));
     }
 
     /* ------------------------------------------------------------------ */
@@ -1688,7 +1837,7 @@ namespace user {
         rec.push_back(static_cast<double>(step + 1));
         rec.push_back(static_cast<double>(time) + dt);
         rec.push_back(silent ? 1.0 : 0.0);
-        rec.push_back(0.0);
+        rec.push_back(static_cast<double>(run_id)); // < 2^52, exact
         for (auto s = 0u; s < 9; ++s) {
           rec.push_back(inv[2 * s + 1]);
           rec.push_back(inv[2 * s]);
@@ -1822,7 +1971,7 @@ namespace user {
         });
     }
 
-    auto BulkSum(Domain<S, M>& dom, int cn, int cb, int cs, int cq) const
+    auto BulkSum(Domain<S, M>& dom, int cn, int cb, int cs, int cq, int win) const
       -> std::vector<double> {
       const auto n1 = static_cast<int>(dom.mesh.n_active(in::x1));
       const auto n2 = static_cast<int>(dom.mesh.n_active(in::x2));
@@ -1830,12 +1979,12 @@ namespace user {
       kern.buf  = dom.fields.bckp;
       kern.mix  = m_mix;
       kern.thr  = static_cast<real_t>(thr);
-      kern.win  = bulk_window;
+      kern.win  = win;
       kern.cn   = cn;
       kern.cb   = cb;
       kern.cs   = cs;
       kern.cq   = cq;
-      kern.nmin = 10.0;
+      kern.nmin = static_cast<double>(bulk_nmin);
       Kokkos::View<double*, Kokkos::HostSpace> res("rec_mix::bulk", 3);
       Kokkos::parallel_reduce("rec_mix::BulkEnergy",
                               Kokkos::MDRangePolicy<Kokkos::Rank<2>>({ 0, 0 }, { n1, n2 }),
@@ -1912,11 +2061,14 @@ namespace user {
         Kokkos::deep_copy(dom.fields.bckp, ZERO);
         DepositBulk(dom, { static_cast<int>(s + 1) }, false, 0, 4);
         metadomain.CommunicateBckp(dom, { 0, 5 });
-        const auto r = BulkSum(dom, 0, 1, 0, 4);
+        const auto r  = BulkSum(dom, 0, 1, 0, 4, bulk_window);
+        const auto r1 = BulkSum(dom, 0, 1, 0, 4, 1);
         const double m = dom.species[s].mass();
         moms[s * NM + recmix::mom::KB_OWN]     = m * r[0];
         moms[s * NM + recmix::mom::KB_OWN_RAW] = m * r[1];
         moms[s * NM + recmix::mom::NLOWOCC]    = r[2];
+        moms[s * NM + recmix::mom::KB_OWN_W1]  = m * r1[0];
+        moms[s * NM + recmix::mom::NLOWOCC_W1] = r1[2];
       }
       // ... and the mass-weighted velocity of all depositing species (Tristan
       // velx, helpers.F90 computeFluidVelocity); comps 0-3 mass-weighted sums,
@@ -1938,26 +2090,30 @@ namespace user {
           }
           DepositCount(dom, s + 1, 5);
           moms[s * NM + recmix::mom::KB_ALL] = dom.species[s].mass() *
-                                               BulkSum(dom, 0, 1, 5, -1)[1];
+                                               BulkSum(dom, 0, 1, 5, -1, bulk_window)[1];
         }
       }
       recmix::reduce_to_root(hist);
       recmix::reduce_to_root(moms);
       recmix::reduce_to_root(ncells);
+      const auto fill = FillFractions(dom, true);
       if (recmix::mpi_rank() == 0) {
         const auto fname = usr_dir / fmt::format("recmix.%08lu.bin", (unsigned long)(step + 1));
         std::ofstream f(fname, std::ios::binary);
-        const char    magic[8] = { 'P', '1', '3', 'R', 'M', 'X', '0', '1' };
+        const char    magic[8] = { 'P', '1', '3', 'R', 'M', 'X', '0', '2' };
         f.write(magic, 8);
-        const std::int64_t st = static_cast<std::int64_t>(step + 1);
-        const double       tm = static_cast<double>(time) + dt;
-        const std::int32_t hdr[4] = { 9, spec_num, NM, 0 };
+        const std::int64_t  st  = static_cast<std::int64_t>(step + 1);
+        const double        tm  = static_cast<double>(time) + dt;
+        const std::uint64_t rid = run_id;
+        const std::int32_t  hdr[4] = { 9, spec_num, NM, 0 };
         f.write(reinterpret_cast<const char*>(&st), 8);
         f.write(reinterpret_cast<const char*>(&tm), 8);
+        f.write(reinterpret_cast<const char*>(&rid), 8);
         f.write(reinterpret_cast<const char*>(hdr), 16);
         f.write(reinterpret_cast<const char*>(ncells.data()), 2 * sizeof(double));
         f.write(reinterpret_cast<const char*>(hist.data()), hist.size() * sizeof(double));
         f.write(reinterpret_cast<const char*>(moms.data()), moms.size() * sizeof(double));
+        f.write(reinterpret_cast<const char*>(fill.data()), fill.size() * sizeof(double));
       }
     }
 
@@ -2025,13 +2181,15 @@ namespace user {
       if (recmix::mpi_rank() == 0) {
         const auto fname = usr_dir / fmt::format("midline.%08lu.bin", (unsigned long)(step + 1));
         std::ofstream f(fname, std::ios::binary);
-        const char    magic[8] = { 'P', '1', '3', 'M', 'I', 'D', '0', '1' };
+        const char    magic[8] = { 'P', '1', '3', 'M', 'I', 'D', '0', '2' };
         f.write(magic, 8);
-        const std::int64_t st = static_cast<std::int64_t>(step + 1);
-        const double       tm = static_cast<double>(time) + dt;
-        const std::int32_t hdr[4] = { N1, nrows, 6, jfst };
+        const std::int64_t  st  = static_cast<std::int64_t>(step + 1);
+        const double        tm  = static_cast<double>(time) + dt;
+        const std::uint64_t rid = run_id;
+        const std::int32_t  hdr[4] = { N1, nrows, 6, jfst };
         f.write(reinterpret_cast<const char*>(&st), 8);
         f.write(reinterpret_cast<const char*>(&tm), 8);
+        f.write(reinterpret_cast<const char*>(&rid), 8);
         f.write(reinterpret_cast<const char*>(hdr), 16);
         f.write(reinterpret_cast<const char*>(out.data()), out.size() * sizeof(float));
       }
@@ -2074,10 +2232,11 @@ namespace user {
     void CustomFieldOutput(const std::string&  name,
                            ndfield_t<D, 6>&    buff,
                            cellidx_t           idx,
-                           timestep_t,
+                           timestep_t          fstep,
                            simtime_t,
                            const Domain<S, M>& dom) {
       const int G = static_cast<int>(N_GHOSTS);
+      NoteFieldOutput(fstep);
       if (name.rfind("count_", 0) == 0) {
         // raw (smoothing 0) particle count per cell of one species, for
         // independent checks of the in-code bulk energies (test C1.16)

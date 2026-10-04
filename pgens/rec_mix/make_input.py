@@ -39,6 +39,53 @@ def fmt(x):
     return repr(float(x))
 
 
+def bytes_per_slot(npld_i=1, npld_r=0, tracking=False):
+    """2D single precision: i1, i2, i1_prev, i2_prev (int32), dx1, dx2 and their
+    previous values (float), ux1-3, weight (float), tag (int16), integer and
+    real payloads. Sorting and communication buffers come on top."""
+    ni = npld_i + (2 if tracking else 0)  # MPI tracking uses two slots
+    return 4 * 4 + 4 * 4 + 3 * 4 + 4 + 2 + 4 * ni + 4 * npld_r
+
+
+def capacities(a, act):
+    """Per-species, per-domain capacities (Codex IC2). Entity allocates maxnpart
+    for every species on every domain, so the estimate uses the largest local
+    domain and the largest nominal per-cell density each species can have
+    there: an upstream species fills its half box, the sheet's trial count
+    (rejection sampling) covers the whole domain, tracers fill both halves."""
+    if a.maxnpart is not None:
+        caps = [float(a.maxnpart)] * 9
+    else:
+        n1d, n2d = a.decomposition
+        if n1d <= 0 or n2d <= 0:
+            raise SystemExit("make_input: give --decomposition N1D N2D (both > 0) for the capacity "
+                             "estimate, or an explicit --maxnpart")
+        cells = math.ceil(a.n1 / n1d) * math.ceil(a.n2 / n2d)
+        h = 0.5 * a.ppc0
+        q = a.q if act else 0.0
+        eta = a.cs_overdensity
+        if act:
+            up = [h, h * (1 - q), h * q]          # e-, e+, ion of one side
+            sheet = [h * eta, h * eta * (1 - q), h * eta * q]
+        else:
+            up = [h, h, h]                        # e-, e+ of one side; tracer: both sides
+            sheet = [h * eta, h * eta, 0.0]
+        caps = []
+        for s in range(9):
+            k = s % 3
+            if s < 3 and not (not act and k == 2):
+                n = a.sheet_reserve * sheet[k] * cells
+            else:
+                n = a.reserve * up[k] * cells
+            caps.append(max(1000.0, math.ceil(n + 10 * math.sqrt(max(n, 1.0)))))
+    bps = bytes_per_slot(tracking=a.tracking)
+    gib = sum(caps) * bps / 2**30
+    if gib > a.max_gib_per_domain:
+        raise SystemExit(f"make_input: particle arrays need {gib:.1f} GiB per domain "
+                         f"(> {a.max_gib_per_domain}); use more domains or a smaller reserve")
+    return caps, gib
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--name", required=True)
@@ -70,8 +117,18 @@ def main():
     ap.add_argument("--field-stride", type=int, default=8)
     ap.add_argument("--checkpoint-interval", type=int, default=20000)
     ap.add_argument("--maxnpart", type=float, default=None,
-                    help="per-species, per-domain capacity (default: 3x the upstream load of one side)")
-    ap.add_argument("--decomposition", type=int, nargs=2, default=[-1, -1])
+                    help="per-species, per-domain capacity for all species (overrides the estimate)")
+    ap.add_argument("--decomposition", type=int, nargs=2, default=[-1, -1],
+                    help="domains along x1 and x2; required (both > 0) for the capacity estimate")
+    ap.add_argument("--reserve", type=float, default=3.0,
+                    help="capacity reserve over the nominal per-domain load of upstream species "
+                         "and tracers (compression, injection, migration)")
+    ap.add_argument("--sheet-reserve", type=float, default=2.0,
+                    help="capacity reserve over the sheet trial count (plasmoids carry sheet "
+                         "particles between domains)")
+    ap.add_argument("--pusher", default="Vay", help="particle pusher (continuity numerics: Vay, D3)")
+    ap.add_argument("--max-gib-per-domain", type=float, default=30.0,
+                    help="refuse capacities whose particle arrays exceed this per domain")
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--tracking", action="store_true")
     ap.add_argument("--out", default=None)
@@ -82,9 +139,8 @@ def main():
     runtime = a.steps * dt
     w_out = 2 * a.ds_abs
     w_in = 1.5 * (a.padding - a.filters)
-    if a.maxnpart is None:
-        a.maxnpart = 3.0 * 0.5 * a.ppc0 * a.n1 * a.n2
     act = a.layout == "active"
+    caps, gib = capacities(a, act)
     masses = [1.0, 1.0, a.mu] if act else None
 
     L = []
@@ -141,7 +197,8 @@ def main():
         L.append(f'    label          = "{labels[s]}"')
         L.append(f"    mass           = {fmt(m)}")
         L.append(f"    charge         = {fmt(ch)}")
-        L.append(f"    maxnpart       = {float(a.maxnpart):.6e}")
+        L.append(f"    maxnpart       = {float(caps[s]):.6e}")
+        L.append(f'    pusher         = "{a.pusher}"')
         L.append("    n_payloads_int = 1")
         if not act and not lep:
             L.append("    deposit        = false")
@@ -214,7 +271,9 @@ def main():
     with open(out, "w") as f:
         f.write("\n".join(L) + "\n")
     print(f"wrote {out}: sigma0={sigma0:.9g} skindepth0={skin:.9g} larmor0={larmor:.9g} "
-          f"dt={dt:.6g} runtime={runtime:.6g} t_lc={a.n1} w_out={w_out} w_in={w_in}")
+          f"dt={dt:.6g} runtime={runtime:.6g} t_lc={a.n1} w_out={w_out} w_in={w_in} "
+          f"pusher={a.pusher} capacity={caps[3]:.3g} (e- side species) "
+          f"particle arrays {gib:.2f} GiB per domain")
 
 
 if __name__ == "__main__":
