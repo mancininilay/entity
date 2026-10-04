@@ -40,6 +40,7 @@
 
 #include <Kokkos_Core.hpp>
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -120,6 +121,7 @@ namespace ntt {
 
     void init();
     void print_report() const;
+    void reseed_random_pools();
 
     virtual ~Engine()                                        = default;
     virtual void step_forward(timer::Timers&, Domain<S, M>&) = 0;
@@ -148,6 +150,7 @@ namespace ntt {
     if (not is_resuming) {
       // start a new simulation with initial conditions
       logger::Checkpoint("Loading initial conditions", HERE);
+      reseed_random_pools();
       if constexpr (::traits::pgen::HasInitFlds<user::PGen<S, M>>) {
         logger::Checkpoint("Initializing fields from problem generator", HERE);
         m_metadomain.runOnLocalDomains([&](auto& loc_dom) {
@@ -175,6 +178,7 @@ namespace ntt {
         HERE);
       logger::Checkpoint("Resuming simulation from a checkpoint", HERE);
       m_metadomain.ContinueFromCheckpoint(&m_adios, m_params);
+      reseed_random_pools();
 #else
       raise::Error(
         "Resuming simulation from a checkpoint requires -D output=ON",
@@ -182,6 +186,33 @@ namespace ntt {
 #endif
     }
     print_report();
+  }
+
+  /**
+   * @brief [fork:P1.3/CH2] Apply `simulation.seed` to the RNG pools.
+   * Fresh run: seed + domain index. Resume: splitmix64(seed + start_step * phi)
+   * + domain index, so restart segments draw new streams. If the key is
+   * absent, nothing is changed (stock seeding, bit-identical).
+   */
+  template <SimEngine::type S, MetricClass M>
+  void Engine<S, M>::reseed_random_pools() {
+    if (not m_params.template get<bool>("simulation.seed_set")) {
+      return;
+    }
+    auto base = m_params.template get<std::uint64_t>("simulation.seed");
+    if (is_resuming) {
+      std::uint64_t z = base + static_cast<std::uint64_t>(start_step) *
+                                 0x9E3779B97F4A7C15ULL;
+      z    = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+      z    = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+      base = z ^ (z >> 31);
+    }
+    logger::Checkpoint(fmt::format("Re-seeding RNG pools with base %lu",
+                                   static_cast<unsigned long>(base)),
+                       HERE);
+    m_metadomain.runOnLocalDomains([&](auto& loc_dom) {
+      loc_dom.set_random_seed(base + static_cast<std::uint64_t>(loc_dom.index()));
+    });
   }
 
   template <SimEngine::type S, MetricClass M>

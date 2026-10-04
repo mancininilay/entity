@@ -80,6 +80,14 @@
             ]
           }
         },
+        "seed": {
+          "description": "Ensemble seed of the random number pools (seed + domain index; on resume splitmix64(seed + start_step * phi) + index). Absent: stock seeding [fork:P1.3/CH2]",
+          "type": "integer",
+          "minimum": 0,
+          "x-entity": {
+            "type": "int [>= 0]"
+          }
+        },
         "domain": {
           "description": "Parameters specific to domain decomposition",
           "type": "object",

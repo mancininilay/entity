@@ -151,6 +151,17 @@ namespace ntt {
       return fields.memory_footprint() == 0 and sp_footprint == 0;
     }
 
+    /**
+     * @brief [fork:P1.3/CH2] Re-seed the random number pool of this domain
+     * @note Kernels and energy distributions copy the pool handle when they
+     * are constructed; re-seed before any of them are built.
+     */
+    void set_random_seed(std::uint64_t seed) {
+      if (m_random_number_pool.has_value()) {
+        m_random_number_pool.emplace(seed);
+      }
+    }
+
     [[nodiscard]]
     auto random_pool() -> random_number_pool_t& {
       if (not m_random_number_pool.has_value()) {

@@ -20,6 +20,7 @@
 #include <toml11/toml.hpp>
 
 #include <cstddef>
+#include <cstdint>
 #include <fstream>
 #include <map>
 #include <string>
@@ -116,6 +117,17 @@ namespace ntt {
         toml::find<std::string>(toml_data, "simulation", "name"));
     set("simulation.runtime",
         toml::find<simtime_t>(toml_data, "simulation", "runtime"));
+    {
+      // [fork:P1.3/CH2] optional ensemble seed for the per-domain RNG pools;
+      // absent (or negative) = stock seeding, bit-identical to upstream
+      const auto seed = toml::find_or<long long>(toml_data,
+                                                 "simulation",
+                                                 "seed",
+                                                 -1LL);
+      set("simulation.seed_set", seed >= 0);
+      set("simulation.seed",
+          static_cast<std::uint64_t>(seed >= 0 ? seed : 0LL));
+    }
 
     /* [grid.boundaraies] --------------------------------------------------- */
     const auto [flds_bc, prtl_bc] = params::GetBoundaryConditions(this,
