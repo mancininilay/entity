@@ -784,11 +784,16 @@ def describe_env(a):
         adios = adios2.__version__
     except Exception:  # noqa: BLE001
         adios = None
+    def build_hash(binary):
+        f = os.path.join(os.path.dirname(binary or ""), "CMakeFiles", "entity.xc.dir", "flags.make")
+        m = re.search(r'ENTITY_GIT_HASH=\\?"([^"\\]+)', open(f).read()) if os.path.exists(f) else None
+        return m.group(1) if m else None
     return {"harness_commit": git("rev-parse", "HEAD"),
             "harness_tree_dirty": bool(git("status", "--porcelain", "--", os.path.join(HERE, ".."))),
             "python": platform.python_version(), "numpy": np.__version__, "adios2": adios,
             "host": platform.platform(), "cpus": os.cpu_count(),
-            "binaries": {k: getattr(a, k) for k in ("recmix", "recmix_mpi", "stock_recon", "fork_recon")},
+            "binaries": {k: {"path": getattr(a, k), "entity_git_hash": build_hash(getattr(a, k))}
+                         for k in ("recmix", "recmix_mpi", "stock_recon", "fork_recon") if getattr(a, k)},
             "mpirun": a.mpirun, "date": time.strftime("%Y-%m-%d %H:%M:%S %Z")}
 
 
@@ -810,7 +815,8 @@ def main():
     names = list(CASES) if a.cases == "all" else a.cases.split(",")
     path = os.path.join(a.out, "results.json")
     results = json.load(open(path)) if os.path.exists(path) else {"cases": {}}
-    results.update({"tolerances": TOL, "environment": describe_env(a)})
+    results["tolerances"] = TOL
+    results.setdefault("invocations", []).append({**describe_env(a), "cases": names})
     for n in names:
         fn, needs = CASES[n]
         if any(getattr(a, k) is None for k in needs):
