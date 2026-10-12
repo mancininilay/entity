@@ -91,5 +91,9 @@ def snapshot_mean(lengths_per_output) -> tuple[float, int]:
 
 def de_cells(dup_cells: float, q: float, mu: float) -> float:
     """Lepton skin depth in cells, d_e = d_up (1 + q/(mu (2 - q)))^(1/2) (SM S3).
-    Note: run_ezone_suite_trimmed.py hard-codes 5 * sqrt(1 + q/(mu (2 - q)))."""
+    Note: run_ezone_suite_trimmed.py hard-codes 5 * sqrt(1 + q/(mu (2 - q))).
+    P13-D39: d_up is the nominal thermal total skin depth (5 cells in 2D), so
+    this is the thermal lepton skin depth of Nilay's convention (the thermal
+    factor cancels in d_e/d_up); the cold lepton skin depth is smaller by
+    sqrt(1 + 3T/2) (0.75% at T = 0.01). regimes.scales() returns both."""
     return dup_cells * np.sqrt(1.0 + (q / (mu * (2.0 - q)) if q > 0 else 0.0))

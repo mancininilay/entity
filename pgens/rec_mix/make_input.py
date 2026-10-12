@@ -1,38 +1,116 @@
 #!/usr/bin/env python3
 """Write an Entity input file for the P1.3 `rec_mix` generator.
 
-The physical inputs follow p1.1 (SM S1): sigma (total-mass magnetization),
-q = n_i/n_e-, mu = m_i/m_e, d_up in cells. The Entity scales are derived as in
-the P1.3 technical spec III.1:
+Normalization (P13-D39, Nilay 2026-10-12; tech spec III.1)
+-----------------------------------------------------------
+Nominal (physical) labels, as in p1.1:
+  sigma_hot  total upstream HOT magnetization B^2/(4 pi w), w the total enthalpy
+             density including ions and thermal enthalpy (p1.1: 40, 80; passive 160);
+  d_up       total upstream skin depth in cells including the thermal and ion
+             response (5 cells in 2D; the legacy 3D runs used about 2.5);
+  T          common physical upstream temperature k_B T/(me c^2) (= theta_up, 0.01),
+             nonrelativistic ideal gas, Gamma = 5/3;
+  q = n_i/n_e-, mu = m_i/m_e (active layout).
+Code inputs (Tristan's fiducial cold electron-mass normalization = Entity [scales],
+n0 = ppc0 counting every upstream particle):
+  sigma_input = B^2/(4 pi n0 me c^2) = sigma_hot (D + 5T/2),   D = (2 - q + mu q)/2
+  c_omp       = d_up sqrt(F),   F = [(2 - q)/(1 + 3T/2) + q/(mu (1 + 3T/2))]/2
+  Entity: sigma0 = sigma_input, skindepth0 = c_omp, larmor0 = c_omp/sqrt(sigma_input)
+  at unit cell spacing (no factor 0.45: that is Tristan's c in its timestep units).
+Testprtl (passive) layout: only the depositing pairs enter, q = 0, D = 1.
+F is Nilay's supplied convention: the ion term uses the electron temperature
+factor. The common-temperature variant q/(mu + 3T/2) changes c_omp by at most
+0.028% for mu >= 25 (Codex normalization review); it is documented, not adopted.
+Cold limit T -> 0: sigma_input = sigma D and c_omp = d_up sqrt((2 - q + q/mu)/2),
+the pre-D39 mapping, which is an identity of the cold limit only.
 
-    D          = (2 - q + q mu)/2          (rho/(n0 me), n0 = all macroparticles)
-    sigma0     = sigma D  = sigma_e*
-    skindepth0 = d_up sqrt((2 - q + q/mu)/2)
-    larmor0    = skindepth0 / sqrt(sigma0)
+Modes
+  nominal (default)  sigma_input and c_omp from the labels, unrounded;
+  literal            --sigma-input and --c-omp given (the saved Tristan inputs):
+                     used as given, after a check against the labels within the
+                     precision of the saved inputs (relative 1e-4 on sigma_input,
+                     0.01 cells on c_omp); the generator repeats the check.
+  --reference C2-a|C2-b|C2-c|C2-d sets the p1.1 continuity labels and the literal
+  inputs (89, 4.84), (42.98, 4.96), (521, 3.58), (164, 4.96). C2-e is C2-a with
+  another seed, C2-f is C2-c with --sheet-init balanced.
 
-For the test-particle layout q = 0, sigma0 = sigma and skindepth0 = d_up.
-The generator refuses [scales] that disagree with these values.
+Other geometries (test layouts, tech spec V.2)
+  --geometry closed_box   doubly periodic double sheet, no injector, no opening,
+                          control volume = whole box (C1.14 closed-box drift);
+  --field-test pulse_x2|pulse_x1   vacuum pulse toward the x2 (inflow) or x1
+                          (outflow) walls, no plasma, zero background (C1.5).
 
 Examples
 --------
-C2-a (active, standard domain):
-    make_input.py --name c2a --layout active --sigma 40 --q 0.1 --mu 25
+C2-a (active, standard domain, literal p1.1 inputs):
+    make_input.py --name c2a --reference C2-a --decomposition 4 8
 C2-d (passive):
-    make_input.py --name c2d --layout testprtl --sigma 160 --test-masses 25 100 400
+    make_input.py --name c2d --reference C2-d --decomposition 4 8
+A scan point (nominal mode):
+    make_input.py --name s80 --layout active --sigma-hot 80 --q 0.1 --mu 25 --decomposition 4 8
 """
 
 import argparse
 import math
 
+T_UP = 0.01  # p1.1 common upstream temperature (P13-D39)
 
-def derived(layout, sigma, q, mu, dup):
+# p1.1 continuity references (P13-D39; Codex 2026-10-12 normalization review and
+# Resources/p1.3/anchors/p11-continuity-anchors.md): nominal labels and the
+# literal saved Tristan inputs (cfg plasma:sigma, c_omp)
+REFERENCES = {
+    "C2-a": dict(layout="active", q=0.1, mu=25.0, sigma_hot=40.0, sigma_input=89.0, c_omp=4.84,
+                 source="runs_mu25/sigma40_k19"),
+    "C2-b": dict(layout="active", q=0.001, mu=100.0, sigma_hot=40.0, sigma_input=42.98, c_omp=4.96,
+                 source="runs_mu100/sigma40_k1999"),
+    "C2-c": dict(layout="active", q=1.0, mu=25.0, sigma_hot=40.0, sigma_input=521.0, c_omp=3.58,
+                 source="runs_mu25/sigma40_k1"),
+    "C2-d": dict(layout="testprtl", q=0.0, mu=1.0, sigma_hot=160.0, sigma_input=164.0, c_omp=4.96,
+                 test_masses=[25.0, 100.0, 400.0], source="multi-ion/sigma160_mu_25_100_400"),
+}
+REF_SIGMA_RTOL = 1e-4  # precision of the saved sigma inputs (largest seen 4.9e-5)
+REF_COMP_ATOL = 0.01   # cells; saved c_omp have two decimals, some truncated
+
+
+def mass_factor(layout, q, mu):
+    """D = rho/(n0 me), n0 counting every upstream particle (testprtl: pairs only)."""
+    return (2.0 - q + q * mu) / 2.0 if layout == "active" else 1.0
+
+
+def skin_factor(layout, q, mu, T):
+    """F = (omega_up/omega_fid)^2, Nilay's thermal convention (P13-D39)."""
+    th = 1.0 + 1.5 * T
     if layout == "active":
-        D = (2.0 - q + q * mu) / 2.0
-        sigma0 = sigma * D
-        skin = dup * math.sqrt((2.0 - q + q / mu) / 2.0)
+        return ((2.0 - q) / th + q / (mu * th)) / 2.0
+    return 1.0 / th
+
+
+def nominal_inputs(layout, sigma_hot, q, mu, dup, T):
+    """(D, H = D + 5T/2, F, sigma_input, c_omp) from the nominal hot labels."""
+    D = mass_factor(layout, q, mu)
+    H = D + 2.5 * T
+    F = skin_factor(layout, q, mu, T)
+    return D, H, F, sigma_hot * H, dup * math.sqrt(F)
+
+
+def derived(layout, sigma_hot, q, mu, dup, T, sigma_input=None, c_omp=None):
+    """Entity scales and provenance. Literal inputs (both or neither) are checked
+    against the labels and used as given."""
+    D, H, F, s_nom, c_nom = nominal_inputs(layout, sigma_hot, q, mu, dup, T)
+    if (sigma_input is None) != (c_omp is None):
+        raise SystemExit("make_input: give both --sigma-input and --c-omp (literal mode) or neither")
+    if sigma_input is None:
+        mode, s_in, c_in = "nominal", s_nom, c_nom
     else:
-        D, sigma0, skin = 1.0, sigma, dup
-    return D, sigma0, skin, skin / math.sqrt(sigma0)
+        mode, s_in, c_in = "literal", float(sigma_input), float(c_omp)
+        ds, dc = abs(s_in / s_nom - 1.0), abs(c_in - c_nom)
+        if ds > REF_SIGMA_RTOL or dc > REF_COMP_ATOL:
+            raise SystemExit(f"make_input: literal inputs (sigma_input {s_in}, c_omp {c_in}) disagree "
+                             f"with the hot labels (sigma_hot {sigma_hot}, d_up {dup}, T {T} give "
+                             f"{s_nom:.9g}, {c_nom:.9g}): |rel| {ds:.3g} (tol {REF_SIGMA_RTOL}), "
+                             f"|abs| {dc:.3g} cells (tol {REF_COMP_ATOL})")
+    return {"mode": mode, "D": D, "H": H, "F": F, "sigma_input_nominal": s_nom, "c_omp_nominal": c_nom,
+            "sigma0": s_in, "skindepth0": c_in, "larmor0": c_in / math.sqrt(s_in)}
 
 
 def fmt(x):
@@ -89,19 +167,31 @@ def capacities(a, act):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--name", required=True)
-    ap.add_argument("--layout", choices=["active", "testprtl"], default="active")
+    ap.add_argument("--reference", choices=sorted(REFERENCES), default=None,
+                    help="p1.1 continuity reference: sets layout, q, mu, sigma_hot, d_up = 5, T = 0.01, "
+                         "the tracer masses and the literal saved inputs sigma_input, c_omp")
+    ap.add_argument("--layout", choices=["active", "testprtl"], default=None)
     ap.add_argument("--sheet-init", choices=["legacy", "balanced"], default="legacy")
-    ap.add_argument("--sigma", type=float, required=True)
-    ap.add_argument("--q", type=float, default=0.0)
-    ap.add_argument("--mu", type=float, default=1.0)
-    ap.add_argument("--test-masses", type=float, nargs=3, default=[25.0, 100.0, 400.0])
+    ap.add_argument("--sigma", type=float, default=None, help=argparse.SUPPRESS)
+    ap.add_argument("--sigma-hot", type=float, default=None,
+                    help="nominal total upstream hot magnetization (P13-D39)")
+    ap.add_argument("--sigma-input", type=float, default=None,
+                    help="literal Tristan input sigma (fiducial cold, electron mass, n0 = ppc0)")
+    ap.add_argument("--c-omp", type=float, default=None,
+                    help="literal Tristan c_omp in cells (fiducial cold, electron mass)")
+    ap.add_argument("--q", type=float, default=None)
+    ap.add_argument("--mu", type=float, default=None)
+    ap.add_argument("--test-masses", type=float, nargs=3, default=None)
     ap.add_argument("--test-temperatures", type=float, nargs=3, default=None,
                     help="physical kT of the tracers in me c^2 (default theta_up)")
     ap.add_argument("--n1", type=int, default=8320, help="outflow cells (x1)")
     ap.add_argument("--n2", type=int, default=3000, help="inflow cells (x2)")
-    ap.add_argument("--dup", type=float, default=5.0, help="d_up in cells")
+    ap.add_argument("--dup", type=float, default=5.0,
+                    help="nominal total upstream skin depth in cells, thermal and ion response "
+                         "included (2D convention 5; legacy 3D about 2.5)")
     ap.add_argument("--ppc0", type=float, default=32.0)
-    ap.add_argument("--theta-up", type=float, default=0.01)
+    ap.add_argument("--theta-up", type=float, default=T_UP,
+                    help="common physical upstream kT/(me c^2), T of the normalization")
     ap.add_argument("--cs-width", type=float, default=400.0, help="a in cells")
     ap.add_argument("--cs-overdensity", type=float, default=3.0)
     ap.add_argument("--padding", type=int, default=12)
@@ -130,22 +220,74 @@ def main():
     ap.add_argument("--max-gib-per-domain", type=float, default=30.0,
                     help="refuse capacities whose particle arrays exceed this per domain")
     ap.add_argument("--seed", type=int, default=None)
-    ap.add_argument("--tracking", action="store_true")
+    ap.add_argument("--tracking", action="store_true", help="Entity particle tracking (IDs) for all species")
+    ap.add_argument("--clear-interval", type=int, default=None, help="[particles] clear_interval")
+    ap.add_argument("--sort-interval", type=int, default=None, help="[particles] spatial_sorting_interval")
+    ap.add_argument("--validation-dump", action="store_true",
+                    help="write the exact particle state (cell index, offset, momenta, IDs) per rank "
+                         "with every user output (small validation boxes only; A0-2)")
+    ap.add_argument("--geometry", choices=["open", "closed_box"], default="open")
+    ap.add_argument("--field-test", choices=["none", "pulse_x2", "pulse_x1"], default="none")
+    ap.add_argument("--pulse-width", type=float, default=5.0, help="Gaussian sigma of the pulse, cells")
+    ap.add_argument("--pulse-offset", type=float, default=None,
+                    help="distance of each pulse centre from the box centre, cells (default N/4)")
+    ap.add_argument("--pulse-amp", type=float, default=0.1, help="pulse amplitude in B0")
+    ap.add_argument("--x2-field-bc", choices=["MATCH", "CONDUCTOR"], default="MATCH",
+                    help="field test only: CONDUCTOR gives a reflecting control")
+    ap.add_argument("--beta-rec-target", type=float, default=None,
+                    help="outflow MATCH target reconnection rate (generator default 0.1)")
     ap.add_argument("--out", default=None)
     a = ap.parse_args()
 
-    D, sigma0, skin, larmor = derived(a.layout, a.sigma, a.q, a.mu, a.dup)
+    if a.sigma is not None:
+        raise SystemExit("make_input: --sigma is no longer accepted (P13-D39): the p1.1 labels are hot "
+                         "magnetizations. Give --sigma-hot (nominal) and optionally the literal inputs "
+                         "--sigma-input/--c-omp, or --reference C2-x.")
+    ref = REFERENCES[a.reference] if a.reference else None
+    if ref is not None:
+        for k in ("layout", "q", "mu", "sigma_hot", "sigma_input", "c_omp", "test_masses"):
+            v = getattr(a, k)
+            if v is not None and k in ref and v != ref[k]:
+                raise SystemExit(f"make_input: --{k.replace('_', '-')} {v} conflicts with --reference "
+                                 f"{a.reference} ({ref[k]})")
+        a.layout, a.sigma_hot = ref["layout"], ref["sigma_hot"]
+        a.q, a.mu = ref["q"], ref["mu"]
+        a.sigma_input, a.c_omp = ref["sigma_input"], ref["c_omp"]
+        if "test_masses" in ref:
+            a.test_masses = ref["test_masses"]
+        if a.dup != 5.0 or a.theta_up != T_UP:
+            raise SystemExit("make_input: the p1.1 references use d_up = 5 and T = 0.01")
+    a.layout = a.layout or "active"
+    a.q = 0.0 if a.q is None else a.q
+    a.mu = 1.0 if a.mu is None else a.mu
+    a.test_masses = a.test_masses or [25.0, 100.0, 400.0]
+    if a.sigma_hot is None:
+        raise SystemExit("make_input: give --sigma-hot (or --reference)")
+    act = a.layout == "active"
+    q_eff = a.q if act else 0.0
+    nrm = derived(a.layout, a.sigma_hot, q_eff, a.mu, a.dup, a.theta_up, a.sigma_input, a.c_omp)
+    sigma0, skin, larmor = nrm["sigma0"], nrm["skindepth0"], nrm["larmor0"]
+    closed = a.geometry == "closed_box"
+    ftest = a.field_test != "none"
+    if closed and ftest:
+        raise SystemExit("make_input: --geometry closed_box and --field-test are exclusive")
     dt = a.cfl / math.sqrt(2.0)  # Entity: dt = CFL * dx / sqrt(D)
     runtime = a.steps * dt
     w_out = 2 * a.ds_abs
     w_in = 1.5 * (a.padding - a.filters)
-    act = a.layout == "active"
-    caps, gib = capacities(a, act)
-    masses = [1.0, 1.0, a.mu] if act else None
+    if ftest:
+        caps, gib = [1000.0] * 9, 9 * 1000.0 * bytes_per_slot(tracking=a.tracking) / 2**30
+    else:
+        caps, gib = capacities(a, act)
 
     L = []
     L.append("# generated by pgens/rec_mix/make_input.py")
-    L.append(f"# layout={a.layout} sigma={a.sigma} q={a.q} mu={a.mu} D={D:.6g} sigma0={sigma0:.9g}")
+    L.append(f"# layout={a.layout} geometry={a.geometry} field_test={a.field_test} reference={a.reference}")
+    L.append(f"# P13-D39 normalization ({nrm['mode']}): sigma_hot={a.sigma_hot!r} T={a.theta_up!r} "
+             f"d_up={a.dup!r} q={q_eff!r} mu={a.mu!r} D={nrm['D']:.9g} D+5T/2={nrm['H']:.9g} "
+             f"F={nrm['F']:.9g}")
+    L.append(f"#   nominal sigma_input={nrm['sigma_input_nominal']:.9g} c_omp={nrm['c_omp_nominal']:.9g}; "
+             f"used sigma0={sigma0!r} skindepth0={skin!r}")
     L.append("[simulation]")
     L.append(f'  name    = "{a.name}"')
     L.append('  engine  = "srpic"')
@@ -164,11 +306,19 @@ def main():
     L.append('    metric = "minkowski"')
     L.append("")
     L.append("  [grid.boundaries]")
-    L.append('    fields    = [["PERIODIC"], ["MATCH", "MATCH"]]')
-    L.append('    particles = [["PERIODIC"], ["ABSORB", "ABSORB"]]')
-    L.append("")
-    L.append("    [grid.boundaries.match]")
-    L.append(f"      ds = [[{fmt(w_out)}], [{fmt(w_in)}]]")
+    if closed:
+        L.append('    fields    = [["PERIODIC"], ["PERIODIC"]]')
+        L.append('    particles = [["PERIODIC"], ["PERIODIC"]]')
+    elif a.field_test == "pulse_x1":  # outflow walls from the start (C1.5)
+        L.append('    fields    = [["MATCH", "MATCH"], ["PERIODIC"]]')
+        L.append('    particles = [["ABSORB", "ABSORB"], ["PERIODIC"]]')
+    else:
+        L.append(f'    fields    = [["PERIODIC"], ["{a.x2_field_bc}", "{a.x2_field_bc}"]]')
+        L.append('    particles = [["PERIODIC"], ["ABSORB", "ABSORB"]]')
+    if not closed:
+        L.append("")
+        L.append("    [grid.boundaries.match]")
+        L.append(f"      ds = [[{fmt(w_out)}], [{fmt(w_in)}]]")
     L.append("")
     L.append("[scales]")
     L.append(f"  larmor0    = {larmor!r}")
@@ -182,6 +332,10 @@ def main():
     L.append("")
     L.append("[particles]")
     L.append(f"  ppc0 = {fmt(a.ppc0)}")
+    if a.clear_interval is not None:
+        L.append(f"  clear_interval = {a.clear_interval}")
+    if a.sort_interval is not None:
+        L.append(f"  spatial_sorting_interval = {a.sort_interval}")
     labels = ["e-_cs", "e+_cs", "i_cs", "e-_lo", "e+_lo", "i_lo", "e-_up", "e+_up", "i_up"]
     if not act:
         labels = ["e-_cs", "e+_cs", "tr_a", "e-_lo", "e+_lo", "tr_b", "e-_up", "e+_up", "tr_c"]
@@ -208,7 +362,22 @@ def main():
     L.append("[setup]")
     L.append(f'  layout           = "{a.layout}"')
     L.append(f'  sheet_init       = "{a.sheet_init}"')
-    L.append(f"  sigma            = {fmt(a.sigma)}")
+    if closed:
+        L.append('  geometry         = "closed_box"')
+    if ftest:
+        L.append(f'  field_test       = "{a.field_test}"')
+        off = a.pulse_offset if a.pulse_offset is not None else \
+            0.25 * (a.n2 if a.field_test == "pulse_x2" else a.n1)
+        L.append(f"  pulse_width      = {fmt(a.pulse_width)}")
+        L.append(f"  pulse_offset     = {fmt(off)}")
+        L.append(f"  pulse_amp        = {fmt(a.pulse_amp)}")
+    L.append("  # P13-D39: nominal hot labels and, in literal mode, the saved Tristan inputs")
+    L.append(f"  sigma_hot        = {fmt(a.sigma_hot)}")
+    if nrm["mode"] == "literal":
+        L.append(f"  sigma_input      = {fmt(sigma0)}")
+        L.append(f"  c_omp            = {fmt(skin)}")
+    if a.reference:
+        L.append(f'  normalization_label = "{a.reference} ({REFERENCES[a.reference]["source"]})"')
     if act:
         L.append(f"  q                = {fmt(a.q)}")
         L.append(f"  mu               = {fmt(a.mu)}")
@@ -221,6 +390,8 @@ def main():
     L.append(f"  cs_width         = {fmt(a.cs_width)}")
     L.append(f"  cs_overdensity   = {fmt(a.cs_overdensity)}")
     L.append(f"  t_open_tlc       = {fmt(a.t_open_tlc)}")
+    if a.beta_rec_target is not None:
+        L.append(f"  beta_rec_target  = {fmt(a.beta_rec_target)}")
     L.append(f"  injector_padding = {a.padding}")
     L.append(f"  ds_abs           = {a.ds_abs}")
     L.append("  mixing_threshold = 0.01")
@@ -232,6 +403,8 @@ def main():
     L.append("  spec_max         = 100000.0")
     L.append("  spec_num         = 300")
     L.append("  bulk_window      = 2")
+    if a.validation_dump:
+        L.append("  validation_dump  = true")
     L.append("")
     L.append("[output]")
     L.append('  format = "BPFile"')
@@ -270,7 +443,9 @@ def main():
     out = a.out or f"{a.name}.toml"
     with open(out, "w") as f:
         f.write("\n".join(L) + "\n")
-    print(f"wrote {out}: sigma0={sigma0:.9g} skindepth0={skin:.9g} larmor0={larmor:.9g} "
+    print(f"wrote {out}: normalization {nrm['mode']} sigma_hot={a.sigma_hot:.9g} "
+          f"sigma0={sigma0:.9g} skindepth0={skin:.9g} larmor0={larmor:.9g} "
+          f"(nominal {nrm['sigma_input_nominal']:.9g}, {nrm['c_omp_nominal']:.9g}) "
           f"dt={dt:.6g} runtime={runtime:.6g} t_lc={a.n1} w_out={w_out} w_in={w_in} "
           f"pusher={a.pusher} capacity={caps[3]:.3g} (e- side species) "
           f"particle arrays {gib:.2f} GiB per domain")

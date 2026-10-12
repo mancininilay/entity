@@ -9,14 +9,41 @@ Author: Claude. Reviewer: Codex (A3).
 
 ```
 cmake -B build -D pgen=rec_mix -D precision=single -D output=ON [-D mpi=ON] ...
-python3 pgens/rec_mix/make_input.py --name c2a --layout active --sigma 40 --q 0.1 --mu 25 --decomposition 4 8
-python3 pgens/rec_mix/make_input.py --name c2d --layout testprtl --sigma 160 --test-masses 25 100 400 --decomposition 4 8
+python3 pgens/rec_mix/make_input.py --name c2a --reference C2-a --decomposition 4 8
+python3 pgens/rec_mix/make_input.py --name c2d --reference C2-d --decomposition 4 8
+python3 pgens/rec_mix/make_input.py --name s80 --layout active --sigma-hot 80 --q 0.1 --mu 25 --decomposition 4 8
 mpirun -n <N> build/src/entity.xc -input c2a.toml
 ```
 
-`make_input.py` derives `[scales]` from the physical inputs (spec III.1) and writes
-the 9-species table, MATCH widths, outputs and checkpoints. The generator refuses
-`[scales]` that disagree with the physical inputs (relative 1e-4).
+**Normalization (P13-D39, Nilay 2026-10-12; spec III.1).** The p1.1 labels are
+hot: `sigma_hot` (40, 80; passive 160) is the total upstream magnetization
+B^2/(4 pi w) with the full enthalpy, ions and thermal part included, at a
+common physical upstream temperature T = `theta_up` = 0.01 (Gamma = 5/3), and
+`dup_cells` (5 in 2D; the legacy 3D runs used about 2.5) is the total upstream
+skin depth with the thermal and ion response. Tristan's `sigma`, `c_omp` (and
+Entity's `sigma0`, `skindepth0`) are fiducial cold electron-mass inputs with
+n0 = ppc0 counting every upstream particle:
+
+    D = (2 - q + mu q)/2,  sigma_input = sigma_hot (D + 5T/2)
+    F = [(2 - q)/(1 + 3T/2) + q/(mu (1 + 3T/2))]/2,  c_omp = d_up sqrt(F)
+    sigma0 = sigma_input, skindepth0 = c_omp, larmor0 = c_omp/sqrt(sigma_input)
+
+(testprtl: the depositing pairs only, q = 0, D = 1; no factor 0.45, which is
+Tristan's c). F is Nilay's convention; the common-temperature ion term
+q/(mu + 3T/2) would change c_omp by <= 0.028% and is documented, not used. The
+p1.1 continuity runs use the **literal** saved inputs (`--reference`: C2-a
+(89, 4.84), C2-b (42.98, 4.96), C2-c (521, 3.58), C2-d (164, 4.96)); scan
+points use the **nominal** (unrounded) values. In literal mode both the
+converter and the generator check the inputs against the labels within the
+saved precision (`ref_sigma_rtol` 1e-4, `ref_comp_atol` 0.01 cells) and record
+both in the meta (`normalization`); the generator refuses `[scales]` that
+disagree with the inputs (relative 1e-4) and the pre-D39 key `sigma`. The
+pre-D39 mapping (sigma0 = sigma D, skindepth0 = d_up sqrt((2 - q + q/mu)/2))
+is the T -> 0 limit only. The sheet formulas consume sigma0 and skindepth0 as
+in Tristan (C2-b: legacy sheet-ion theta = 0.06825, Tristan's Gaussian branch).
+
+`make_input.py` writes the 9-species table, MATCH widths, outputs and
+checkpoints.
 
 * **Pusher.** Every species gets `pusher = "Vay"` (`--pusher`; D3). Entity's
   default would be Boris.
@@ -76,10 +103,13 @@ species draw the same random numbers with or without them.
 |---|---|---|
 | `layout` | "active" | "active" or "testprtl" |
 | `sheet_init` | "legacy" | "legacy": T_cs = 0.5 sigma0 (1 + b_g^2)/(eta D) (p1.1); "balanced": T_cs = 0.5 sigma0 Gamma_d/eta, so that the transverse stress eta n0 T_cs/Gamma_d equals B0^2/8pi |
-| `sigma`, `q`, `mu` | | p1.1 sigma (total mass), q = n_i/n_e-, mu (active only) |
+| `sigma_hot`, `q`, `mu` | | nominal hot total magnetization (P13-D39), q = n_i/n_e-, mu (active only); the pre-D39 key `sigma` is refused |
+| `sigma_input`, `c_omp` | nominal | literal saved Tristan inputs (both or neither), checked against the labels |
+| `ref_sigma_rtol`, `ref_comp_atol` | 1e-4, 0.01 | precision of the literal check (relative; cells) |
+| `normalization_label` | "" | provenance of the literal inputs (e.g. "C2-a (runs_mu25/sigma40_k19)") |
 | `test_masses`, `test_temperatures` | species masses, theta_up | tracers (testprtl); temperatures are physical kT |
-| `dup_cells` | 5 | d_up in cells |
-| `theta_up` | 0.01 | upstream kT/(m_e c^2), same physical kT for all species |
+| `dup_cells` | 5 | nominal total upstream skin depth in cells, thermal and ion response included |
+| `theta_up` | 0.01 | upstream kT/(m_e c^2), same physical kT for all species; T of the normalization |
 | `cs_width`, `cs_overdensity` | 400, 3 | a in cells, eta |
 | `dip_width`, `sheet_extent` | 5, 10 | dip radius and sheet half-width in units of a |
 | `b_guide` | 0 | Tristan b_guide (B_x3 = -b_guide) |
@@ -95,6 +125,10 @@ species draw the same random numbers with or without them.
 | `inj_avg_cells` | 11 | rows averaged by the injector |
 | `inject`, `load_tracers` | true, true | test switches (C0.4, C1.7) |
 | `allow_any_pusher` | false | test switch: accept species not pushed with Vay |
+| `geometry` | "open" | "closed_box": doubly periodic double sheet (C1.14 drift), see below |
+| `field_test` | "none" | "pulse_x2", "pulse_x1": vacuum pulse tests of the walls (C1.5), see below |
+| `pulse_width`, `pulse_offset`, `pulse_amp` | 5, N/4, 0.1 | Gaussian sigma (cells), distance of each pulse from the centre, amplitude (B0) |
+| `validation_dump` | false | write the exact particle state per rank with every user output (small validation boxes) |
 | `cv_payload_slot` | last | integer payload slot of the CV flag |
 
 ## Algorithms (ports of the Tristan routines)
@@ -119,12 +153,43 @@ species draw the same random numbers with or without them.
   step runs with periodic x1; refused before t_open). With periodic x1 in the
   restart input the walls re-open at the first post-step, with a warning.
 
+## Test geometries
+
+* **Closed box** (`geometry = "closed_box"`; C1.14 closed-box branch, D35).
+  Doubly periodic box (fields and particles PERIODIC in x1 and x2), two sheets
+  at y1 = N2/4 and y2 = 3N2/4 with B_x1 = tanh((x2 - y1)/a) - tanh((x2 - y2)/a)
+  - 1, the sheet at y2 carrying the opposite current (u_x3 = +sgn(Q) u_d), each
+  sheet loaded within N2/4 of its centre with the same profile, dip and
+  temperature rule as the open sheet; lower-side species in [0, y1) and
+  [y2, N2), upper-side species in [y1, y2) (each sheet separates the two sides,
+  so the mixing mask works); no injector, no padding, no opening; the control
+  volume is the whole box (no surface, no crossings: the records give the
+  global energy budget); midline rows at y1. Same numerics as the open box
+  (filters, ppc0, sigma, theta, resolution, CFL, pusher, cv_interval). The
+  sheets are N2/2 apart: with N2/(4a) = 4 (the harness box) the field tails
+  meet at the seam with a jump of dB1/dx2 of 2 sech^2(4)/a (relative 1.3e-3)
+  and each sheet is loaded to +-4a (density 1.3e-3 of the peak), where the open
+  sheet extends to 10a; use N2/(4a) >= 8 where this matters.
+* **Vacuum pulse tests** (`field_test`; C1.5 reflection). No plasma, zero
+  background and zero MATCH targets (the MATCH update is linear in F -
+  F_target, so the reflection of a deviation does not depend on the target),
+  two Gaussian plane pulses (E_x3 with B_x1 or B_x2) moving towards the two
+  walls of one axis. `pulse_x2`: x1 PERIODIC, x2 MATCH (or CONDUCTOR for a
+  reflecting control), never opened. `pulse_x1`: x1 MATCH + ABSORB from the
+  start (the outflow walls; Entity registers the MATCH widths only if a wall is
+  MATCH at start), x2 PERIODIC.
+
 ## Outputs (`<simulation.name>/usr/`, little-endian; format 3)
 
 * `recmix.meta.json`: format version, run id, species (roles, mass, charge,
   deposit flag, pusher, maxnpart), inputs, derived scales, mask definition, bins,
   moment names, bulk-estimator settings, CV box and record layout, midline
-  layout, git hash. Rewritten at every process start.
+  layout, `normalization` (P13-D39: mode nominal/literal, label, sigma_hot, T,
+  D, D + 5T/2, F, nominal and used sigma_input and c_omp with their
+  differences and tolerances, effective d_up, cold total and cold lepton
+  magnetizations, thermal and cold lepton skin depths, and the documented
+  common-T c_omp ratio), `geometry` (test switches), git hash. Rewritten at
+  every process start.
 * `segments.jsonl` (appended): one line per process start: `run_id` (52 bits,
   random), `start_label` (0 for a fresh start, the checkpoint label when
   resuming), `resuming`, time, checkpoint path, git hash.
@@ -144,8 +209,11 @@ species draw the same random numbers with or without them.
   Kb_own_w1 and Nlowocc_w1 (the same with window 1, for the window sensitivity),
   Klowocc and Kblowocc (kinetic and bulk energy of the masked particles in
   under-occupied boxes, also with window 1), Kb_own_half (box means from the
-  particles with dx1 < 1/2, weighted by the full cell counts: thinning test).
+  particles with dx1 < 1/2, weighted by the full cell counts: position-
+  subsampling sensitivity).
   Format 1 (`"P13RMX01"`: no run id, no fill) is still read.
+* Control-volume membership is decided on the integer cell (the CV faces are
+  cell faces), not on float(i) + dx (v1.6; exact at faces).
 * `cvbudget.bin` (appended): records of 61 float64: label, time, segment_start,
   run_id, then per species (N_cv, I_cv = sum_CV m (gamma - 1), in_E, out_E, in_N,
   out_N since the previous record), U_EM in the CV, the integrated outward
@@ -163,6 +231,13 @@ species draw the same random numbers with or without them.
   of the midplane node line.
 * Custom field outputs `mixing`, `mask` and `count_<s>` (raw particle count of
   species s, for C1.16).
+* `vdump.<label>.r<rank>.bin` (only with `validation_dump`; one file per rank,
+  at every user output): the exact particle state the moment kernels of the
+  same post-step use: global integer cells, float offsets dx1, dx2, momenta,
+  weights, the CV flag and, with tracking, the IDs (species counter, creating
+  domain). Layout in `p13ana/readers.py`. Entity's own particle output holds
+  only X = float(i) + dx, which is ambiguous for an integer X (and for the
+  dx1 < 1/2 subsample at X - floor(X) = 1/2) (Codex A0-2).
 
 **Provenance after restarts** (Codex IC3). A file or record written by the
 segment with `run_id` k at label s is valid if and only if s <= `start_label`
@@ -196,19 +271,27 @@ outputs the mean 3-velocity of **each species**:
   `V_...` (Tristan velx) with the same top-hat smoothing (`order = 4`,
   `method = "const"`, i.e. 5 x 5 cells).
 
-What the bulk-energy status means (Codex IC5, RV1). The analysis applies an
-occupancy screen, not an accuracy certificate: eps-tilde of a population is
+What the bulk-energy status means (Codex IC5, RV1, A0-3). The own-species
+eps-tilde is a secondary, unvalidated diagnostic (P13-D36): f_i, eps, spectra
+and the CV work do not depend on it. The analysis applies an occupancy screen
+(decided thresholds), not an accuracy certificate: eps-tilde of a population is
 reported (`occupancy_ok`) only if at most 2% of its masked particles sit in
-boxes with fewer than `bulk_nmin` (20) particles and the energy those boxes can
-carry, max(Klowocc, Kblowocc), is at most 2% of K - Kb_own; otherwise NaN with
-status `low_occupancy`. No occupancy rule bounds the finite-sample bias of the
-estimator in well-occupied boxes (gamma of the box-mean velocity is nonlinear,
-steeply so near beta = 1); the thinning change, from Kb_own_half, measures that
-dependence on the actual distribution and is reported with every value, as is
-the change from window 1 to `bulk_window`. The bulk frame is defined on a
-(2w + 1)^2-cell top-hat box (w = 2: 5 x 5 cells, Tristan's convention); the
-own-species eps-tilde is a secondary observable until validated on pilot data
-(tech spec III.8).
+boxes with fewer than `bulk_nmin` (20) particles and max(Klowocc, Kblowocc) is
+at most 2% of K - Kb_own; otherwise NaN with status `low_occupancy`. Since
+|Klowocc - Kblowocc| <= max(Klowocc, Kblowocc), the ratio bounds the magnitude
+of the recorded low-occupancy contribution; it does not bound its error against
+the physical random energy of those particles, because the box velocity is
+averaged over the whole box and assigned to the central-cell particles (Codex
+A0-3a: a stationary particle with fast neighbours gets a negative random
+energy). No occupancy rule bounds the finite-sample bias of the estimator in
+well-occupied boxes (gamma of the box-mean velocity is nonlinear, steeply so
+near beta = 1). The position-subsampling change, from Kb_own_half (box means
+from the particles with dx1 < 1/2), is reported with every value, as is the
+change from window 1 to `bulk_window`; since dx1 can correlate with velocity
+(A0-3b: two streams at different dx1), it is a sensitivity, not a bias bound,
+and one split is not an error bar. The bulk frame is defined on a
+(2w + 1)^2-cell top-hat box (w = 2: 5 x 5 cells, Tristan's convention). The
+legacy Tristan bulk subtraction is not reproduced (P13-D38). Tech spec III.8.
 
 ## Analysis and tests
 

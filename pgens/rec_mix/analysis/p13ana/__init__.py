@@ -3,4 +3,4 @@ reconnection) and the rec_mix generator outputs. See README.md."""
 
 from . import cvbudget, ezones, inflow, neutrality, partition, readers, regimes  # noqa: F401
 
-__version__ = "0.4.0"  # versioned with pgens/rec_mix (Codex A3)
+__version__ = "0.5.0"  # versioned with pgens/rec_mix (Codex A3)

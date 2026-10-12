@@ -1,12 +1,24 @@
 #!/usr/bin/env python3
-"""C1.16b and C1.14b from a full particle output (stride 1) at a user-output label:
-recompute, independently of the generator's kernels,
-  * the own-species bulk energies Kb_own (variance-corrected), Kb_own_raw and
-    Nlowocc of every species, from particle positions and momenta, the mask
-    (custom field `mask`) and the box rule of the meta (window w, nmin; boxes
-    truncated at non-periodic walls, wrapped in x1 while x1 is periodic);
+"""C1.16b and C1.14b from the particle state at a user-output label:
+recompute, independently of the generator's kernels (a different numerical
+path by the same author, not independent authorship),
+  * the own-species bulk energies Kb_own (variance-corrected), Kb_own_raw,
+    Nlowocc, Klowocc, Kblowocc (both windows) and Kb_own_half of every species
+    from the particle cells and momenta, the mask (custom field `mask`) and the
+    box rule of the meta (window w, nmin; boxes truncated at non-periodic walls,
+    wrapped in x1 while x1 is periodic);
   * the CV inventory N_cv and I_cv from the particles flagged in the CV payload.
-Also: window_scan() for the window convergence of eps-tilde (IC5).
+Also window_scan(), occupancy_scan() and position_subsampling_scan().
+
+Particle source (Codex A0-2). The exact source is the generator's validation
+dump (setup.validation_dump; readers.read_vdump): integer cell and float
+offset as the kernels use them. Entity's particle output holds only the
+rounded position X = float(i) + dx, which does not identify the cell when X is
+an integer (dx just below 1 in cell i - 1 or dx ~ 0 in cell i give the same X)
+and does not identify the dx1 < 1/2 subsample when X - floor(X) = 1/2. With
+that source the cell is taken as floor(X) (a convention, not a recovery), the
+ambiguous particles are counted and reported, and exact comparisons are not
+claimed while any is present.
 Usage: check_particles.py <sim_dir> <label> [periodic_x1]"""
 import json, os, sys
 import numpy as np
@@ -15,6 +27,7 @@ from p13ana import readers  # noqa: E402
 
 
 def read_particles(path):
+    """Entity particle output (rounded positions; see the module docstring)."""
     from adios2 import FileReader
     out = {}
     with FileReader(path) as r:
@@ -26,22 +39,64 @@ def read_particles(path):
                       for k in ("X1", "X2", "U1", "U2", "U3", "W") if f"p{k}_{s}" in v}
             if f"pPLDI0_{s}" in v:
                 out[s]["CV"] = np.asarray(r.read(f"pPLDI0_{s}"))
+            for k in ("IDX", "RNK"):
+                if f"p{k}_{s}" in v:
+                    out[s][k] = np.asarray(r.read(f"p{k}_{s}"))
     return out
 
 
-def cell_and_frac(X):
-    """Cell index and in-cell offset from an output position X = i + dx (unit
-    cells). The output is i + dx rounded to float, so a particle with dx within
-    half an ulp of 1 appears at the integer i + 1; such exact integers are
-    assigned to the lower cell with dx -> 1 (a true dx = 0 has probability
-    ~2^-24 per particle). Without this, one particle in ~1e5 lands in the
-    neighbouring cell of its in-code one."""
-    i = np.floor(X).astype(int)
-    f = X - np.floor(X)
-    amb = (f == 0) & (X > 0)
-    i[amb] -= 1
-    f = np.where(amb, 1.0, f)
-    return i, f
+def classify_positions(X, subsample=0.5):
+    """Cell, in-cell offset and rounding ambiguity of rounded output positions
+    X = float(i) + dx (unit cells, float rounding to nearest). Since integers and
+    i + 1/2 are representable and rounding is monotone, a value strictly inside
+    (i, i + 1) comes from cell i, and one strictly below (above) i + subsample
+    from dx below (at or above) subsample. Ambiguous are exactly: X integer (cell
+    X with dx ~ 0, or cell X - 1 with dx ~ 1), and X - floor(X) == subsample (the
+    dx < subsample selection). Returns (cell = floor(X), frac, amb_cell, amb_sub);
+    the cell of an ambiguous particle is a convention, not a recovery (A0-2)."""
+    X = np.asarray(X, dtype=np.float64)
+    i = np.floor(X).astype(np.int64)
+    f = X - i
+    amb_cell = f == 0.0
+    amb_sub = (f == subsample) | amb_cell
+    return i, f, amb_cell, amb_sub
+
+
+def particles_from_bp(P):
+    """Rounded-position source: cells by floor (convention) and ambiguity flags."""
+    out = {}
+    for s, p in P.items():
+        i, f1, a1, h1 = classify_positions(p["X1"])
+        j, _, a2, _ = classify_positions(p["X2"])
+        q = {k: p[k] for k in ("U1", "U2", "U3", "W") if k in p}
+        q.update({"i": i, "j": j, "dx1": f1, "amb_cell": a1 | a2, "amb_half": h1})
+        for k in ("CV", "IDX", "RNK"):
+            if k in p:
+                q[k] = p[k]
+        out[s] = q
+    return out
+
+
+def particles_from_vdump(V):
+    """Exact source: the generator's cells and float32 offsets (no ambiguity)."""
+    out = {}
+    for s, d in V["species"].items():
+        n = d["i1"].size
+        q = {"i": d["i1"], "j": d["i2"], "dx1": d["dx1"].astype(np.float64),
+             "dx1_f32": d["dx1"], "U1": d["u1"].astype(np.float64), "U2": d["u2"].astype(np.float64),
+             "U3": d["u3"].astype(np.float64), "W": d["w"].astype(np.float64), "CV": d["cv"],
+             "amb_cell": np.zeros(n, bool), "amb_half": np.zeros(n, bool), "RANK": d["rank"]}
+        if "idx" in d:
+            q["IDX"], q["RNK"] = d["idx"], d["dom"]
+        out[s] = q
+    return out
+
+
+def half_select(p):
+    """The kernel's subsample: dx1 < 1/2 evaluated on the stored float offset."""
+    if "dx1_f32" in p:
+        return p["dx1_f32"] < np.float32(0.5)
+    return p["dx1"] < 0.5
 
 
 def box_sum(a, w, periodic_x1):
@@ -64,15 +119,17 @@ def box_sum(a, w, periodic_x1):
 
 
 def bulk_estimate(p, m, mask, w, nmin, N1, N2, periodic_x1, half=False):
-    """The rec_mix box estimator, reimplemented on particles: masked K, N,
-    Kb_own (variance-corrected), Kb_own_raw, Nlowocc, Klowocc and Kblowocc for
-    window w. half=True: Kb_own_half (box means from the particles with
-    dx1 < 1/2, weights from all particles; dx1 = X1 - floor(X1))."""
+    """The rec_mix box estimator, reimplemented on particles (dict with cells
+    i, j, offset dx1, U1-3, W): masked K, N, Kb_own (variance-corrected),
+    Kb_own_raw, Nlowocc, Klowocc and Kblowocc for window w. half=True:
+    Kb_own_half (box means from the particles with dx1 < 1/2, weights from all
+    particles). Klowocc and Kblowocc are the recorded low-occupancy
+    contribution: |Klowocc - Kblowocc| <= max(Klowocc, Kblowocc) bounds its
+    magnitude, not its error against a physical random energy (Codex A0-3a)."""
     u = np.stack([p["U1"], p["U2"], p["U3"]], -1)
     g = np.sqrt(1 + (u ** 2).sum(-1))
     b = u / g[:, None]
-    i, f1 = cell_and_frac(p["X1"])
-    j, _ = cell_and_frac(p["X2"])
+    i, j = p["i"], p["j"]
     wt = p["W"]
     cnt = np.zeros((N1, N2)); np.add.at(cnt, (i, j), wt)
     kin = np.zeros((N1, N2)); np.add.at(kin, (i, j), wt * m * (g - 1))
@@ -81,7 +138,7 @@ def bulk_estimate(p, m, mask, w, nmin, N1, N2, periodic_x1, half=False):
         np.add.at(sb[k], (i, j), wt * b[:, k])
     sq = np.zeros((N1, N2)); np.add.at(sq, (i, j), wt * (b ** 2).sum(-1))
     if half:
-        h = f1 < 0.5
+        h = half_select(p)
         cnth = np.zeros((N1, N2)); np.add.at(cnth, (i[h], j[h]), wt[h])
         sb = [np.zeros((N1, N2)) for _ in range(3)]
         for k in range(3):
@@ -112,13 +169,63 @@ def bulk_estimate(p, m, mask, w, nmin, N1, N2, periodic_x1, half=False):
             "Kblowocc": float(m * np.sum(kbc[low]))}, (g, wt)
 
 
-def _load(sim, label):
+def _load(sim, label, source="auto"):
+    """Meta, user output, particles and mask at a label. source: "vdump" (exact,
+    the generator's validation dump), "bp" (Entity particle output, rounded
+    positions; ambiguity flagged) or "auto" (vdump if present)."""
     usr = os.path.join(sim, "usr")
     meta, outs = readers.read_all_recmix(usr)
     o = [x for x in outs if x.step == label][0]
-    P = read_particles(os.path.join(sim, "particles", f"particles.{label:08d}.bp"))
+    if source == "auto":
+        source = "vdump" if label in readers.list_vdump_labels(usr) else "bp"
+    if source == "vdump":
+        P = particles_from_vdump(readers.read_vdump(usr, label))
+    else:
+        P = particles_from_bp(read_particles(os.path.join(sim, "particles", f"particles.{label:08d}.bp")))
     F = readers.read_entity_fields(os.path.join(sim, "fields", f"fields.{label:08d}.bp"), ["mask"])
-    return meta, o, P, F["mask"] > 0.5
+    return meta, o, P, F["mask"] > 0.5, source
+
+
+def ambiguity_report(sim, label):
+    """A0-2 witness on real output: classify the rounded Entity particle
+    positions at a label and, where the validation dump exists, count how many
+    of the ambiguous ones the floor convention puts in the wrong cell or the
+    wrong dx1 < 1/2 subsample."""
+    usr = os.path.join(sim, "usr")
+    B = read_particles(os.path.join(sim, "particles", f"particles.{label:08d}.bp"))
+    have_v = label in readers.list_vdump_labels(usr)
+    V = readers.read_vdump(usr, label) if have_v else None
+    out = {}
+    for s, p in B.items():
+        i, f1, a1, h1 = classify_positions(p["X1"])
+        j, _, a2, _ = classify_positions(p["X2"])
+        r = {"N": int(i.size), "ambiguous_cell": int((a1 | a2).sum()), "ambiguous_half": int(h1.sum())}
+        if have_v:
+            v = V["species"][s]
+            # exact positions of the dump through Entity's conversion
+            # (kernels/prtls_to_phys.hpp: x = x_min + (float(i_local) + dx), float)
+            off1 = np.array([rk["off1"] for rk in V["ranks"]])
+            off2 = np.array([rk["off2"] for rk in V["ranks"]])
+            rank_index = {rk["rank"]: k for k, rk in enumerate(V["ranks"])}
+            ri = np.array([rank_index[x] for x in v["rank"]], dtype=np.int64) if v["rank"].size else \
+                np.zeros(0, np.int64)
+            o1, o2 = off1[ri], off2[ri]
+            X1 = (o1.astype(np.float32) + ((v["i1"] - o1).astype(np.float32) + v["dx1"]).astype(np.float32))
+            X2 = (o2.astype(np.float32) + ((v["i2"] - o2).astype(np.float32) + v["dx2"]).astype(np.float32))
+            # multiset comparison of (X1, X2, U1, U2, U3) between the BP output and the emulation
+            a = np.stack([p["X1"], p["X2"], p["U1"], p["U2"], p["U3"]], 1)
+            b = np.stack([X1.astype(np.float64), X2.astype(np.float64), v["u1"].astype(np.float64),
+                          v["u2"].astype(np.float64), v["u3"].astype(np.float64)], 1)
+            same = a.shape == b.shape and np.array_equal(a[np.lexsort(a.T[::-1])], b[np.lexsort(b.T[::-1])])
+            r["bp_equals_converted_dump"] = bool(same)
+            # wrong assignments of the floor convention, from the dump's own positions
+            ci, _, _, _ = classify_positions(X1.astype(np.float64))
+            cj, _, _, _ = classify_positions(X2.astype(np.float64))
+            r["floor_wrong_cell"] = int(((ci != v["i1"]) | (cj != v["i2"])).sum())
+            hx = (X1.astype(np.float64) - ci) < 0.5
+            r["floor_wrong_half"] = int((hx != (v["dx1"] < np.float32(0.5))).sum())
+        out[s] = r
+    return out
 
 
 def window_scan(sim, label, windows=(1, 2, 3, 4, 6), periodic_x1=False):
@@ -126,7 +233,7 @@ def window_scan(sim, label, windows=(1, 2, 3, 4, 6), periodic_x1=False):
     eps-tilde_s = (K_s - Kb_own,s)/N_s on the mask, and of the low-occupancy
     fraction, for each species (Codex IC5). The generator supports w <= 2
     (N_GHOSTS); larger windows are evaluated here only."""
-    meta, o, P, mask = _load(sim, label)
+    meta, o, P, mask, _ = _load(sim, label)
     d = meta["derived"]
     nmin = meta["bulk"]["nmin"]
     out = {}
@@ -148,7 +255,7 @@ def occupancy_scan(sim, label, populations=None, nmins=(5, 10, 20, 40), periodic
     per population, the number fraction in boxes with fewer than nmin
     particles, the energy bound max(Klowocc, Kblowocc)/(K - Kb_own) and the
     reported contribution of those boxes (Klowocc - Kblowocc)/(K - Kb_own)."""
-    meta, o, P, mask = _load(sim, label)
+    meta, o, P, mask, _ = _load(sim, label)
     d = meta["derived"]
     w = meta["bulk"]["window"]
     if populations is None:
@@ -175,12 +282,17 @@ def occupancy_scan(sim, label, populations=None, nmins=(5, 10, 20, 40), periodic
     return out
 
 
-def thinning_scan(sim, label, fractions=(1, 2, 4, 8), periodic_x1=False):
-    """Finite-sample dependence of eps-tilde on the actual distribution (RV1b):
-    box means from the particles with floor(k dx1) = 0 (about 1/k of them),
-    weights from all particles, for each k; eps-tilde per species and the
-    relative change against k = 1. A bias that depends on n shows up here."""
-    meta, o, P, mask = _load(sim, label)
+def position_subsampling_scan(sim, label, fractions=(1, 2, 4, 8), periodic_x1=False):
+    """Position-subsampling sensitivity of eps-tilde (formerly "thinning";
+    Codex A0-3b): box means from the particles with floor(k dx1) = 0 (about 1/k
+    of them, by in-cell position), weights from all particles, for each k;
+    eps-tilde per species and the relative change against k = 1.
+    Limitation: dx1 can be correlated with velocity in the evolved plasma (sub-
+    cell phase-space structure, e.g. two streams at different dx1), so a change
+    can reflect the selection of a different velocity population as well as a
+    finite-sample bias; one split is not an error bar. Statistically valid
+    subsampling independent of phase space is an R1 item (D36), not done here."""
+    meta, o, P, mask, _ = _load(sim, label)
     d = meta["derived"]
     w, nmin = meta["bulk"]["window"], meta["bulk"]["nmin"]
     out = {}
@@ -190,22 +302,26 @@ def thinning_scan(sim, label, fractions=(1, 2, 4, 8), periodic_x1=False):
         if not full["N"] > 0:
             continue
         row = {}
-        frac = cell_and_frac(p["X1"])[1]
         for k in fractions:
-            keep = np.floor(k * frac) == 0       # about 1/k of the particles
+            keep = np.floor(k * p["dx1"]) == 0       # about 1/k of the particles
+            if k == 2:
+                keep = half_select(p)                # the kernel's dx1 < 1/2 on the stored offset
             kb = full["Kb_own"] if k == 1 else _kb_subset(p, keep, m, mask, w, d["N1"], d["N2"],
                                                          periodic_x1)
             row[k] = (full["K"] - kb) / full["N"]
-        out[s] = {"epst": row, "change": {k: row[k] / row[1] - 1 for k in row}}
+        out[s] = {"epst": row, "change": {k: row[k] / row[1] - 1 for k in row},
+                  "ambiguous_particles": int(np.sum(p["amb_cell"] | p["amb_half"]))}
     return out
+
+
+thinning_scan = position_subsampling_scan  # former name (v1.5)
 
 
 def _kb_subset(p, keep, m, mask, w, N1, N2, periodic_x1):
     u = np.stack([p["U1"], p["U2"], p["U3"]], -1)
     g = np.sqrt(1 + (u ** 2).sum(-1))
     b = u / g[:, None]
-    i, _ = cell_and_frac(p["X1"])
-    j, _ = cell_and_frac(p["X2"])
+    i, j = p["i"], p["j"]
     wt = p["W"]
     cnt = np.zeros((N1, N2)); np.add.at(cnt, (i, j), wt)
     cs = np.zeros((N1, N2)); np.add.at(cs, (i[keep], j[keep]), wt[keep])
@@ -226,13 +342,15 @@ def _kb_subset(p, keep, m, mask, w, N1, N2, periodic_x1):
     return float(m * np.sum(cnt[sel] * (1 / np.sqrt(1 - np.minimum(bcor, 1 - 1e-12)) - 1)))
 
 
-def main(sim, label, periodic_x1=False):
+def main(sim, label, periodic_x1=False, source="auto"):
+    """Exact comparisons need the exact source; with rounded positions the
+    result carries the ambiguity counts and `exact_source` False (A0-2)."""
     usr = os.path.join(sim, "usr")
-    meta, o, P, mask = _load(sim, label)
+    meta, o, P, mask, src = _load(sim, label, source)
     d = meta["derived"]
     N1, N2 = d["N1"], d["N2"]
     w, nmin = meta["bulk"]["window"], meta["bulk"]["nmin"]
-    res = {"label": label, "species": {}}
+    res = {"label": label, "source": src, "exact_source": src == "vdump", "species": {}}
     for s, p in P.items():
         m = meta["species"][s - 1]["mass"]
         est, (g, wt) = bulk_estimate(p, m, mask, w, nmin, N1, N2, periodic_x1)
@@ -248,7 +366,8 @@ def main(sim, label, periodic_x1=False):
         code = {k: float(o.m(k)[s - 1]) for k in ref}
         rel = {k: (abs(code[k] - ref[k]) / abs(ref[k]) if ref[k] != 0 else abs(code[k]))
                for k in ref}
-        e = {"ref": ref, "code": code, "rel_diff": rel}
+        e = {"ref": ref, "code": code, "rel_diff": rel,
+             "ambiguous_cell": int(p["amb_cell"].sum()), "ambiguous_half": int(p["amb_half"].sum())}
         if "CV" in p:
             flag = p["CV"] > 0
             e["Ncv_particles"] = float(wt[flag].sum())

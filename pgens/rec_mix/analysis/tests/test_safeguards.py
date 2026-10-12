@@ -7,8 +7,15 @@ IC5: eps-tilde is NaN with an explicit status when it fails the occupancy screen
 RV1 (Codex, 2026-10-12): the screen is an occupancy check, not an accuracy
      bound; the energy share of under-occupied boxes is screened (RV1a), and
      the finite-sample bias of the estimator, which no occupancy rule bounds,
-     is exposed by the thinning diagnostic (RV1b, Codex's exact two-stream
-     counterexample kept as a witness of the limitation).
+     is exposed by the position-subsampling diagnostic (RV1b, Codex's exact
+     two-stream counterexample kept as a witness of the limitation).
+A0 (Codex, 2026-10-12): A0-1 a refused harness rerun preserves every previous
+     record (collision, skipped case, disjoint addition with provenance,
+     --overwrite moves instead of deleting); A0-2 rounded output positions are
+     ambiguous at integers and at dx1 = 1/2 (both sides witnessed), the exact
+     source is unambiguous; A0-3 witnesses of the two qualified claims (the
+     box/central-cell Jensen mismatch and velocity-correlated position
+     subsampling).
 """
 
 import json
@@ -22,6 +29,13 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from p13ana import cvbudget, partition, readers  # noqa: E402
+
+sys.path.insert(0, os.path.dirname(__file__))
+import check_particles  # noqa: E402
+
+import subprocess  # noqa: E402
+
+HARNESS = os.path.join(os.path.dirname(__file__), "..", "..", "tests", "harness.py")
 
 NAMES = ["N", "K", "G", "U1", "U2", "U3", "B1", "B2", "B3", "Nunder", "Eunder", "Nover",
          "Eover", "Nskip", "Kb_own", "Kb_all", "Ntot", "Ktot", "Kb_own_raw", "Nlowocc"]
@@ -310,3 +324,199 @@ def test_rv1b_two_stream_limitation():
     r = partition.active_partition(_meta(), _out3(ion))
     assert r["epst_i_status"] == "occupancy_ok"
     assert abs(r["epst_i_thinning_change"] - (e10 / e20 - 1)) < 1e-9
+
+
+# --------------------------------------------------------------------------
+# A0-1: harness evidence preservation
+# --------------------------------------------------------------------------
+def _harness(out, *args):
+    return subprocess.run([sys.executable, "-B", HARNESS, "--recmix", "/bin/false", "--out", out, *args],
+                          capture_output=True, text=True)
+
+
+def _campaign(d, cases):
+    os.makedirs(d, exist_ok=True)
+    for n in cases:
+        os.makedirs(os.path.join(d, n), exist_ok=True)
+        with open(os.path.join(d, n, "sentinel"), "w") as f:
+            f.write("preserve " + n)
+    res = {"cases": {n: {"pass": True, "checks": [{"old_evidence": n}]} for n in cases},
+           "invocations": [{"index": 0, "cases": list(cases)}]}
+    with open(os.path.join(d, "results.json"), "w") as f:
+        json.dump(res, f)
+    return open(os.path.join(d, "results.json"), "rb").read()
+
+
+def test_a01_refusal_preserves_records():
+    """Codex's witness: rerunning an existing case without --overwrite is
+    refused before anything is written; the results.json bytes and the case
+    directory are unchanged; the binary is never run."""
+    with tempfile.TemporaryDirectory() as d:
+        before = _campaign(d, ["capacity"])
+        p = _harness(d, "--cases", "capacity")
+        assert p.returncode == 2 and "refused" in p.stdout
+        assert open(os.path.join(d, "results.json"), "rb").read() == before
+        assert open(os.path.join(d, "capacity", "sentinel")).read() == "preserve capacity"
+
+
+def test_a01_collision_with_record_only_and_skipped_path():
+    """A record without a directory collides too, and a case that would be
+    skipped for a missing binary (mpi, no --recmix-mpi) does not overwrite its
+    record; a mixed selection with one collision writes nothing at all."""
+    with tempfile.TemporaryDirectory() as d:
+        before = _campaign(d, ["mpi", "capacity"])
+        import shutil
+        shutil.rmtree(os.path.join(d, "capacity"))  # temp test data only
+        for sel in ("mpi", "capacity", "c04_deposit,mpi"):
+            p = _harness(d, "--cases", sel)
+            assert p.returncode == 2, (sel, p.stdout)
+            assert open(os.path.join(d, "results.json"), "rb").read() == before
+        assert not os.path.exists(os.path.join(d, "c04_deposit"))
+
+
+def test_a01_disjoint_addition_with_provenance():
+    """New cases may be added to an existing campaign: previous records are kept
+    byte for byte inside the new file, and the invocation lists what it added."""
+    with tempfile.TemporaryDirectory() as d:
+        _campaign(d, ["capacity"])
+        old = json.load(open(os.path.join(d, "results.json")))
+        p = _harness(d, "--cases", "c04_deposit,mpi")
+        assert p.returncode == 1  # /bin/false makes c04_deposit fail; mpi is skipped
+        new = json.load(open(os.path.join(d, "results.json")))
+        assert new["cases"]["capacity"] == old["cases"]["capacity"]
+        inv = new["invocations"][-1]
+        assert inv["index"] == 1 and inv["cases"] == ["c04_deposit", "mpi"]
+        assert inv["preexisting_cases"] == ["capacity"] and inv["superseded"] == []
+        assert new["cases"]["c04_deposit"]["invocation"] == 1 and new["cases"]["c04_deposit"]["pass"] is False
+        assert new["cases"]["mpi"]["pass"] is None and new["cases"]["mpi"]["invocation"] == 1
+        assert open(os.path.join(d, "capacity", "sentinel")).read() == "preserve capacity"
+
+
+def test_a01_overwrite_moves_never_deletes():
+    """--overwrite supersedes: the old directory is renamed and its record kept."""
+    with tempfile.TemporaryDirectory() as d:
+        _campaign(d, ["capacity"])
+        _harness(d, "--cases", "capacity", "--overwrite")
+        new = json.load(open(os.path.join(d, "results.json")))
+        sup = [k for k in new["superseded"] if k.startswith("capacity@")]
+        assert len(sup) == 1
+        rec = new["superseded"][sup[0]]
+        assert rec["record"]["checks"] == [{"old_evidence": "capacity"}]
+        assert open(os.path.join(d, rec["directory"], "sentinel")).read() == "preserve capacity"
+
+
+# --------------------------------------------------------------------------
+# A0-2: rounding ambiguity of output positions
+# --------------------------------------------------------------------------
+def _rounded(i, dx, off=0):
+    """Entity's conversion (kernels/prtls_to_phys.hpp): x = x_min + (float(i) + dx), float."""
+    v = (np.float32(i) + np.float32(dx)).astype(np.float32)
+    return (np.float32(off) + v).astype(np.float32).astype(np.float64)
+
+
+def test_a02_integer_boundary_both_sides():
+    """Codex's witness: (99, 1 - 1e-6) and (100, 1e-6) both give X = 100; the
+    rounded source flags both, any single rule misassigns one of them; the exact
+    source (cell, offset) assigns both correctly. Also with a domain offset."""
+    for off in (0, 4160):
+        i = np.array([99, 100]) - off * 0
+        dx = np.array([1 - 1e-6, 1e-6], dtype=np.float32)
+        X = _rounded(i, dx, off)
+        assert X[0] == X[1] == 100 + off
+        cell, frac, amb, _ = check_particles.classify_positions(X)
+        assert amb.all() and (cell == 100 + off).all()            # floor: the first is wrong
+        assert (cell != i + off).sum() == 1
+    # unambiguous neighbours on both sides
+    X = _rounded(np.array([99, 100]), np.array([0.999, 0.001], dtype=np.float32))
+    cell, _, amb, _ = check_particles.classify_positions(X)
+    assert not amb.any() and list(cell) == [99, 100]
+    # exact source: no flags, correct cells
+    V = {"species": {4: {"i1": np.array([99, 100]), "i2": np.array([3, 3]), "dx1": dx, "dx2": dx,
+                         "u1": np.zeros(2, np.float32), "u2": np.zeros(2, np.float32),
+                         "u3": np.zeros(2, np.float32), "w": np.ones(2, np.float32),
+                         "cv": np.zeros(2, np.uint64), "rank": np.zeros(2, np.int64)}}}
+    P = check_particles.particles_from_vdump(V)[4]
+    assert list(P["i"]) == [99, 100] and not P["amb_cell"].any()
+
+
+def test_a02_half_boundary_both_sides():
+    """The dx1 < 1/2 subsample: dx just below 1/2 rounds to X = i + 1/2 like
+    dx = 1/2 itself; the rounded source flags both, the exact source selects
+    exactly the first (the kernel's float comparison); just inside on either
+    side is unambiguous."""
+    below = np.nextafter(np.float32(0.5), np.float32(0))
+    dx = np.array([below, 0.5, 0.4999, 0.5001], dtype=np.float32)
+    X = _rounded(np.full(4, 10), dx)
+    assert X[0] == X[1] == 10.5
+    _, frac, _, amb = check_particles.classify_positions(X)
+    assert list(amb) == [True, True, False, False]
+    assert list(frac[2:] < 0.5) == [True, False]
+    P = {"dx1_f32": dx, "dx1": dx.astype(np.float64)}
+    assert list(check_particles.half_select(P)) == [True, False, True, False]
+
+
+def test_a02_exact_source_changes_occupancy_count():
+    """A particle at the largest float dx1 below 1 in cell 3 (its own, masked
+    cell) next to a crowd in cell 4: X rounds to 4.0, the floor rule moves it
+    into cell 4 and the masked count changes; the exact cells keep it."""
+    n = 25
+    i = np.r_[3, np.full(n, 4)]
+    dx1 = np.r_[np.nextafter(np.float32(1), np.float32(0)), np.full(n, 0.25, np.float32)]
+    j = np.full(n + 1, 3)
+    u = np.zeros(n + 1, np.float32)
+    V = {"species": {4: {"i1": i, "i2": j, "dx1": dx1, "dx2": np.full(n + 1, 0.5, np.float32),
+                         "u1": u, "u2": u, "u3": u, "w": np.ones(n + 1, np.float32),
+                         "cv": np.zeros(n + 1, np.uint64), "rank": np.zeros(n + 1, np.int64)}}}
+    exact = check_particles.particles_from_vdump(V)[4]
+    B = {4: {"X1": _rounded(i, dx1), "X2": _rounded(j, np.full(n + 1, 0.5, np.float32)),
+             "U1": u.astype(float), "U2": u.astype(float), "U3": u.astype(float), "W": np.ones(n + 1)}}
+    rounded = check_particles.particles_from_bp(B)[4]
+    assert rounded["amb_cell"].sum() == 1
+    mask = np.zeros((8, 8), bool)
+    mask[3, 3] = True
+    e, _ = check_particles.bulk_estimate(exact, 1.0, mask, 0, 20, 8, 8, False)
+    r, _ = check_particles.bulk_estimate(rounded, 1.0, mask, 0, 20, 8, 8, False)
+    assert e["N"] == 1 and e["Nlowocc"] == 1 and r["N"] == 0
+
+
+# --------------------------------------------------------------------------
+# A0-3: witnesses of the qualified claims (documented limitations)
+# --------------------------------------------------------------------------
+def _parts(i, j, dx1, beta1):
+    n = len(i)
+    g = 1 / np.sqrt(1 - np.asarray(beta1) ** 2)
+    return {"i": np.asarray(i), "j": np.asarray(j), "dx1": np.asarray(dx1, float),
+            "U1": np.asarray(beta1) * g, "U2": np.zeros(n), "U3": np.zeros(n), "W": np.ones(n),
+            "amb_cell": np.zeros(n, bool), "amb_half": np.zeros(n, bool)}
+
+
+def test_a03a_jensen_box_mismatch():
+    """Codex's witness: a stationary masked particle with nine unmasked
+    neighbours at beta 0.9 in its box. Klowocc = 0 and Kblowocc > 0, so the
+    selected random energy is negative: [0, Klowocc] does not bound the
+    physical random energy. What holds is the algebraic bound on the recorded
+    contribution, |Klowocc - Kblowocc| <= max(Klowocc, Kblowocc)."""
+    p = _parts([3] + [4] * 9, [3] * 10, [0.25] * 10, [0.0] + [0.9] * 9)
+    mask = np.zeros((8, 8), bool)
+    mask[3, 3] = True
+    e, _ = check_particles.bulk_estimate(p, 1.0, mask, 1, 20, 8, 8, False)
+    assert e["K"] == 0 and e["Klowocc"] == 0 and e["Kblowocc"] > 0.68
+    assert e["K"] - e["Kb_own"] < 0                                   # negative selected energy
+    assert abs(e["Klowocc"] - e["Kblowocc"]) <= max(e["Klowocc"], e["Kblowocc"])
+
+
+def test_a03b_position_subsampling_selects_a_stream():
+    """Codex's witness: two streams (beta_x = +-0.8) at dx1 = 1/4 and 3/4 in one
+    masked cell: the full-sample eps-tilde is 2/3, the dx1 < 1/2 subsample sees
+    one stream and gives ~0 (-100%), at any occupancy: the change measures the
+    phase-space selection, not a finite-sample bias."""
+    for n in (100, 1000):
+        h = n // 2
+        p = _parts([3] * n, [3] * n, [0.25] * h + [0.75] * h, [0.8] * h + [-0.8] * h)
+        mask = np.zeros((8, 8), bool)
+        mask[3, 3] = True
+        full, _ = check_particles.bulk_estimate(p, 1.0, mask, 1, 20, 8, 8, False)
+        half, _ = check_particles.bulk_estimate(p, 1.0, mask, 1, 20, 8, 8, False, half=True)
+        e_full = (full["K"] - full["Kb_own"]) / n
+        e_half = (full["K"] - half["Kb_own_half"]) / n
+        assert abs(e_full - 2 / 3) < 1e-9 and abs(e_half) < 1e-9

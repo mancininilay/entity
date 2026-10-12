@@ -24,6 +24,15 @@ recmix v2: char[8] "P13RMX02" | int64 step | float64 time | uint64 run_id |
 cvbudget record (float64): step, time, segment_start, run_id (0 before format 3),
          per species (Ncv, Icv, inE, outE, inN, outN), U_EM, int(Poynting) dt,
          int(field-side current work) dt (format 2+)
+vdump (validation only, setup.validation_dump; one file per rank,
+         vdump.<label>.r<rank>.bin): char[8] "P13VDP01" | int64 label | float64 time |
+         uint64 run_id | int32 rank, nspec, sizeof(dx), sizeof(real), off1, off2, n1, n2,
+         domain index, number of ranks |
+         per species: int64 n | int32 has_ids, 0 | int32 i1[n], i2[n] (global cells) |
+         dx dx1[n], dx2[n] | real ux1[n], ux2[n], ux3[n], w[n] | uint64 cv[n] |
+         (has_ids) uint64 idx[n], dom[n]. The exact particle state of the post-step
+         (cell index and float offset), unlike the rounded positions X = i + dx of
+         Entity's particle output (Codex A0-2).
 midline v2: char[8] "P13MID02" | int64 step | float64 time | uint64 run_id |
          int32 N1, nrows, ncomp, j_first | float32 rows[nrows][ncomp][N1] |
          float32 E3_node[N1] | float32 B2_node[N1]   (v1 "P13MID01": no run_id)
@@ -163,6 +172,86 @@ def read_all_recmix(usr_dir: str) -> tuple[dict, list[RecmixOutput]]:
         if prov.valid(o.run_id, o.step):
             outs.append(o)
     return meta, outs
+
+
+def list_vdump_labels(usr_dir: str) -> list[int]:
+    labs = set()
+    for p in glob.glob(os.path.join(usr_dir, "vdump.*.r*.bin")):
+        m = re.search(r"vdump\.(\d+)\.r\d+\.bin$", os.path.basename(p))
+        if m:
+            labs.add(int(m.group(1)))
+    return sorted(labs)
+
+
+def read_vdump(usr_dir: str, label: int, check_provenance: bool = True) -> dict:
+    """Exact particle state at a user-output label, all ranks concatenated.
+    Refuses an incomplete set (number of files against the ranks recorded in
+    every header, and the rank tiles against the global grid of the meta).
+    Returns {"label", "time", "run_id", "ranks": [{rank, dom, off1, off2, n1, n2}],
+    "species": {s: {"i1", "i2" (int64 global cells), "dx1", "dx2" (float32),
+    "u1", "u2", "u3", "w" (float32), "cv", "idx", "dom" (uint64), "rank" (int)}}}.
+    Raises if the files disagree on run_id, or (check_provenance) if the label
+    belongs to an abandoned future (IC3 rule)."""
+    paths = sorted(glob.glob(os.path.join(usr_dir, f"vdump.{label:08d}.r*.bin")))
+    if not paths:
+        raise FileNotFoundError(f"no vdump files for label {label} in {usr_dir}")
+    out = {"label": label, "ranks": [], "species": {}}
+    parts = {s: [] for s in range(1, NSPEC + 1)}
+    rid = None
+    for p in paths:
+        b = open(p, "rb").read()
+        if b[:8] != b"P13VDP01":
+            raise ValueError(f"{p}: not a P13VDP01 file")
+        lab, tm, run_id = np.frombuffer(b, "<i8", 1, 8)[0], np.frombuffer(b, "<f8", 1, 16)[0], \
+            int(np.frombuffer(b, "<u8", 1, 24)[0])
+        hdr = np.frombuffer(b, "<i4", 10, 32)
+        rank, nsp, sdx, sre, o1, o2, n1, n2, dom, nranks = (int(x) for x in hdr)
+        if nranks != len(paths):
+            raise ValueError(f"{p}: {nranks} ranks recorded, {len(paths)} files found (incomplete dump)")
+        if lab != label or nsp != NSPEC:
+            raise ValueError(f"{p}: label {lab} or nspec {nsp} unexpected")
+        if rid is None:
+            rid, out["time"], out["run_id"] = run_id, float(tm), run_id
+        elif run_id != rid:
+            raise ValueError(f"{p}: run_id {run_id} differs from {rid} (mixed writers)")
+        out["ranks"].append({"rank": rank, "dom": dom, "off1": o1, "off2": o2, "n1": n1, "n2": n2})
+        fdx = {4: "<f4", 8: "<f8"}[sdx]
+        fre = {4: "<f4", 8: "<f8"}[sre]
+        pos = 72
+        for s in range(1, NSPEC + 1):
+            n = int(np.frombuffer(b, "<i8", 1, pos)[0])
+            has = int(np.frombuffer(b, "<i4", 1, pos + 8)[0])
+            pos += 16
+            d = {}
+            for k, dt, sz in (("i1", "<i4", 4), ("i2", "<i4", 4), ("dx1", fdx, sdx), ("dx2", fdx, sdx),
+                              ("u1", fre, sre), ("u2", fre, sre), ("u3", fre, sre), ("w", fre, sre),
+                              ("cv", "<u8", 8)):
+                d[k] = np.frombuffer(b, dt, n, pos).copy()
+                pos += n * sz
+            if has:
+                for k in ("idx", "dom"):
+                    d[k] = np.frombuffer(b, "<u8", n, pos).copy()
+                    pos += n * 8
+            d["rank"] = np.full(n, rank, dtype=np.int64)
+            d["dom_now"] = np.full(n, dom, dtype=np.int64)
+            parts[s].append(d)
+        if pos != len(b):
+            raise ValueError(f"{p}: {len(b) - pos} trailing bytes")
+    try:
+        d = read_meta(usr_dir)["derived"]
+        area = sum(rk["n1"] * rk["n2"] for rk in out["ranks"])
+        if area != d["N1"] * d["N2"] or len({rk["rank"] for rk in out["ranks"]}) != len(paths):
+            raise ValueError(f"label {label}: rank tiles cover {area} of {d['N1'] * d['N2']} cells")
+    except FileNotFoundError:
+        pass
+    if check_provenance and not provenance(usr_dir).valid(rid, label):
+        raise ValueError(f"label {label} in {usr_dir} is not valid under the restart provenance")
+    for s, lst in parts.items():
+        keys = set().union(*[x.keys() for x in lst])
+        out["species"][s] = {k: np.concatenate([x[k] for x in lst if k in x]) for k in keys}
+        for k in ("i1", "i2"):
+            out["species"][s][k] = out["species"][s][k].astype(np.int64)
+    return out
 
 
 def read_cvbudget(usr_dir: str, nspec: int = NSPEC, meta: dict | None = None) -> dict:

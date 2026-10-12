@@ -14,6 +14,15 @@
  * Coordinate map (P1.3 D29): (x1, x2, x3) = (y_T, x_T, -z_T); x1 = outflow,
  * x2 = inflow, sheet at x2 = y0. Grid must have unit cells: extent = ncells.
  *
+ * Normalization (P13-D39): setup.sigma_hot, dup_cells and theta_up are the
+ * hot p1.1 labels; sigma0 = sigma_hot (D + 5T/2), skindepth0 = d_up sqrt(F),
+ * or the literal saved Tristan inputs (setup.sigma_input, c_omp) after a check.
+ *
+ * Test geometries (setup.geometry, setup.field_test): "closed_box" (doubly
+ * periodic, two sheets at N2/4 and 3N2/4 with opposite currents, no injector,
+ * padding or opening; CV = whole box: C1.14 closed-box drift); "pulse_x2",
+ * "pulse_x1" (vacuum pulses towards the inflow or outflow walls: C1.5).
+ *
  * CustomPostStep order (P1.3 tech spec II.2):
  *   (1) open the x1 boundaries at t >= t_open (also after a restart);
  *   (2) injector (11-cell average, Poisson/ceiling rounding, capacity guard,
@@ -25,8 +34,10 @@
  *   (6) full-resolution midplane rows.
  *
  * Outputs in <simulation.name>/usr/ (formats documented in README.md):
- *   recmix.meta.json, recmix.<step>.bin, cvbudget.bin, midline.<step>.bin
- * Custom field outputs: "mixing" (M) and "mask" (0/1).
+ *   recmix.meta.json, recmix.<step>.bin, cvbudget.bin, midline.<step>.bin,
+ *   segments.jsonl, fields_manifest.jsonl, and with setup.validation_dump the
+ *   exact particle state vdump.<step>.r<rank>.bin
+ * Custom field outputs: "mixing" (M), "mask" (0/1), "count_<s>".
  *
  * [fork:P1.3/C1] Author: Claude (2026-10-04). Reviewer: Codex (A3).
  */
@@ -55,6 +66,7 @@
   #include <mpi.h>
 #endif
 
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -142,50 +154,117 @@ namespace user {
     /* ------------------------------------------------------------------ */
     /* Field functors (2D, D29 map)                                       */
     /* ------------------------------------------------------------------ */
+    // Initial fields. open: one sheet at y0, B_x1 = tanh((x2 - y0)/a).
+    // closed (C1.14 closed box): two sheets at y1 = N2/4 and y2 = 3 N2/4 in a
+    // doubly periodic box, B_x1 = tanh((x2 - y1)/a) - tanh((x2 - y2)/a) - 1.
+    // bg scales the background (0 for the C1.5 vacuum tests). pulse: 0 none;
+    // 1 two plane pulses along x2 (E_x3, B_x1), centred at c_lo (moving to -x2,
+    // B_x1 = -E_x3) and c_hi (moving to +x2, B_x1 = +E_x3); 2 the same along x1
+    // (E_x3, B_x2) centred at c_lo (moving to -x1, B_x2 = +E_x3) and c_hi (+x1,
+    // B_x2 = -E_x3). Gaussian profile amp exp(-(x - c)^2/(2 w^2)), uniform in
+    // the other direction: an exact vacuum plane wave up to the Yee dispersion.
     template <Dimension D>
     struct InitFields {
-      InitFields(real_t a, real_t y0, real_t bguide)
+      InitFields(real_t a,
+                 real_t y0,
+                 real_t bguide,
+                 real_t bg     = ONE,
+                 bool   closed = false,
+                 real_t y1     = ZERO,
+                 real_t y2     = ZERO,
+                 int    pulse  = 0,
+                 real_t c_lo   = ZERO,
+                 real_t c_hi   = ZERO,
+                 real_t pw     = ONE,
+                 real_t pamp   = ZERO)
         : a { a }
         , y0 { y0 }
-        , bguide { bguide } {}
+        , bguide { bguide }
+        , bg { bg }
+        , closed { closed }
+        , y1 { y1 }
+        , y2 { y2 }
+        , pulse { pulse }
+        , c_lo { c_lo }
+        , c_hi { c_hi }
+        , pw { pw }
+        , pamp { pamp } {}
+
+      Inline auto g(real_t x, real_t c) const -> real_t {
+        return pamp * math::exp(-HALF * SQR((x - c) / pw));
+      }
 
       Inline auto bx1(const coord_t<D>& x_Ph) const -> real_t {
-        return math::tanh((x_Ph[1] - y0) / a);
+        real_t b = closed ? (math::tanh((x_Ph[1] - y1) / a) -
+                             math::tanh((x_Ph[1] - y2) / a) - ONE)
+                          : math::tanh((x_Ph[1] - y0) / a);
+        b *= bg;
+        if (pulse == 1) {
+          b += g(x_Ph[1], c_hi) - g(x_Ph[1], c_lo);
+        }
+        return b;
+      }
+
+      Inline auto bx2(const coord_t<D>& x_Ph) const -> real_t {
+        return (pulse == 2) ? (g(x_Ph[0], c_lo) - g(x_Ph[0], c_hi)) : ZERO;
       }
 
       Inline auto bx3(const coord_t<D>&) const -> real_t {
-        return -bguide; // D29: B_x3 = -B_z,T
+        return -bguide * bg; // D29: B_x3 = -B_z,T
+      }
+
+      Inline auto ex3(const coord_t<D>& x_Ph) const -> real_t {
+        if (pulse == 1) {
+          return g(x_Ph[1], c_lo) + g(x_Ph[1], c_hi);
+        }
+        if (pulse == 2) {
+          return g(x_Ph[0], c_lo) + g(x_Ph[0], c_hi);
+        }
+        return ZERO;
       }
 
     private:
-      real_t a, y0, bguide; // non-const: re-assigned in the PGen constructor
+      // non-const: re-assigned in the PGen constructor
+      real_t a, y0, bguide, bg;
+      bool   closed;
+      real_t y1, y2;
+      int    pulse;
+      real_t c_lo, c_hi, pw, pamp;
     };
 
     // outflow (x1) walls, used after t_open: reconnected targets (I.3, D29)
+    // (bg scales the targets: 0 for the C1.5 vacuum tests; the MATCH update
+    // F <- s F + (1 - s) F_target is linear in F - F_target, kernels/fields_bcs.hpp)
     template <Dimension D>
     struct BoundaryFieldsInX1 {
-      BoundaryFieldsInX1(real_t a, real_t x0, real_t y0, real_t bguide, real_t beta_rec)
+      BoundaryFieldsInX1(real_t a,
+                         real_t x0,
+                         real_t y0,
+                         real_t bguide,
+                         real_t beta_rec,
+                         real_t bg = ONE)
         : a { a }
         , x0 { x0 }
         , y0 { y0 }
         , bguide { bguide }
-        , beta_rec { beta_rec } {}
+        , beta_rec { beta_rec }
+        , bg { bg } {}
 
       Inline auto bx1(const coord_t<D>& x_Ph) const -> real_t {
-        return math::tanh((x_Ph[1] - y0) / a);
+        return bg * math::tanh((x_Ph[1] - y0) / a);
       }
 
       Inline auto bx2(const coord_t<D>& x_Ph) const -> real_t {
-        return beta_rec * math::tanh((x_Ph[0] - x0) / a);
+        return bg * beta_rec * math::tanh((x_Ph[0] - x0) / a);
       }
 
       Inline auto bx3(const coord_t<D>&) const -> real_t {
-        return -bguide;
+        return -bg * bguide;
       }
 
       // E.B = 0 upstream with E_x3 = -beta_rec, B_x3 = -bguide
       Inline auto ex1(const coord_t<D>& x_Ph) const -> real_t {
-        return -beta_rec * bguide * math::tanh((x_Ph[1] - y0) / a);
+        return -bg * beta_rec * bguide * math::tanh((x_Ph[1] - y0) / a);
       }
 
       Inline auto ex2(const coord_t<D>&) const -> real_t {
@@ -193,23 +272,24 @@ namespace user {
       }
 
       Inline auto ex3(const coord_t<D>&) const -> real_t {
-        return -beta_rec; // D29: E_x3 = -E_z,T
+        return -bg * beta_rec; // D29: E_x3 = -E_z,T
       }
 
     private:
-      const real_t a, x0, y0, bguide, beta_rec;
+      const real_t a, x0, y0, bguide, beta_rec, bg;
     };
 
     // inflow (x2) walls: initial field, E -> 0
     template <Dimension D>
     struct BoundaryFieldsInX2 {
-      BoundaryFieldsInX2(real_t a, real_t y0, real_t bguide)
+      BoundaryFieldsInX2(real_t a, real_t y0, real_t bguide, real_t bg = ONE)
         : a { a }
         , y0 { y0 }
-        , bguide { bguide } {}
+        , bguide { bguide }
+        , bg { bg } {}
 
       Inline auto bx1(const coord_t<D>& x_Ph) const -> real_t {
-        return math::tanh((x_Ph[1] - y0) / a);
+        return bg * math::tanh((x_Ph[1] - y0) / a);
       }
 
       Inline auto bx2(const coord_t<D>&) const -> real_t {
@@ -217,7 +297,7 @@ namespace user {
       }
 
       Inline auto bx3(const coord_t<D>&) const -> real_t {
-        return -bguide;
+        return -bg * bguide;
       }
 
       Inline auto ex1(const coord_t<D>&) const -> real_t {
@@ -233,7 +313,7 @@ namespace user {
       }
 
     private:
-      const real_t a, y0, bguide;
+      const real_t a, y0, bguide, bg;
     };
 
     /* ------------------------------------------------------------------ */
@@ -494,7 +574,8 @@ namespace user {
         KLOWOCC_W1,     // KLOWOCC with window 1
         KBLOWOCC_W1,    // KBLOWOCC with window 1
         KB_OWN_HALF,    // Kb_own with the box means from the particles with dx1 < 1/2 only
-                        // (about half), weighted by the full cell counts: thinning test (RV1b)
+                        // (about half), weighted by the full cell counts: position-
+                        // subsampling sensitivity (RV1b; dx1 can correlate with velocity, A0-3b)
         NMOM
       };
 
@@ -686,7 +767,18 @@ namespace user {
     /* --- inputs ------------------------------------------------------- */
     std::string         layout, sheet_init;
     bool                active { true };
-    double              sigma { 0 }, q { 0 }, mu { 1 };
+    // P13-D39: nominal hot labels; optional literal Tristan inputs
+    double              sigma_hot { 0 }, q { 0 }, mu { 1 };
+    double              ref_sigma_rtol { 1e-4 }, ref_comp_atol { 0.01 };
+    std::string         norm_mode { "nominal" }, norm_label;
+    // test geometries: closed box (C1.14 drift), vacuum pulse tests (C1.5)
+    std::string         geometry { "open" }, field_test { "none" };
+    bool                closed { false };
+    int                 ftest { 0 }; // 0 none, 1 pulse_x2, 2 pulse_x1
+    double              pulse_w { 5 }, pulse_off { 0 }, pulse_amp { 0.1 };
+    bool                load_plasma { true };
+    double              bg_field { 1 };
+    bool                vdump { false }; // exact particle-state dump (A0-2, C1.12)
     std::vector<double> test_masses, test_temperatures;
     double              dup_cells { 5 }, theta_up { 0.01 }, eta { 3 };
     double              a_cells { 400 }, dip_width { 5 }, sheet_extent { 10 };
@@ -709,6 +801,9 @@ namespace user {
     int    N1 { 0 }, N2 { 0 };
     double x0 { 0 }, y0 { 0 };
     double Dmass { 1 }, sigma0 { 0 }, skindepth0 { 0 }, larmor0 { 0 };
+    double Hfac { 1 }, Fskin { 1 }, sigma_input_nom { 0 }, c_omp_nom { 0 };
+    double y1 { 0 }, y2 { 0 }, yline { 0 }; // closed-box sheets; midline row centre
+    bool   cv_whole { false };              // control volume = whole (periodic) box
     double ppc0 { 0 }, dt { 0 };
     double beta_d { 0 }, u_d { 0 }, T_cs { 0 }, t_open { 0 };
     double w_in { 0 }, w_out { 0 };
@@ -813,7 +908,33 @@ namespace user {
                      HERE);
       active = (layout == "active");
 
-      sigma        = getReal("sigma", 0.0);
+      raise::ErrorIf(has("sigma"),
+                     "rec_mix: setup.sigma is no longer accepted (P13-D39): the p1.1 labels "
+                     "are hot magnetizations. Give sigma_hot (and optionally the literal "
+                     "Tristan inputs sigma_input, c_omp); see make_input.py",
+                     HERE);
+      sigma_hot    = getReal("sigma_hot", 0.0);
+      ref_sigma_rtol = getReal("ref_sigma_rtol", 1e-4);
+      ref_comp_atol  = getReal("ref_comp_atol", 0.01);
+      norm_label     = getStr("normalization_label", "");
+      geometry       = getStr("geometry", "open");
+      field_test     = getStr("field_test", "none");
+      raise::ErrorIf(geometry != "open" and geometry != "closed_box",
+                     "rec_mix: setup.geometry must be \"open\" or \"closed_box\"",
+                     HERE);
+      raise::ErrorIf(field_test != "none" and field_test != "pulse_x2" and
+                       field_test != "pulse_x1",
+                     "rec_mix: setup.field_test must be \"none\", \"pulse_x2\" or \"pulse_x1\"",
+                     HERE);
+      closed = (geometry == "closed_box");
+      ftest  = (field_test == "pulse_x2") ? 1 : ((field_test == "pulse_x1") ? 2 : 0);
+      raise::ErrorIf(closed and ftest != 0,
+                     "rec_mix: closed_box and field_test are exclusive",
+                     HERE);
+      pulse_w   = getReal("pulse_width", 5.0);
+      pulse_amp = getReal("pulse_amp", 0.1);
+      vdump     = has("validation_dump") ? params.template get<bool>("setup.validation_dump")
+                                         : false;
       q            = active ? getReal("q", 0.0) : 0.0;
       mu           = active ? getReal("mu", 1.0) : 1.0;
       dup_cells    = getReal("dup_cells", 5.0);
@@ -847,7 +968,14 @@ namespace user {
       load_tracers   = has("load_tracers") ? params.template get<bool>("setup.load_tracers")
                                            : true;
 
-      raise::ErrorIf(sigma <= 0.0, "rec_mix: setup.sigma must be > 0", HERE);
+      raise::ErrorIf(sigma_hot <= 0.0, "rec_mix: setup.sigma_hot must be > 0", HERE);
+      if (closed or ftest != 0) {
+        inject_on = false; // test layouts: no injector
+      }
+      if (ftest != 0) {
+        load_plasma = false; // vacuum pulse test: no particles, zero background
+        bg_field    = 0.0;
+      }
       raise::ErrorIf(active and (q < 0.0 or q > 1.0),
                      "rec_mix: setup.q must be in [0, 1]",
                      HERE);
@@ -882,6 +1010,11 @@ namespace user {
       raise::ErrorIf(N2 % 2 != 0, "rec_mix: N2 must be even", HERE);
       x0 = 0.5 * N1;
       y0 = 0.5 * N2;
+      y1 = 0.25 * N2;
+      y2 = 0.75 * N2;
+      yline = closed ? y1 : y0;
+      raise::ErrorIf(closed and N2 % 4 != 0, "rec_mix: closed_box needs N2 % 4 == 0", HERE);
+      pulse_off = getReal("pulse_offset", 0.25 * ((ftest == 2) ? N1 : N2));
 
       /* algorithms ---------------------------------------------------------- */
       nfilter = static_cast<int>(
@@ -895,15 +1028,55 @@ namespace user {
       dt   = static_cast<double>(params.template get<real_t>("algorithms.timestep.dt"));
       ppc0 = static_cast<double>(params.template get<real_t>("particles.ppc0"));
 
-      /* units (tech spec III.1) --------------------------------------------- */
-      if (active) {
-        Dmass      = (2.0 - q + q * mu) / 2.0;
-        sigma0     = sigma * Dmass;
-        skindepth0 = dup_cells * std::sqrt((2.0 - q + q / mu) / 2.0);
-      } else {
-        Dmass      = 1.0;
-        sigma0     = sigma;
-        skindepth0 = dup_cells;
+      /* units (tech spec III.1, P13-D39) -------------------------------------- */
+      // nominal hot labels: sigma_hot = B^2/(4 pi w), w = n0 me c^2 (D + 5T/2) for a
+      // common physical T = theta_up and Gamma = 5/3; d_up = dup_cells includes the
+      // thermal and ion response with Nilay's factor F. Code inputs (Tristan's
+      // fiducial cold electron-mass sigma, c_omp; n0 = ppc0, all upstream particles):
+      // sigma0 = sigma_hot (D + 5T/2), skindepth0 = d_up sqrt(F). Testprtl: only
+      // the depositing pairs (q = 0, D = 1). Literal inputs (the saved p1.1 values)
+      // are used as given after a check within the saved precision.
+      {
+        const double T  = theta_up;
+        const double th = 1.0 + 1.5 * T;
+        Dmass           = active ? (2.0 - q + q * mu) / 2.0 : 1.0;
+        Hfac            = Dmass + 2.5 * T;
+        Fskin           = active ? ((2.0 - q) / th + q / (mu * th)) / 2.0 : 1.0 / th;
+        sigma_input_nom = sigma_hot * Hfac;
+        c_omp_nom       = dup_cells * std::sqrt(Fskin);
+        const bool ls   = has("sigma_input"), lc = has("c_omp");
+        raise::ErrorIf(ls != lc,
+                       "rec_mix: give both setup.sigma_input and setup.c_omp (literal "
+                       "inputs) or neither",
+                       HERE);
+        if (ls) {
+          norm_mode       = "literal";
+          sigma0          = getReal("sigma_input", 0.0);
+          skindepth0      = getReal("c_omp", 0.0);
+          const double ds = std::abs(sigma0 / sigma_input_nom - 1.0);
+          const double dc = std::abs(skindepth0 - c_omp_nom);
+          raise::ErrorIf(ds > ref_sigma_rtol or dc > ref_comp_atol,
+                         fmt::format("rec_mix: literal inputs sigma_input = %.9g, c_omp = "
+                                     "%.9g disagree with the hot labels (sigma_hot = %.9g, "
+                                     "d_up = %.9g, T = %.9g give %.9g, %.9g): |rel| %.3g "
+                                     "(tol %.3g), |abs| %.3g cells (tol %.3g)",
+                                     sigma0,
+                                     skindepth0,
+                                     sigma_hot,
+                                     dup_cells,
+                                     T,
+                                     sigma_input_nom,
+                                     c_omp_nom,
+                                     ds,
+                                     ref_sigma_rtol,
+                                     dc,
+                                     ref_comp_atol),
+                         HERE);
+        } else {
+          norm_mode  = "nominal";
+          sigma0     = sigma_input_nom;
+          skindepth0 = c_omp_nom;
+        }
       }
       larmor0       = skindepth0 / std::sqrt(sigma0);
       const auto sd = static_cast<double>(params.template get<real_t>("scales.skindepth0"));
@@ -934,11 +1107,26 @@ namespace user {
         // eta n0 T_cs / Gamma_d = B0^2/8pi requires T_cs = sigma0 Gamma_d/(2 eta)
         T_cs = 0.5 * sigma0 * std::sqrt(1.0 + u_d * u_d) / eta;
       }
-      init_flds = recmix::InitFields<D> { static_cast<real_t>(a_cells),
-                                          static_cast<real_t>(y0),
-                                          static_cast<real_t>(b_guide) };
+      {
+        const double cc = (ftest == 2) ? x0 : y0;
+        init_flds = recmix::InitFields<D> { static_cast<real_t>(a_cells),
+                                            static_cast<real_t>(y0),
+                                            static_cast<real_t>(b_guide),
+                                            static_cast<real_t>(bg_field),
+                                            closed,
+                                            static_cast<real_t>(y1),
+                                            static_cast<real_t>(y2),
+                                            ftest,
+                                            static_cast<real_t>(cc - pulse_off),
+                                            static_cast<real_t>(cc + pulse_off),
+                                            static_cast<real_t>(pulse_w),
+                                            static_cast<real_t>(pulse_amp) };
+      }
 
       t_open = has("t_open") ? getReal("t_open", 0.0) : t_open_tlc * N1;
+      if (closed or ftest == 1) {
+        t_open = -1.0; // never opened (closed box; x2 pulse test keeps x1 periodic)
+      }
 
       /* boundaries ---------------------------------------------------------- */
       const auto fbc = params.template get<boundaries_t<FldsBC>>("grid.boundaries.fields");
@@ -950,7 +1138,17 @@ namespace user {
         const bool x1_open = (fbc[0].first == FldsBC::MATCH and fbc[0].second == FldsBC::MATCH and
                               pbc[0].first == PrtlBC::ABSORB and pbc[0].second == PrtlBC::ABSORB);
         const bool x1_per  = (fbc[0].first == FldsBC::PERIODIC and pbc[0].first == PrtlBC::PERIODIC);
-        if (x1_open) {
+        if (closed or ftest == 1) {
+          raise::ErrorIf(not x1_per,
+                         "rec_mix: closed_box and the pulse_x2 test need x1 PERIODIC",
+                         HERE);
+        } else if (ftest == 2) {
+          // x1 pulse test: the outflow walls (MATCH + ABSORB, width w_out) from the
+          // start; Entity registers the MATCH widths only if a wall is MATCH at start
+          raise::ErrorIf(not x1_open, "rec_mix: the pulse_x1 test needs x1 MATCH/ABSORB", HERE);
+          bc_opened = true;
+          t_open    = -1.0;
+        } else if (x1_open) {
           // restart past t_open with the open walls given in the restart input:
           // no step runs with periodic x1 (avoids the one-step transient, K5)
           raise::ErrorIf(not resuming or start_time < t_open,
@@ -970,19 +1168,39 @@ namespace user {
           }
         }
       }
-      raise::ErrorIf(fbc[1].first != FldsBC::MATCH or fbc[1].second != FldsBC::MATCH or
-                       pbc[1].first != PrtlBC::ABSORB or pbc[1].second != PrtlBC::ABSORB,
-                     "rec_mix: x2 must be MATCH (fields) and ABSORB (particles)",
-                     HERE);
-      const auto ds = params.template get<boundaries_t<real_t>>("grid.boundaries.match.ds");
-      w_out = std::max(ds[0].first, ds[0].second);
-      w_in  = std::max(ds[1].first, ds[1].second);
-      if (std::abs(w_out - 2.0 * ds_abs) > 1e-6) {
+      const bool x2_per = (fbc[1].first == FldsBC::PERIODIC and pbc[1].first == PrtlBC::PERIODIC);
+      if (closed or ftest == 2) {
+        raise::ErrorIf(not x2_per,
+                       "rec_mix: closed_box and the pulse_x1 test need x2 PERIODIC",
+                       HERE);
+      } else if (ftest == 1) {
+        // x2 pulse test: MATCH, or CONDUCTOR as a reflecting control
+        raise::ErrorIf(not((fbc[1].first == FldsBC::MATCH and fbc[1].second == FldsBC::MATCH) or
+                           (fbc[1].first == FldsBC::CONDUCTOR and
+                            fbc[1].second == FldsBC::CONDUCTOR)),
+                       "rec_mix: the pulse_x2 test needs x2 MATCH (or CONDUCTOR, control)",
+                       HERE);
+      } else {
+        raise::ErrorIf(fbc[1].first != FldsBC::MATCH or fbc[1].second != FldsBC::MATCH or
+                         pbc[1].first != PrtlBC::ABSORB or pbc[1].second != PrtlBC::ABSORB,
+                       "rec_mix: x2 must be MATCH (fields) and ABSORB (particles)",
+                       HERE);
+      }
+      const bool any_match = (fbc[0].first == FldsBC::MATCH or fbc[0].second == FldsBC::MATCH or
+                              fbc[1].first == FldsBC::MATCH or fbc[1].second == FldsBC::MATCH);
+      if (closed or (ftest != 0 and not any_match)) {
+        w_out = w_in = 0.0; // no absorbing layers (Entity registers ds only with a MATCH wall)
+      } else {
+        const auto ds = params.template get<boundaries_t<real_t>>("grid.boundaries.match.ds");
+        w_out = std::max(ds[0].first, ds[0].second);
+        w_in  = std::max(ds[1].first, ds[1].second);
+      }
+      if (not closed and std::abs(w_out - 2.0 * ds_abs) > 1e-6) {
         info(fmt::format("WARNING: match ds in x1 = %g differs from 2*ds_abs = %d (III.4)",
                          w_out,
                          2 * ds_abs));
       }
-      if (std::abs(w_in - 1.5 * (padding - nfilter)) > 1e-6) {
+      if (not closed and std::abs(w_in - 1.5 * (padding - nfilter)) > 1e-6) {
         info(fmt::format("WARNING: match ds in x2 = %g differs from "
                          "1.5*(padding - nfilter) = %g (III.4)",
                          w_in,
@@ -990,10 +1208,22 @@ namespace user {
       }
 
       /* control volume (III.13) ---------------------------------------------- */
-      cv1a = static_cast<int>(std::ceil(w_out)) + cv_margin;
-      cv1b = N1 - static_cast<int>(std::ceil(w_out)) - cv_margin;
-      cv2a = padding + 1 + cv_margin;
-      cv2b = N2 - padding - 1 - cv_margin;
+      cv_whole = closed or (ftest != 0);
+      if (cv_whole) {
+        // test layouts: the whole box. Closed box (periodic): no surface, no
+        // crossings, the records are the global energy budget. Field tests: the
+        // CV only avoids an empty box; their records are not a budget (the
+        // walls absorb, and no flux is integrated)
+        cv1a = 0;
+        cv1b = N1;
+        cv2a = 0;
+        cv2b = N2;
+      } else {
+        cv1a = static_cast<int>(std::ceil(w_out)) + cv_margin;
+        cv1b = N1 - static_cast<int>(std::ceil(w_out)) - cv_margin;
+        cv2a = padding + 1 + cv_margin;
+        cv2b = N2 - padding - 1 - cv_margin;
+      }
       raise::ErrorIf(cv1b <= cv1a or cv2b <= cv2a, "rec_mix: empty control volume", HERE);
 
       /* species -------------------------------------------------------------- */
@@ -1129,13 +1359,16 @@ namespace user {
     /* ------------------------------------------------------------------ */
     void Report() const {
       std::ostringstream o;
-      o << "layout = " << layout << ", sheet_init = " << sheet_init << "\n"
-        << "  sigma = " << sigma << ", q = " << q << ", mu = " << mu
-        << ", D = rho/(n0 me) = " << Dmass << "\n"
-        << "  sigma0 = sigma_e* = " << sigma0 << ", skindepth0 = " << skindepth0
-        << ", larmor0 = " << larmor0 << ", d_up = " << dup_cells << " cells\n"
-        << "  d_e = " << dup_cells * std::sqrt(1.0 + (active ? q / (mu * (2.0 - q)) : 0.0))
-        << " cells, ppc0 = " << ppc0 << ", dt = " << dt << "\n"
+      o << "layout = " << layout << ", sheet_init = " << sheet_init << ", geometry = "
+        << geometry << ", field_test = " << field_test << "\n"
+        << "  P13-D39 (" << norm_mode << (norm_label.empty() ? "" : ", " + norm_label)
+        << "): sigma_hot = " << sigma_hot << ", T = " << theta_up << ", d_up = " << dup_cells
+        << " cells, q = " << q << ", mu = " << mu << "\n"
+        << "  D = rho/(n0 me) = " << Dmass << ", D + 5T/2 = " << Hfac << ", F = " << Fskin
+        << "; nominal sigma_input = " << sigma_input_nom << ", c_omp = " << c_omp_nom << "\n"
+        << "  sigma0 = sigma_input = " << sigma0 << ", skindepth0 = c_omp = " << skindepth0
+        << ", larmor0 = " << larmor0 << "\n"
+        << "  ppc0 = " << ppc0 << ", dt = " << dt << "\n"
         << "  sheet: a = " << a_cells << ", eta = " << eta << ", beta_d = " << beta_d
         << ", T_cs = " << T_cs << " me c^2 (" << sheet_init << ")\n"
         << "  N1 x N2 = " << N1 << " x " << N2 << ", t_lc = " << N1
@@ -1184,14 +1417,14 @@ namespace user {
       std::ofstream f(usr_dir / "recmix.meta.json");
       f.precision(12);
       f << "{\n";
-      f << "  \"format_version\": 3,\n";
+      f << "  \"format_version\": 4,\n"; // 4: P13-D39 inputs.sigma_hot, normalization, geometry
       f << "  \"run_id\": " << run_id << ",\n";
 #if defined(ENTITY_GIT_HASH)
       f << "  \"entity_git_hash\": \"" << ENTITY_GIT_HASH << "\",\n";
 #endif
       f << "  \"layout\": \"" << layout << "\",\n";
       f << "  \"sheet_init\": \"" << sheet_init << "\",\n";
-      f << "  \"inputs\": {\"sigma\": " << sigma << ", \"q\": " << q << ", \"mu\": " << mu
+      f << "  \"inputs\": {\"sigma_hot\": " << sigma_hot << ", \"q\": " << q << ", \"mu\": " << mu
         << ", \"dup_cells\": " << dup_cells << ", \"theta_up\": " << theta_up
         << ", \"cs_overdensity\": " << eta << ", \"cs_width\": " << a_cells
         << ", \"dip_width\": " << dip_width << ", \"b_guide\": " << b_guide
@@ -1254,18 +1487,60 @@ namespace user {
         << ", \"Klowocc\": \"masked kinetic energy of the particles in under-occupied boxes\""
         << ", \"Kblowocc\": \"Kb_own assigned to those particles\""
         << ", \"Kb_own_half\": \"Kb_own with box means from the particles with dx1 < 1/2, "
-           "weighted by the full cell counts (thinning test)\"},\n";
+           "weighted by the full cell counts (position-subsampling sensitivity; the in-cell "
+           "position can correlate with velocity, so not a pure finite-sample test)\""
+        << ", \"Klowocc_Kblowocc\": \"|Klowocc - Kblowocc| <= max(Klowocc, Kblowocc) bounds "
+           "the recorded low-occupancy contribution, not its error against a physical random "
+           "energy (box velocity assigned to the central-cell particles)\"},\n";
       f << "  \"cv\": {\"x1\": [" << cv1a << ", " << cv1b << "], \"x2\": [" << cv2a << ", "
         << cv2b << "], \"record_doubles\": " << 4 + 6 * 9 + 3
         << ", \"record_layout\": \"step, time, segment_start, run_id, 9 x (Ncv, Icv, inE, outE, "
            "inN, outN), U_EM, int Poynting out dt, int field-side current work dt\""
         << ", \"payload_int_slot\": " << cv_slot_cfg << "},\n";
-      f << "  \"midline\": {\"rows_first\": " << static_cast<int>(y0) - line_halfwidth
+      f << "  \"midline\": {\"rows_first\": " << static_cast<int>(yline) - line_halfwidth
         << ", \"nrows\": " << 2 * line_halfwidth
         << ", \"components\": [\"E1\", \"E2\", \"E3\", \"B1\", \"B2\", \"B3\"], "
            "\"location\": \"cell centres (same interpolation as the field output)\", "
            "\"node_line\": {\"j\": "
-        << static_cast<int>(y0) << ", \"E3\": \"nodes (i, j0)\", \"B2\": \"(i+1/2, j0)\"}}\n";
+        << static_cast<int>(yline) << ", \"E3\": \"nodes (i, j0)\", \"B2\": \"(i+1/2, j0)\"}},\n";
+      {
+        // P13-D39 normalization and its provenance (tech spec III.1)
+        const double T   = theta_up;
+        const double th  = 1.0 + 1.5 * T;
+        const double Fc  = active ? ((2.0 - q) / th + q / (mu + 1.5 * T)) / 2.0 : 1.0 / th;
+        const double lep = active ? 1.0 + q / (mu * (2.0 - q)) : 1.0;
+        const double due = skindepth0 / std::sqrt(Fskin);
+        f << "  \"normalization\": {\"convention\": \"P13-D39 hot labels: sigma_input = "
+             "sigma_hot (D + 5T/2), c_omp = d_up sqrt(F), F = [(2-q)/(1+3T/2) + "
+             "q/(mu (1+3T/2))]/2 (testprtl: q = 0); sigma0 = sigma_input, skindepth0 = c_omp\""
+          << ", \"mode\": \"" << norm_mode << "\", \"label\": \"" << norm_label << "\""
+          << ", \"sigma_hot\": " << sigma_hot << ", \"T\": " << T
+          << ", \"dup_cells_nominal\": " << dup_cells << ", \"D\": " << Dmass
+          << ", \"enthalpy_factor\": " << Hfac << ", \"F\": " << Fskin
+          << ", \"sigma_input_nominal\": " << sigma_input_nom
+          << ", \"c_omp_nominal\": " << c_omp_nom << ", \"sigma_input\": " << sigma0
+          << ", \"c_omp\": " << skindepth0
+          << ", \"sigma_input_rel_diff\": " << sigma0 / sigma_input_nom - 1.0
+          << ", \"c_omp_abs_diff\": " << skindepth0 - c_omp_nom
+          << ", \"ref_sigma_rtol\": " << ref_sigma_rtol
+          << ", \"ref_comp_atol\": " << ref_comp_atol
+          << ", \"dup_cells_effective\": " << due
+          << ", \"sigma_cold_total\": " << sigma0 / Dmass
+          << ", \"sigma_e_cold_lepton\": " << (active ? 2.0 * sigma0 / (2.0 - q) : sigma0)
+          << ", \"d_e_thermal\": " << due * std::sqrt(lep)
+          << ", \"d_e_cold\": " << skindepth0 * std::sqrt(active ? 2.0 / (2.0 - q) : 1.0)
+          << ", \"F_common_T\": " << Fc
+          << ", \"c_omp_ratio_common_T_documented_not_used\": " << std::sqrt(Fc / Fskin)
+          << "},\n";
+      }
+      f << "  \"geometry\": {\"geometry\": \"" << geometry << "\", \"field_test\": \""
+        << field_test << "\", \"load_plasma\": " << (load_plasma ? "true" : "false")
+        << ", \"inject\": " << (inject_on ? "true" : "false")
+        << ", \"background_scale\": " << bg_field << ", \"y1\": " << y1 << ", \"y2\": " << y2
+        << ", \"yline\": " << yline << ", \"cv_whole_box\": " << (cv_whole ? "true" : "false")
+        << ", \"pulse_width\": " << pulse_w << ", \"pulse_offset\": " << pulse_off
+        << ", \"pulse_amp\": " << pulse_amp << ", \"beta_rec_target\": " << beta_rec
+        << ", \"validation_dump\": " << (vdump ? "true" : "false") << "}\n";
       f << "}\n";
     }
 
@@ -1275,13 +1550,15 @@ namespace user {
                                              static_cast<real_t>(x0),
                                              static_cast<real_t>(y0),
                                              static_cast<real_t>(b_guide),
-                                             static_cast<real_t>(beta_rec) };
+                                             static_cast<real_t>(beta_rec),
+                                             static_cast<real_t>(bg_field) };
     }
 
     auto MatchFieldsInX2(simtime_t) const -> recmix::BoundaryFieldsInX2<D> {
       return recmix::BoundaryFieldsInX2<D> { static_cast<real_t>(a_cells),
                                              static_cast<real_t>(y0),
-                                             static_cast<real_t>(b_guide) };
+                                             static_cast<real_t>(b_guide),
+                                             static_cast<real_t>(bg_field) };
     }
 
     /* ------------------------------------------------------------------ */
@@ -1323,7 +1600,8 @@ namespace user {
                    double         uA3,
                    double         uB3,
                    bool           sheet_profile,
-                   std::mt19937_64& rng) -> std::size_t {
+                   std::mt19937_64& rng,
+                   double         ysheet = -1.0) -> std::size_t {
       const auto off1 = static_cast<double>(dom.offset_ncells()[0]);
       const auto off2 = static_cast<double>(dom.offset_ncells()[1]);
       const auto n1   = static_cast<double>(dom.mesh.n_active(in::x1));
@@ -1377,7 +1655,7 @@ namespace user {
         sheet_profile,
         static_cast<real_t>(a_cells),
         static_cast<real_t>(x0),
-        static_cast<real_t>(y0),
+        static_cast<real_t>((ysheet >= 0.0) ? ysheet : y0), // sheet (and dip) centre
         static_cast<real_t>(SQR(dip_width * a_cells)),
         static_cast<real_t>(off1),
         static_cast<real_t>(off2),
@@ -1470,11 +1748,25 @@ namespace user {
 
     /* ------------------------------------------------------------------ */
     void InitPrtls(Domain<S, M>& dom) {
+      if (not load_plasma) { // C1.5 vacuum pulse tests
+        info("load: no plasma (field test)");
+        return;
+      }
       auto rng = host_rng(dom, 0xFFFFFFFFULL, 0);
       const double nup = 0.5 * ppc0;
-      for (int side = 0; side < 2; ++side) {
-        const double X2a = (side == 0) ? 0.0 : y0;
-        const double X2b = (side == 0) ? y0 : static_cast<double>(N2);
+      // upstream bands: open box, lower side [0, y0) and upper side [y0, N2);
+      // closed box, lower side [0, y1) and [y2, N2), upper side [y1, y2), so
+      // that each sheet separates the two sides (mixing mask)
+      std::vector<std::array<double, 3>> bands; // {side, X2a, X2b}
+      if (closed) {
+        bands = { { 0.0, 0.0, y1 }, { 1.0, y1, y2 }, { 0.0, y2, static_cast<double>(N2) } };
+      } else {
+        bands = { { 0.0, 0.0, y0 }, { 1.0, y0, static_cast<double>(N2) } };
+      }
+      for (const auto& bd : bands) {
+        const int    side = static_cast<int>(bd[0]);
+        const double X2a  = bd[1];
+        const double X2b  = bd[2];
         const int    se  = (side == 0) ? 4 : 7; // e-
         const int    sp  = se + 1;              // e+
         const int    si  = se + 2;              // ion
@@ -1492,33 +1784,45 @@ namespace user {
                     0.0, false, rng);
         }
       }
-      // current sheet: species 1, 2 (and 3 if active); u_x3 = -sgn(Q) u_d (D29)
+      // current sheet: species 1, 2 (and 3 if active); u_x3 = -sgn(Q) u_d (D29).
+      // Closed box: the sheet at y2 carries the opposite current (+x3), each
+      // sheet loaded within N2/4 of its centre.
       if (eta > 0.0) {
         const double ncs = nup * eta;
-        const double X2a = std::max(0.0, y0 - sheet_extent * a_cells);
-        const double X2b = std::min(static_cast<double>(N2), y0 + sheet_extent * a_cells);
         const auto&  spp = metadomain.species_params();
         const auto   th  = [&](int s) {
           return T_cs / static_cast<double>(spp[s - 1].mass());
         };
-        const auto drift = [&](int s) {
-          return -static_cast<double>(spp[s - 1].charge() > 0 ? 1 : -1) * u_d;
-        };
-        if ((not active) or q < 1.0) {
-          InjectBox(dom, 1, 2, ncs * (active ? (1.0 - q) : 1.0), 0.0, N1, X2a, X2b,
-                    th(1), th(2), drift(1), drift(2), true, rng);
+        std::vector<std::array<double, 2>> sheets; // {centre, current sign}
+        if (closed) {
+          sheets = { { y1, 1.0 }, { y2, -1.0 } };
+        } else {
+          sheets = { { y0, 1.0 } };
         }
-        if (active and q > 0.0) {
-          InjectBox(dom, 1, 3, ncs * q, 0.0, N1, X2a, X2b, th(1), th(3), drift(1),
-                    drift(3), true, rng);
+        for (const auto& sh : sheets) {
+          const double yc  = sh[0];
+          const double ext = closed ? 0.25 * N2 : sheet_extent * a_cells;
+          const double X2a = std::max(0.0, yc - ext);
+          const double X2b = std::min(static_cast<double>(N2), yc + ext);
+          const auto drift = [&](int s) {
+            return -sh[1] * static_cast<double>(spp[s - 1].charge() > 0 ? 1 : -1) * u_d;
+          };
+          if ((not active) or q < 1.0) {
+            InjectBox(dom, 1, 2, ncs * (active ? (1.0 - q) : 1.0), 0.0, N1, X2a, X2b,
+                      th(1), th(2), drift(1), drift(2), true, rng, yc);
+          }
+          if (active and q > 0.0) {
+            InjectBox(dom, 1, 3, ncs * q, 0.0, N1, X2a, X2b, th(1), th(3), drift(1),
+                      drift(3), true, rng, yc);
+          }
         }
       }
       // passive tracers last, so that the depositing species draw the same
       // random numbers with or without tracers (test C0.4)
       if ((not active) and load_tracers) {
-        for (int side = 0; side < 2; ++side) {
-          const double X2a = (side == 0) ? 0.0 : y0;
-          const double X2b = (side == 0) ? y0 : static_cast<double>(N2);
+        for (const auto& bd : bands) {
+          const double X2a = bd[1];
+          const double X2b = bd[2];
           for (int k = 0; k < 3; ++k) {
             InjectBox(dom, 3 * (k + 1), -1, nup, 0.0, N1, X2a, X2b,
                       test_temperatures[k] / test_masses[k], 0.0, 0.0, 0.0, false, rng);
@@ -1653,9 +1957,13 @@ namespace user {
       if (sp.npart() == 0) {
         return res;
       }
-      const real_t off1 = static_cast<real_t>(dom.offset_ncells()[0]);
-      const real_t off2 = static_cast<real_t>(dom.offset_ncells()[1]);
-      const real_t a1 = cv1a, b1 = cv1b, a2 = cv2a, b2 = cv2b;
+      // membership from the integer cell (the CV faces are cell faces): exact,
+      // unlike float(i) + dx, which rounds up to the next face when 1 - dx is
+      // below half an ulp of X (~3.8e-6 at X ~ 100; the A0-2 ambiguity, seen
+      // as a spurious exit in the closed box)
+      const int    off1 = static_cast<int>(dom.offset_ncells()[0]);
+      const int    off2 = static_cast<int>(dom.offset_ncells()[1]);
+      const int    a1 = cv1a, b1 = cv1b, a2 = cv2a, b2 = cv2b;
       const double mass = sp.mass();
 #if defined(MPI_ENABLED)
       const int ntrk = sp.use_tracking() ? 2 : 0;
@@ -1666,8 +1974,6 @@ namespace user {
                                           : static_cast<int>(sp.npld_i()) - 1;
       auto i1 = sp.i1;
       auto i2 = sp.i2;
-      auto dx1 = sp.dx1;
-      auto dx2 = sp.dx2;
       auto ux1 = sp.ux1;
       auto ux2 = sp.ux2;
       auto ux3 = sp.ux3;
@@ -1683,9 +1989,8 @@ namespace user {
           if (tag(p) != ParticleTag::alive) {
             return;
           }
-          const real_t X1 = static_cast<real_t>(i1(p)) + off1 + static_cast<real_t>(dx1(p));
-          const real_t X2 = static_cast<real_t>(i2(p)) + off2 + static_cast<real_t>(dx2(p));
-          const bool   in_now = (X1 >= a1) and (X1 < b1) and (X2 >= a2) and (X2 < b2);
+          const int    I1 = i1(p) + off1, I2 = i2(p) + off2;
+          const bool   in_now = (I1 >= a1) and (I1 < b1) and (I2 >= a2) and (I2 < b2);
           const double u1 = ux1(p), u2 = ux2(p), u3 = ux3(p);
           const double usq = u1 * u1 + u2 * u2 + u3 * u3;
           const double e   = w(p) * mass * usq / (math::sqrt(1.0 + usq) + 1.0);
@@ -1729,11 +2034,16 @@ namespace user {
       const int la1 = std::max(cv1a, off1) - off1, lb1 = std::min(cv1b, off1 + n1) - off1;
       const int la2 = std::max(cv2a, off2) - off2, lb2 = std::min(cv2b, off2 + n2) - off2;
       double    U { 0.0 }, F { 0.0 }, WJ { 0.0 };
-      // cells (inclusive of the far face nodes) owned by this domain
-      const int ca1 = std::max(cv1a, off1) - off1, cb1 = std::min(cv1b + 1, off1 + n1) - off1;
-      const int ca2 = std::max(cv2a, off2) - off2, cb2 = std::min(cv2b + 1, off2 + n2) - off2;
+      // cells (inclusive of the far face nodes) owned by this domain; whole
+      // periodic box: every owned component once, weight 1, no surface
+      const bool whole = cv_whole;
+      const int ca1 = whole ? 0 : std::max(cv1a, off1) - off1;
+      const int cb1 = whole ? n1 : std::min(cv1b + 1, off1 + n1) - off1;
+      const int ca2 = whole ? 0 : std::max(cv2a, off2) - off2;
+      const int cb2 = whole ? n2 : std::min(cv2b + 1, off2 + n2) - off2;
       if (cb1 > ca1 and cb2 > ca2) {
-        const int    A1 = cv1a - off1, B1 = cv1b - off1, A2 = cv2a - off2, B2 = cv2b - off2;
+        const int A1 = whole ? -2 : cv1a - off1, B1 = whole ? n1 + 2 : cv1b - off1;
+        const int A2 = whole ? -2 : cv2a - off2, B2 = whole ? n2 + 2 : cv2b - off2;
         const auto   CUR  = dom.fields.cur;
         const double dtd  = static_cast<double>(dt);
         const double cJ   = -static_cast<double>(dt) *
@@ -1778,6 +2088,9 @@ namespace user {
           },
           U,
           WJ);
+      }
+      if (whole) {
+        return { U, F, WJ };
       }
       // x1 faces (node lines I = cv1a, cv1b), segments j in [cv2a, cv2b)
       for (int side = 0; side < 2; ++side) {
@@ -1933,7 +2246,9 @@ namespace user {
     /* --- bulk-velocity deposits into bckp ----------------------------------- */
     // comps [c0, c0+4): sum w*wt, sum w*wt*beta_1..3 for the given species
     // c0..c0+3: sum w, sum w beta; cq: sum w |beta|^2; ck: sum w (gamma - 1);
-    // half: only particles with dx1 < 1/2 (a velocity-independent subsample, RV1b)
+    // half: only particles with dx1 < 1/2 (a subsample by in-cell position; it is
+    // not guaranteed velocity-independent, since dx1 and velocity can correlate in
+    // the evolved plasma: Codex A0-3b)
     void DepositBulk(Domain<S, M>& dom, const std::vector<int>& specs, bool mass_weighted, int c0,
                      int cq = -1, int ck = -1, bool half = false) {
       auto buf = dom.fields.bckp;
@@ -2026,8 +2341,132 @@ namespace user {
       return { res(0), res(1), res(2), res(3), res(4) };
     }
 
+    /* --- exact particle-state dump (validation only; A0-2, C1.12) ----------- */
+    // Per rank, usr/vdump.<label>.r<rank>.bin: magic "P13VDP01", int64 label,
+    // double time, uint64 run_id, int32 {rank, nspecies, sizeof(prtldx_t),
+    // sizeof(real_t), off1, off2, n1, n2, domain index, number of ranks};
+    // per species: int64 n_alive, int32
+    // has_ids, int32 0, then int32 i1g[n], i2g[n] (global cell = local + offset),
+    // prtldx_t dx1[n], dx2[n], real_t ux1[n], ux2[n], ux3[n], w[n], uint64 cv[n]
+    // (the control-volume flag), and if has_ids uint64 idx[n], dom[n] (Entity
+    // tracking: species counter at creation, creating domain; 0 without MPI).
+    // The state is the one the moment kernels of the same post-step use, so the
+    // cell index and the offset dx1 (the dx1 < 1/2 subsample) are exact; the
+    // rounded output position X = i + dx cannot provide them (Codex A0-2).
+    void ValidationDump(const Domain<S, M>& dom, timestep_t step, simtime_t time) const {
+      const int  rank  = recmix::mpi_rank();
+      const auto fname = usr_dir / fmt::format("vdump.%08lu.r%05d.bin",
+                                               (unsigned long)(step + 1),
+                                               rank);
+      std::ofstream f(fname, std::ios::binary);
+      raise::ErrorIf(not f.good(), "rec_mix: cannot open " + fname.string(), HERE);
+      const char    magic[8] = { 'P', '1', '3', 'V', 'D', 'P', '0', '1' };
+      f.write(magic, 8);
+      const std::int64_t  st  = static_cast<std::int64_t>(step + 1);
+      const double        tm  = static_cast<double>(time) + dt;
+      const std::uint64_t rid = run_id;
+      int                 nranks = 1;
+#if defined(MPI_ENABLED)
+      MPI_Comm_size(MPI_COMM_WORLD, &nranks);
+#endif
+      const std::int32_t  hdr[10] = { rank,
+                                     9,
+                                     static_cast<std::int32_t>(sizeof(prtldx_t)),
+                                     static_cast<std::int32_t>(sizeof(real_t)),
+                                     static_cast<std::int32_t>(dom.offset_ncells()[0]),
+                                     static_cast<std::int32_t>(dom.offset_ncells()[1]),
+                                     static_cast<std::int32_t>(dom.mesh.n_active(in::x1)),
+                                     static_cast<std::int32_t>(dom.mesh.n_active(in::x2)),
+                                     static_cast<std::int32_t>(dom.index()),
+                                     static_cast<std::int32_t>(nranks) };
+      f.write(reinterpret_cast<const char*>(&st), 8);
+      f.write(reinterpret_cast<const char*>(&tm), 8);
+      f.write(reinterpret_cast<const char*>(&rid), 8);
+      f.write(reinterpret_cast<const char*>(hdr), sizeof(hdr));
+      const auto o1 = static_cast<std::int32_t>(dom.offset_ncells()[0]);
+      const auto o2 = static_cast<std::int32_t>(dom.offset_ncells()[1]);
+      for (auto s = 0u; s < 9; ++s) {
+        const auto& sp = dom.species[s];
+        const auto  np = sp.npart();
+#if defined(MPI_ENABLED)
+        const int ntrk = sp.use_tracking() ? 2 : 0;
+#else
+        const int ntrk = sp.use_tracking() ? 1 : 0;
+#endif
+        const int slot = (cv_slot_cfg >= 0) ? ntrk + cv_slot_cfg
+                                            : static_cast<int>(sp.npld_i()) - 1;
+        std::vector<std::int32_t>  i1v, i2v;
+        std::vector<prtldx_t>      d1v, d2v;
+        std::vector<real_t>        u1v, u2v, u3v, wv;
+        std::vector<std::uint64_t> cvv, idv, dmv;
+        if (np > 0) {
+          const auto rng = std::make_pair(static_cast<std::size_t>(0),
+                                          static_cast<std::size_t>(np));
+          auto h_i1  = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), Kokkos::subview(sp.i1, rng));
+          auto h_i2  = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), Kokkos::subview(sp.i2, rng));
+          auto h_d1  = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), Kokkos::subview(sp.dx1, rng));
+          auto h_d2  = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), Kokkos::subview(sp.dx2, rng));
+          auto h_u1  = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), Kokkos::subview(sp.ux1, rng));
+          auto h_u2  = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), Kokkos::subview(sp.ux2, rng));
+          auto h_u3  = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), Kokkos::subview(sp.ux3, rng));
+          auto h_w   = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), Kokkos::subview(sp.weight, rng));
+          auto h_tag = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), Kokkos::subview(sp.tag, rng));
+          auto h_pld = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(),
+                                                           Kokkos::subview(sp.pld_i, rng, Kokkos::ALL));
+          for (std::size_t p = 0; p < static_cast<std::size_t>(np); ++p) {
+            if (h_tag(p) != ParticleTag::alive) {
+              continue;
+            }
+            i1v.push_back(h_i1(p) + o1);
+            i2v.push_back(h_i2(p) + o2);
+            d1v.push_back(h_d1(p));
+            d2v.push_back(h_d2(p));
+            u1v.push_back(h_u1(p));
+            u2v.push_back(h_u2(p));
+            u3v.push_back(h_u3(p));
+            wv.push_back(h_w(p));
+            cvv.push_back(static_cast<std::uint64_t>(h_pld(p, slot)));
+            if (sp.use_tracking()) {
+              idv.push_back(static_cast<std::uint64_t>(h_pld(p, pldi::spcCtr)));
+#if defined(MPI_ENABLED)
+              dmv.push_back(static_cast<std::uint64_t>(h_pld(p, pldi::domIdx)));
+#else
+              dmv.push_back(0);
+#endif
+            }
+          }
+        }
+        const std::int64_t n   = static_cast<std::int64_t>(i1v.size());
+        const std::int32_t ids[2] = { sp.use_tracking() ? 1 : 0, 0 };
+        f.write(reinterpret_cast<const char*>(&n), 8);
+        f.write(reinterpret_cast<const char*>(ids), 8);
+        const auto put = [&](const auto& v) {
+          if (not v.empty()) {
+            f.write(reinterpret_cast<const char*>(v.data()), v.size() * sizeof(v[0]));
+          }
+        };
+        put(i1v);
+        put(i2v);
+        put(d1v);
+        put(d2v);
+        put(u1v);
+        put(u2v);
+        put(u3v);
+        put(wv);
+        put(cvv);
+        if (sp.use_tracking()) {
+          put(idv);
+          put(dmv);
+        }
+      }
+      raise::ErrorIf(not f.good(), "rec_mix: write error in " + fname.string(), HERE);
+    }
+
     /* --- masked output ------------------------------------------------------ */
     void MaskedOutput(Domain<S, M>& dom, timestep_t step, simtime_t time) {
+      if (vdump) {
+        ValidationDump(dom, step, time);
+      }
       ComputeMixing(dom);
       const int NM = recmix::mom::NMOM;
       std::vector<double> hist(9 * spec_num, 0.0), moms(9 * NM, 0.0);
@@ -2108,9 +2547,10 @@ namespace user {
         moms[s * NM + recmix::mom::NLOWOCC_W1]  = r1[2];
         moms[s * NM + recmix::mom::KLOWOCC_W1]  = m * r1[3];
         moms[s * NM + recmix::mom::KBLOWOCC_W1] = m * r1[4];
-        // thinning test: box means from the subsample dx1 < 1/2, applied with the
-        // full cell counts (comp 5); a change against Kb_own measures the
-        // finite-sample dependence of the estimator on the actual distribution
+        // position-subsampling sensitivity: box means from the subsample dx1 < 1/2,
+        // applied with the full cell counts (comp 5); a change against Kb_own
+        // reflects the finite-sample dependence of the estimator and any
+        // correlation of dx1 with velocity (A0-3b), so it is not a bias bound
         Kokkos::deep_copy(dom.fields.bckp, ZERO);
         DepositBulk(dom, { sp1 }, false, 0, 4, -1, true);
         metadomain.CommunicateBckp(dom, { 0, 5 });
@@ -2167,7 +2607,7 @@ namespace user {
     /* --- midplane rows (D31) ------------------------------------------------- */
     void MidlineOutput(const Domain<S, M>& dom, timestep_t step, simtime_t time) const {
       const int nrows = 2 * line_halfwidth;
-      const int jfst  = static_cast<int>(y0) - line_halfwidth;
+      const int jfst  = static_cast<int>(yline) - line_halfwidth;
       const int off1  = static_cast<int>(dom.offset_ncells()[0]);
       const int off2  = static_cast<int>(dom.offset_ncells()[1]);
       const int n1    = static_cast<int>(dom.mesh.n_active(in::x1));
@@ -2195,7 +2635,7 @@ namespace user {
             rows(r, 5, i) = EM(I, J, em::bx3);
           });
       }
-      const int  j0       = static_cast<int>(y0);
+      const int  j0       = static_cast<int>(yline);
       const bool has_node = (j0 >= off2 and j0 < off2 + n2);
       if (has_node) {
         const int J = j0 - off2 + G;
@@ -2259,7 +2699,9 @@ namespace user {
       if (inject_on) {
         Inject(dom, step);
       }
-      Padding(dom);
+      if (not closed) {
+        Padding(dom);
+      }
       // (4) control-volume budget
       const bool usr_now = (step % static_cast<timestep_t>(usr_interval) == 0);
       if ((not cv_started) or (step % static_cast<timestep_t>(cv_interval) == 0) or usr_now) {

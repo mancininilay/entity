@@ -28,18 +28,30 @@ def _mass(meta, s):
     return float(meta["species"][s - 1]["mass"])
 
 
-# Bulk-corrected energies: what the status means (Codex IC5, RV1; v1.5).
+# Bulk-corrected energies: what the status means (Codex IC5, RV1, A0-3; v1.6).
 #
-# The status is an OCCUPANCY SCREEN, not an accuracy certificate.
+# eps-tilde with the own-species bulk is a SECONDARY, UNVALIDATED diagnostic
+# (P13-D36): f_i, eps, spectra and the CV work do not depend on it. Its status
+# is an OCCUPANCY SCREEN (decided thresholds, P13-D36), not an accuracy
+# certificate.
 # "occupancy_ok" means: at most MAX_LOWOCC of the population's masked particles
 # sit in own-species boxes with fewer than nmin (meta bulk.nmin, default 20)
-# particles, AND (format 3 with Klowocc) the energy those boxes can carry into
-# eps-tilde, max(Klowocc, Kblowocc), is at most MAX_LOWOCC of K - Kb_own. The
-# second condition bounds the contribution of under-occupied boxes (their true
-# random energy lies in [0, Klowocc], the reported one in
-# [Klowocc - Kblowocc, Klowocc]); a number fraction alone does not (Codex RV1a:
-# 1% of the particles can carry 91% of the random energy). Outputs without
-# Klowocc are screened on the number fraction only ("occupancy_ok_number_only").
+# particles, AND (format 3 with Klowocc) max(Klowocc, Kblowocc) is at most
+# MAX_LOWOCC of K - Kb_own. Klowocc is the masked kinetic energy of the
+# particles in under-occupied boxes and Kblowocc the bulk energy the estimator
+# assigns to them; both are >= 0, so the recorded low-occupancy contribution
+# Klowocc - Kblowocc satisfies |Klowocc - Kblowocc| <= max(Klowocc, Kblowocc):
+# the ratio bounds the MAGNITUDE OF THAT RECORDED CONTRIBUTION, which makes it a
+# conservative contribution screen. It is NOT a bound on its error against the
+# physical random energy of those particles: the box velocity is averaged over
+# the whole (2w + 1)^2 box and assigned to the masked central-cell particles, and
+# Jensen's inequality over the box says nothing about that central subset
+# (Codex A0-3a witness: one stationary masked particle with nine neighbours at
+# beta = 0.9 gives Klowocc = 0, Kblowocc = 0.685, a negative selected random
+# energy). The v1.5 claim "true random energy in [0, Klowocc]" is withdrawn.
+# A number fraction alone does not screen the energy share (Codex RV1a: 1% of
+# the particles can carry 91% of the random energy). Outputs without Klowocc
+# are screened on the number fraction only ("occupancy_ok_number_only").
 # Otherwise the value is NaN with status "low_occupancy"; the unchecked numbers
 # stay under "*_unchecked".
 #
@@ -51,17 +63,23 @@ def _mass(meta, s):
 # distribution-dependent way. The Gaussian calibration in
 # tests/test_safeguards.py (bias <= 1.5% of eps-tilde at n = 20 for drifting
 # Gaussians with beta_b <= 0.5) is a calibration for those flows, not a bound.
-# The empirical check on the actual distribution is the thinning test: format 3
-# outputs carry Kb_own_half (box means from the particles with dx1 < 1/2,
-# about n/2 per box); "epst_<pop>_thinning_change" = (eps-tilde(n/2) -
-# eps-tilde(n))/eps-tilde(n) is reported with every value. A finite-sample bias
-# shows up as a dependence on n; a small change is evidence, not proof, of a
-# small bias (tech spec III.8).
+# Position-subsampling sensitivity (formerly "thinning"): format 3 outputs carry
+# Kb_own_half (box means from the particles with dx1 < 1/2, about n/2 per box,
+# weights from all particles); "epst_<pop>_position_subsampling_change" =
+# (eps-tilde(half) - eps-tilde(n))/eps-tilde(n) is reported with every value
+# (also under its former name "epst_<pop>_thinning_change"). The selection is
+# by in-cell position, and dx1 can be correlated with velocity in the evolved
+# plasma (Codex A0-3b witness: two streams at dx1 = 1/4 and 3/4 give -100% at
+# any occupancy), so a change can reflect sub-cell phase-space structure as
+# well as finite-sample bias; a small change is weak evidence, not a bound, and
+# one split is not an error bar. Phase-space-independent repeated subsampling
+# is an R1 item (P13-D36), not implemented (tech spec III.8).
 #
 # Window sensitivity: eps-tilde measures random motion below the box scale
 # (2w + 1 cells; w = 2, i.e. 5 x 5 cells, is Tristan's smooth_window and the
 # p1.1 convention), so it depends on w; "epst_<pop>_window_change" =
 # (eps-tilde(w) - eps-tilde(1))/eps-tilde(w) is reported, not judged.
+# The legacy Tristan bulk subtraction is not reproduced (P13-D38).
 MAX_LOWOCC = 0.02
 OK = ("occupancy_ok", "occupancy_ok_number_only")
 
@@ -89,14 +107,17 @@ def _bulk_status(out, species, N, max_lowocc, suffix=""):
 
 
 def _thinning(d, out, key, species, K, N):
-    """eps-tilde with the box means from about half of the particles (format 3)."""
+    """eps-tilde with the box means from the particles with dx1 < 1/2 (format 3):
+    position-subsampling sensitivity (A0-3b; see above)."""
     if "Kb_own_half" not in out.names or not N > 0:
         return
     Kbh = sum(out.m("Kb_own_half")[s - 1] for s in species)
     eh = (K - Kbh) / N
     e = d.get(key + "_own_unchecked", np.nan)
     d[key + "_own_half_unchecked"] = eh
-    d[key + "_thinning_change"] = (eh - e) / e if e else np.nan
+    ch = (eh - e) / e if e else np.nan
+    d[key + "_position_subsampling_change"] = ch
+    d[key + "_thinning_change"] = ch  # former name (v1.5)
 
 
 # --------------------------------------------------------------------------
@@ -141,7 +162,8 @@ def active_partition(meta: dict, out, estimator: str = "direct",
             status, frac, efrac = _bulk_status(out, sp, Npop, max_lowocc)
             res[f"epst_{pop}_status"] = status
             res[f"{pop}_low_occupancy_fraction"] = frac
-            res[f"{pop}_low_occupancy_energy_bound"] = efrac
+            res[f"{pop}_low_occupancy_energy_bound"] = efrac  # former name
+            res[f"{pop}_low_occupancy_contribution_ratio"] = efrac  # A0-3a: bounds the recorded contribution
             for tag in ("own", "own_raw"):
                 key = f"epst_{pop}_{tag}"
                 if key in res:
@@ -195,7 +217,8 @@ def passive_partition(meta: dict, out, estimator: str = "direct",
             res[f"epst_e_{t}"] = (Kl - sum(Kb[t][s - 1] for s in lep)) / Nl if Nl > 0 else np.nan
         status, frac, efrac = _bulk_status(out, lep, Nl, max_lowocc)
         res["epst_e_status"], res["e_low_occupancy_fraction"] = status, frac
-        res["e_low_occupancy_energy_bound"] = efrac
+        res["e_low_occupancy_energy_bound"] = efrac  # former name
+        res["e_low_occupancy_contribution_ratio"] = efrac
         res["epst_e_own_unchecked"] = res["epst_e_own"]
         if status not in OK:
             res["epst_e_own"] = np.nan
@@ -218,7 +241,8 @@ def passive_partition(meta: dict, out, estimator: str = "direct",
                 if (Ns > 0 and "Kb_own_raw" in out.names) else np.nan
             status, frac, efrac = _bulk_status(out, [s], Ns, max_lowocc)
             d["epst_status"], d["low_occupancy_fraction"] = status, frac
-            d["low_occupancy_energy_bound"] = efrac
+            d["low_occupancy_energy_bound"] = efrac  # former name
+            d["low_occupancy_contribution_ratio"] = efrac
             for key in ("epst_i_own", "epst_i_own_raw"):
                 d[key + "_unchecked"] = d[key]
                 if status not in OK:
