@@ -4,12 +4,14 @@
 Writes every input with make_input.py (explicit arguments and seeds), runs the
 given binaries, checks the registered tolerances and writes <out>/results.json;
 the inputs and logs stay next to it, one directory per case. Exit status 1 if
-any check fails. Deterministic comparisons use one OpenMP thread.
+any check fails. Deterministic comparisons use one OpenMP thread. Use a new
+--out directory for every campaign: an existing case directory is never
+replaced unless --overwrite is given (it is then recorded as an error).
 
     python3 harness.py --recmix BUILD/src/entity.xc --out DIR
         [--recmix-mpi BUILD_MPI/src/entity.xc] [--mpirun "mpirun -n 4"]
         [--stock-recon STOCK/src/entity.xc --fork-recon FORK/src/entity.xc]
-        [--cases name1,name2,...]
+        [--cases name1,name2,...] [--overwrite]
 
 Builds: rec_mix with output=ON (single precision, CPU); for c04_default and
 c05_seed the stock `reconnection` pgen built from the base commit 887c92d9
@@ -18,7 +20,7 @@ build with mpi=ON (output may be OFF). Cases whose binary is missing are
 recorded as skipped.
 
 Requirements: Python >= 3.10, NumPy, the ADIOS2 Python bindings, mpirun for
-the MPI case. The cases take about 30 minutes on two CPU cores.
+the MPI case. The cases take about 15 minutes on two CPU cores.
 """
 
 from __future__ import annotations
@@ -69,9 +71,15 @@ TOL = {
 
 
 class Case:
+    overwrite = False  # set from --overwrite; by default an existing case directory is kept
+
     def __init__(self, name, out):
         self.name, self.dir = name, os.path.join(out, name)
-        shutil.rmtree(self.dir, ignore_errors=True)
+        if os.path.exists(self.dir):
+            if not Case.overwrite:
+                raise FileExistsError(f"{self.dir} exists; use a new --out directory for each "
+                                      "campaign, or --overwrite")
+            shutil.rmtree(self.dir)
         os.makedirs(self.dir)
         self.metrics, self.checks = {}, []
 
@@ -516,8 +524,9 @@ def case_neutrality(a, out):
             r["global_mean_charge"], TOL["C1.3_global"])
     c.check("C1.3b rms block charge within [0.8, 1.25] of the crossing model",
             TOL["C1.3_rms"][0] <= r["rms_ratio"] <= TOL["C1.3_rms"][1], r["rms_ratio"], TOL["C1.3_rms"])
-    c.check("C1.3b largest block below the Bonferroni bound (alpha = 1e-3)",
-            r["z_max"] <= r["z_bound"], r["z_max"], r["z_bound"])
+    c.check("C1.3b largest block charge below the discrete (Skellam) Bonferroni bound, alpha = 1e-3",
+            r["q_max"] <= r["q_bound"], r["q_max"], r["q_bound"])
+    c.metrics["C1.3b_gaussian_approximation"] = {"z_max": r["z_max"], "z_bound": r["z_bound"]}
     return c
 
 
@@ -672,17 +681,19 @@ def _particles_case(a, out, name, q):
     worst, low_ok, cv_ok = 0.0, True, True
     for s, e in r["species"].items():
         for k, v in e["rel_diff"].items():
-            if k.startswith("Kb"):
+            if k.startswith("K"):  # Kb_own(_raw, _w1, _half), Klowocc, Kblowocc (both windows)
                 worst = max(worst, v)
         low_ok &= all(e["ref"][k] == e["code"][k] for k in e["ref"] if k.startswith("Nlowocc"))
         cv_ok &= (e["Ncv_particles"] == e["Ncv_record"] and
                   abs(e["Icv_particles"] - e["Icv_record"]) <= 1e-9 * max(1.0, abs(e["Icv_record"])))
     c.metrics["C1.16b"] = r
-    c.check("C1.16b Kb_own, Kb_own_raw, Kb_own_w1 from the particle output", worst <= TOL["C1.16b"],
-            worst, TOL["C1.16b"])
+    c.check("C1.16b bulk-energy moments (Kb_own, raw, w1, half; Klowocc, Kblowocc) from the particle output",
+            worst <= TOL["C1.16b"], worst, TOL["C1.16b"])
     c.check("C1.16b Nlowocc (both windows) from the particle output, exact", low_ok)
     c.check("C1.14b CV inventory N_cv, I_cv from the particle output", cv_ok)
     c.metrics["window_scan"] = check_particles.window_scan(sim, 301)
+    c.metrics["thinning_scan"] = check_particles.thinning_scan(sim, 301)
+    c.metrics["occupancy_scan"] = check_particles.occupancy_scan(sim, 301)
     meta, outs = readers.read_all_recmix(os.path.join(sim, "usr"))
     c.metrics["partition_last"] = jsonable(partition.active_partition(meta, outs[-1]))
     return c
@@ -691,18 +702,26 @@ def _particles_case(a, out, name, q):
 def case_particles(a, out):
     c = _particles_case(a, out, "particles", 0.5)
     p = c.metrics["partition_last"]
-    c.check("IC5 dense case: eps-tilde valid for both populations",
-            p["epst_e_status"] == "valid" and p["epst_i_status"] == "valid",
-            [p["epst_e_status"], p["epst_i_status"]])
+    # code behaviour: the status follows the rule from the reported fractions;
+    # the classification of each population is a measured finding, not a check
+    for pop in ("e", "i"):
+        nf, ef = p[f"{pop}_low_occupancy_fraction"], p[f"{pop}_low_occupancy_energy_bound"]
+        expect = "occupancy_ok" if (nf <= partition.MAX_LOWOCC and ef <= partition.MAX_LOWOCC) \
+            else "low_occupancy"
+        c.check(f"RV1 occupancy screen applies its rule ({pop})", p[f"epst_{pop}_status"] == expect,
+                [p[f"epst_{pop}_status"], nf, ef], partition.MAX_LOWOCC)
+    c.metrics["classification"] = {pop: p[f"epst_{pop}_status"] for pop in ("e", "i")}
+    c.metrics["thinning_change_in_code"] = {k: p.get(f"epst_{k}_thinning_change") for k in ("e", "i")}
     return c
 
 
 def case_particles_lowq(a, out):
     c = _particles_case(a, out, "particles_lowq", 0.01)
     p = c.metrics["partition_last"]
-    c.check("IC5 sparse ions (q = 0.01): eps-tilde reported invalid (NaN)",
-            p["epst_i_status"] == "invalid_low_occupancy" and p["epst_i_own"] is None,
-            [p["epst_i_status"], p["i_low_occupancy_fraction"]])
+    c.check("IC5 sparse ions (q = 0.01): eps-tilde fails the occupancy screen (NaN)",
+            p["epst_i_status"] == "low_occupancy" and p["epst_i_own"] is None,
+            [p["epst_i_status"], p["i_low_occupancy_fraction"], p.get("i_low_occupancy_energy_bound")])
+    c.metrics["thinning_change_in_code"] = {k: p.get(f"epst_{k}_thinning_change") for k in ("e", "i")}
     return c
 
 
@@ -806,7 +825,10 @@ def main():
     ap.add_argument("--fork-recon")
     ap.add_argument("--out", required=True)
     ap.add_argument("--cases", default="all")
+    ap.add_argument("--overwrite", action="store_true",
+                    help="replace existing case directories (default: refuse, keep evidence)")
     a = ap.parse_args()
+    Case.overwrite = a.overwrite
     for k in ("recmix", "recmix_mpi", "stock_recon", "fork_recon"):
         if getattr(a, k):
             setattr(a, k, os.path.abspath(getattr(a, k)))

@@ -488,6 +488,13 @@ namespace user {
         NLOWOCC,        // masked N_s in cells whose own-species box has < bulk_nmin particles
         KB_OWN_W1,      // Kb_own with window 1 (3 x 3 box): window sensitivity (IC5)
         NLOWOCC_W1,     // Nlowocc with window 1
+        KLOWOCC,        // masked sum w m (gamma - 1) in cells whose own-species box has
+                        // < bulk_nmin particles (energy share of under-occupied boxes, RV1a)
+        KBLOWOCC,       // Kb_own (corrected) assigned to those cells
+        KLOWOCC_W1,     // KLOWOCC with window 1
+        KBLOWOCC_W1,    // KBLOWOCC with window 1
+        KB_OWN_HALF,    // Kb_own with the box means from the particles with dx1 < 1/2 only
+                        // (about half), weighted by the full cell counts: thinning test (RV1b)
         NMOM
       };
 
@@ -495,7 +502,8 @@ namespace user {
         return { "N",      "K",     "G",      "U1",     "U2",     "U3",
                  "B1",     "B2",    "B3",     "Nunder", "Eunder", "Nover",
                  "Eover",  "Nskip", "Kb_own", "Kb_all", "Ntot",   "Ktot",
-                 "Kb_own_raw", "Nlowocc", "Kb_own_w1", "Nlowocc_w1" };
+                 "Kb_own_raw", "Nlowocc", "Kb_own_w1", "Nlowocc_w1", "Klowocc",
+                 "Kblowocc", "Klowocc_w1", "Kblowocc_w1", "Kb_own_half" };
       }
     } // namespace mom
 
@@ -585,21 +593,26 @@ namespace user {
     struct BulkEnergy_kernel {
       using value_type = double[];
       using size_type  = int;
-      const int              value_count { 3 };
+      const int              value_count { 5 };
       ndfield_t<D, 6>        buf;
       Kokkos::View<real_t**> mix;
       real_t                 thr;
       int                    win, cn, cb, cs, cq;
+      int                    ck { -1 }; // component with sum w (gamma - 1) per cell, or -1
       double                 nmin;
 
+      // v: 0 bulk (corrected), 1 bulk (raw), 2 count, 3 kinetic, 4 bulk (corrected),
+      // the last three over cells whose box holds fewer than nmin particles
       Inline void init(double* v) const {
-        v[0] = v[1] = v[2] = 0.0;
+        v[0] = v[1] = v[2] = v[3] = v[4] = 0.0;
       }
 
       Inline void join(double* d, const double* s) const {
         d[0] += s[0];
         d[1] += s[1];
         d[2] += s[2];
+        d[3] += s[3];
+        d[4] += s[4];
       }
 
       Inline void operator()(int i, int j, double* v) const {
@@ -635,10 +648,15 @@ namespace user {
           bcor            = braw - s2 / n;
           bcor            = (bcor > 0.0) ? bcor : 0.0;
         }
-        v[0] += nc * (1.0 / math::sqrt(1.0 - ((bcor < cap) ? bcor : cap)) - 1.0);
+        const double kbc = nc * (1.0 / math::sqrt(1.0 - ((bcor < cap) ? bcor : cap)) - 1.0);
+        v[0] += kbc;
         v[1] += nc * (1.0 / math::sqrt(1.0 - ((braw < cap) ? braw : cap)) - 1.0);
         if (n < nmin) {
           v[2] += nc;
+          if (ck >= 0) {
+            v[3] += buf(I, J, ck);
+          }
+          v[4] += kbc;
         }
       }
     };
@@ -1232,7 +1250,11 @@ namespace user {
         << bulk_window << ", \"nmin\": " << bulk_nmin
         << ", \"Kb_own_raw\": \"uncorrected |b|^2 (equals the stock V_s estimate)\""
         << ", \"Nlowocc\": \"masked particles in own-species boxes with fewer than nmin particles\""
-        << ", \"Kb_own_w1\": \"Kb_own with window 1 (window sensitivity)\"},\n";
+        << ", \"Kb_own_w1\": \"Kb_own with window 1 (window sensitivity)\""
+        << ", \"Klowocc\": \"masked kinetic energy of the particles in under-occupied boxes\""
+        << ", \"Kblowocc\": \"Kb_own assigned to those particles\""
+        << ", \"Kb_own_half\": \"Kb_own with box means from the particles with dx1 < 1/2, "
+           "weighted by the full cell counts (thinning test)\"},\n";
       f << "  \"cv\": {\"x1\": [" << cv1a << ", " << cv1b << "], \"x2\": [" << cv2a << ", "
         << cv2b << "], \"record_doubles\": " << 4 + 6 * 9 + 3
         << ", \"record_layout\": \"step, time, segment_start, run_id, 9 x (Ncv, Icv, inE, outE, "
@@ -1910,8 +1932,10 @@ namespace user {
 
     /* --- bulk-velocity deposits into bckp ----------------------------------- */
     // comps [c0, c0+4): sum w*wt, sum w*wt*beta_1..3 for the given species
+    // c0..c0+3: sum w, sum w beta; cq: sum w |beta|^2; ck: sum w (gamma - 1);
+    // half: only particles with dx1 < 1/2 (a velocity-independent subsample, RV1b)
     void DepositBulk(Domain<S, M>& dom, const std::vector<int>& specs, bool mass_weighted, int c0,
-                     int cq = -1) {
+                     int cq = -1, int ck = -1, bool half = false) {
       auto buf = dom.fields.bckp;
       const int G = static_cast<int>(N_GHOSTS);
       for (const auto s : specs) {
@@ -1927,6 +1951,7 @@ namespace user {
         const auto   ux3 = sp.ux3;
         const auto   w   = sp.weight;
         const auto   tag = sp.tag;
+        const auto   dx1 = sp.dx1;
         Kokkos::parallel_for(
           "rec_mix::DepositBulk",
           sp.rangeActiveParticles(),
@@ -1934,7 +1959,11 @@ namespace user {
             if (tag(p) != ParticleTag::alive) {
               return;
             }
-            const real_t ig = ONE / math::sqrt(ONE + SQR(ux1(p)) + SQR(ux2(p)) + SQR(ux3(p)));
+            if (half and not(dx1(p) < HALF)) {
+              return;
+            }
+            const real_t usq = SQR(ux1(p)) + SQR(ux2(p)) + SQR(ux3(p));
+            const real_t ig  = ONE / math::sqrt(ONE + usq);
             const real_t c  = w(p) * wt;
             const int    I  = i1(p) + G, J = i2(p) + G;
             Kokkos::atomic_add(&buf(I, J, c0), c);
@@ -1942,8 +1971,11 @@ namespace user {
             Kokkos::atomic_add(&buf(I, J, c0 + 2), c * ux2(p) * ig);
             Kokkos::atomic_add(&buf(I, J, c0 + 3), c * ux3(p) * ig);
             if (cq >= 0) {
-              Kokkos::atomic_add(&buf(I, J, cq),
-                                 c * (SQR(ux1(p)) + SQR(ux2(p)) + SQR(ux3(p))) * SQR(ig));
+              Kokkos::atomic_add(&buf(I, J, cq), c * usq * SQR(ig));
+            }
+            if (ck >= 0) {
+              // gamma - 1 = u^2/(1 + gamma), without cancellation
+              Kokkos::atomic_add(&buf(I, J, ck), w(p) * usq / (ONE + math::sqrt(ONE + usq)));
             }
           });
       }
@@ -1971,7 +2003,7 @@ namespace user {
         });
     }
 
-    auto BulkSum(Domain<S, M>& dom, int cn, int cb, int cs, int cq, int win) const
+    auto BulkSum(Domain<S, M>& dom, int cn, int cb, int cs, int cq, int win, int ck = -1) const
       -> std::vector<double> {
       const auto n1 = static_cast<int>(dom.mesh.n_active(in::x1));
       const auto n2 = static_cast<int>(dom.mesh.n_active(in::x2));
@@ -1984,13 +2016,14 @@ namespace user {
       kern.cb   = cb;
       kern.cs   = cs;
       kern.cq   = cq;
+      kern.ck   = ck;
       kern.nmin = static_cast<double>(bulk_nmin);
-      Kokkos::View<double*, Kokkos::HostSpace> res("rec_mix::bulk", 3);
+      Kokkos::View<double*, Kokkos::HostSpace> res("rec_mix::bulk", 5);
       Kokkos::parallel_reduce("rec_mix::BulkEnergy",
                               Kokkos::MDRangePolicy<Kokkos::Rank<2>>({ 0, 0 }, { n1, n2 }),
                               kern,
                               res);
-      return { res(0), res(1), res(2) };
+      return { res(0), res(1), res(2), res(3), res(4) };
     }
 
     /* --- masked output ------------------------------------------------------ */
@@ -2056,19 +2089,33 @@ namespace user {
         moms[s * NM + recmix::mom::KTOT] = res(recmix::mom::KTOT);
       }
       // bulk-corrected energies (SM S2, P13-D32): own-species mean 3-velocity;
-      // bckp comps 0: n, 1-3: sum beta, 4: sum |beta|^2 (halo-filled)
+      // bckp comps 0: n, 1-3: sum beta, 4: sum |beta|^2 (halo-filled),
+      // 5: sum (gamma - 1) in the own cell (energy share of under-occupied boxes)
       for (auto s = 0u; s < 9; ++s) {
+        const int    sp1 = static_cast<int>(s + 1);
+        const double m   = dom.species[s].mass();
         Kokkos::deep_copy(dom.fields.bckp, ZERO);
-        DepositBulk(dom, { static_cast<int>(s + 1) }, false, 0, 4);
+        DepositBulk(dom, { sp1 }, false, 0, 4, 5);
         metadomain.CommunicateBckp(dom, { 0, 5 });
-        const auto r  = BulkSum(dom, 0, 1, 0, 4, bulk_window);
-        const auto r1 = BulkSum(dom, 0, 1, 0, 4, 1);
-        const double m = dom.species[s].mass();
-        moms[s * NM + recmix::mom::KB_OWN]     = m * r[0];
-        moms[s * NM + recmix::mom::KB_OWN_RAW] = m * r[1];
-        moms[s * NM + recmix::mom::NLOWOCC]    = r[2];
-        moms[s * NM + recmix::mom::KB_OWN_W1]  = m * r1[0];
-        moms[s * NM + recmix::mom::NLOWOCC_W1] = r1[2];
+        const auto r  = BulkSum(dom, 0, 1, 0, 4, bulk_window, 5);
+        const auto r1 = BulkSum(dom, 0, 1, 0, 4, 1, 5);
+        moms[s * NM + recmix::mom::KB_OWN]      = m * r[0];
+        moms[s * NM + recmix::mom::KB_OWN_RAW]  = m * r[1];
+        moms[s * NM + recmix::mom::NLOWOCC]     = r[2];
+        moms[s * NM + recmix::mom::KLOWOCC]     = m * r[3];
+        moms[s * NM + recmix::mom::KBLOWOCC]    = m * r[4];
+        moms[s * NM + recmix::mom::KB_OWN_W1]   = m * r1[0];
+        moms[s * NM + recmix::mom::NLOWOCC_W1]  = r1[2];
+        moms[s * NM + recmix::mom::KLOWOCC_W1]  = m * r1[3];
+        moms[s * NM + recmix::mom::KBLOWOCC_W1] = m * r1[4];
+        // thinning test: box means from the subsample dx1 < 1/2, applied with the
+        // full cell counts (comp 5); a change against Kb_own measures the
+        // finite-sample dependence of the estimator on the actual distribution
+        Kokkos::deep_copy(dom.fields.bckp, ZERO);
+        DepositBulk(dom, { sp1 }, false, 0, 4, -1, true);
+        metadomain.CommunicateBckp(dom, { 0, 5 });
+        DepositCount(dom, sp1, 5);
+        moms[s * NM + recmix::mom::KB_OWN_HALF] = m * BulkSum(dom, 0, 1, 5, 4, bulk_window)[0];
       }
       // ... and the mass-weighted velocity of all depositing species (Tristan
       // velx, helpers.F90 computeFluidVelocity); comps 0-3 mass-weighted sums,

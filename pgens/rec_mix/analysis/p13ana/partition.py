@@ -28,31 +28,75 @@ def _mass(meta, s):
     return float(meta["species"][s - 1]["mass"])
 
 
-# Validity of the bulk-corrected energies (Codex IC5). The box-mean bulk
-# velocity of n particles biases |b|^2 by tr Cov(beta)/n; rec_mix subtracts the
-# sample variance (unbiased for n >= 2) but clipping and the nonlinear Lorentz
-# factor leave a residual bias, measured in tests/test_safeguards.py
-# (test_ic5_estimator_bias_bound): at n >= 20 the bias of the bulk energy is
-# <= 1.2% of eps-tilde (asserted < 1.5%), at n = 1 it is 100%. A population's eps-tilde is therefore reported only if the fraction of
-# its masked particles in boxes with n < nmin (meta bulk.nmin, default 20) is
-# at most MAX_LOWOCC; the bound on the bias is then ~ MAX_LOWOCC + 1.2%.
-# Otherwise the value is NaN with status "invalid_low_occupancy"; the
-# unchecked numbers stay available under "*_unchecked" for diagnosis only.
+# Bulk-corrected energies: what the status means (Codex IC5, RV1; v1.5).
 #
-# Window sensitivity (IC5): eps-tilde is a scale-dependent quantity (random
-# motion below the box scale), not a converged one. Format 3 outputs also carry
-# Kb_own at window 1; "epst_<pop>_window_change" = (eps-tilde(w) -
-# eps-tilde(1))/eps-tilde(w) is reported with every value, not judged.
+# The status is an OCCUPANCY SCREEN, not an accuracy certificate.
+# "occupancy_ok" means: at most MAX_LOWOCC of the population's masked particles
+# sit in own-species boxes with fewer than nmin (meta bulk.nmin, default 20)
+# particles, AND (format 3 with Klowocc) the energy those boxes can carry into
+# eps-tilde, max(Klowocc, Kblowocc), is at most MAX_LOWOCC of K - Kb_own. The
+# second condition bounds the contribution of under-occupied boxes (their true
+# random energy lies in [0, Klowocc], the reported one in
+# [Klowocc - Kblowocc, Klowocc]); a number fraction alone does not (Codex RV1a:
+# 1% of the particles can carry 91% of the random energy). Outputs without
+# Klowocc are screened on the number fraction only ("occupancy_ok_number_only").
+# Otherwise the value is NaN with status "low_occupancy"; the unchecked numbers
+# stay under "*_unchecked".
+#
+# Not covered by any screen: the finite-sample bias of the estimator in
+# well-occupied boxes. The variance correction makes |b|^2 unbiased before
+# clipping, but gamma(|b|^2) is nonlinear, steeply so as |b| -> 1, and rare
+# high-leverage particles (Codex RV1b: a 1% counter-stream at beta = 0.99 gives
+# a 69% underestimate with 20 particles per box) bias it in a
+# distribution-dependent way. The Gaussian calibration in
+# tests/test_safeguards.py (bias <= 1.5% of eps-tilde at n = 20 for drifting
+# Gaussians with beta_b <= 0.5) is a calibration for those flows, not a bound.
+# The empirical check on the actual distribution is the thinning test: format 3
+# outputs carry Kb_own_half (box means from the particles with dx1 < 1/2,
+# about n/2 per box); "epst_<pop>_thinning_change" = (eps-tilde(n/2) -
+# eps-tilde(n))/eps-tilde(n) is reported with every value. A finite-sample bias
+# shows up as a dependence on n; a small change is evidence, not proof, of a
+# small bias (tech spec III.8).
+#
+# Window sensitivity: eps-tilde measures random motion below the box scale
+# (2w + 1 cells; w = 2, i.e. 5 x 5 cells, is Tristan's smooth_window and the
+# p1.1 convention), so it depends on w; "epst_<pop>_window_change" =
+# (eps-tilde(w) - eps-tilde(1))/eps-tilde(w) is reported, not judged.
 MAX_LOWOCC = 0.02
+OK = ("occupancy_ok", "occupancy_ok_number_only")
 
 
-def _bulk_status(out, species, N, max_lowocc, col="Nlowocc"):
-    if col not in out.names:
-        return "unknown_occupancy", np.nan
-    lo = sum(out.m(col)[s - 1] for s in species)
+def _bulk_status(out, species, N, max_lowocc, suffix=""):
+    """Occupancy screen of a population (list of species): status, number
+    fraction in under-occupied boxes, energy bound fraction (NaN if not output)."""
+    ncol = "Nlowocc" + suffix
+    if ncol not in out.names:
+        return "unknown_occupancy", np.nan, np.nan
+    lo = sum(out.m(ncol)[s - 1] for s in species)
     frac = lo / N if N > 0 else np.nan
-    return ("valid" if (np.isfinite(frac) and frac <= max_lowocc) else
-            "invalid_low_occupancy"), frac
+    efrac = np.nan
+    if "Klowocc" + suffix in out.names:
+        K = sum(out.m("K")[s - 1] for s in species)
+        Kb = sum(out.m("Kb_own" + suffix)[s - 1] for s in species)
+        Klo = sum(out.m("Klowocc" + suffix)[s - 1] for s in species)
+        Kblo = sum(out.m("Kblowocc" + suffix)[s - 1] for s in species)
+        efrac = max(Klo, Kblo) / (K - Kb) if K - Kb > 0 else (0.0 if max(Klo, Kblo) == 0 else np.inf)
+    if not (np.isfinite(frac) and frac <= max_lowocc):
+        return "low_occupancy", frac, efrac
+    if np.isnan(efrac):
+        return "occupancy_ok_number_only", frac, efrac
+    return ("occupancy_ok" if efrac <= max_lowocc else "low_occupancy"), frac, efrac
+
+
+def _thinning(d, out, key, species, K, N):
+    """eps-tilde with the box means from about half of the particles (format 3)."""
+    if "Kb_own_half" not in out.names or not N > 0:
+        return
+    Kbh = sum(out.m("Kb_own_half")[s - 1] for s in species)
+    eh = (K - Kbh) / N
+    e = d.get(key + "_own_unchecked", np.nan)
+    d[key + "_own_half_unchecked"] = eh
+    d[key + "_thinning_change"] = (eh - e) / e if e else np.nan
 
 
 # --------------------------------------------------------------------------
@@ -61,7 +105,8 @@ def _bulk_status(out, species, N, max_lowocc, col="Nlowocc"):
 def active_partition(meta: dict, out, estimator: str = "direct",
                      max_lowocc: float = MAX_LOWOCC) -> dict:
     """f_i, eps_e, eps_i, eps-tilde (own and all-species bulk) from one output.
-    eps-tilde with the own-species bulk is NaN unless its occupancy is valid."""
+    eps-tilde with the own-species bulk is NaN unless it passes the occupancy
+    screen (an occupancy check, not an accuracy certificate; see above)."""
     if meta["layout"] != "active":
         raise ValueError("active_partition needs an active-layout run")
     lep, ion = ACTIVE["leptons"], ACTIVE["ions"]
@@ -93,16 +138,19 @@ def active_partition(meta: dict, out, estimator: str = "direct",
             res[f"epst_e_{tag}"] = (Kl - Kbl) / Nl if Nl > 0 else np.nan
             res[f"epst_i_{tag}"] = (Ki - Kbi) / Ni if Ni > 0 else np.nan
         for pop, sp, Npop in (("e", lep, Nl), ("i", ion, Ni)):
-            status, frac = _bulk_status(out, sp, Npop, max_lowocc)
+            status, frac, efrac = _bulk_status(out, sp, Npop, max_lowocc)
             res[f"epst_{pop}_status"] = status
             res[f"{pop}_low_occupancy_fraction"] = frac
+            res[f"{pop}_low_occupancy_energy_bound"] = efrac
             for tag in ("own", "own_raw"):
                 key = f"epst_{pop}_{tag}"
                 if key in res:
                     res[key + "_unchecked"] = res[key]
-                    if status != "valid":
+                    if status not in OK:
                         res[key] = np.nan
-            _window(res, out, f"epst_{pop}", sp, Kl if pop == "e" else Ki, Npop, max_lowocc)
+            Kpop = Kl if pop == "e" else Ki
+            _window(res, out, f"epst_{pop}", sp, Kpop, Npop, max_lowocc)
+            _thinning(res, out, f"epst_{pop}", sp, Kpop, Npop)
         res["ion_low_occupancy_fraction"] = res["i_low_occupancy_fraction"]
     return res
 
@@ -114,9 +162,9 @@ def _window(d, out, key, species, K, N, max_lowocc):
         return
     Kb1 = sum(out.m("Kb_own_w1")[s - 1] for s in species)
     e1 = (K - Kb1) / N
-    st, fr = _bulk_status(out, species, N, max_lowocc, "Nlowocc_w1")
+    st, fr, ef = _bulk_status(out, species, N, max_lowocc, "_w1")
     d[key + "_own_w1_unchecked"] = e1
-    d[key + "_own_w1"] = e1 if st == "valid" else np.nan
+    d[key + "_own_w1"] = e1 if st in OK else np.nan
     d[key + "_w1_status"] = st
     e = d.get(key + "_own_unchecked", np.nan)
     d[key + "_window_change"] = (e - e1) / e if e else np.nan
@@ -145,12 +193,14 @@ def passive_partition(meta: dict, out, estimator: str = "direct",
         Kb = {t: out.m(f"Kb_{t}") for t in ("own", "all")}
         for t in ("own", "all"):
             res[f"epst_e_{t}"] = (Kl - sum(Kb[t][s - 1] for s in lep)) / Nl if Nl > 0 else np.nan
-        status, frac = _bulk_status(out, lep, Nl, max_lowocc)
+        status, frac, efrac = _bulk_status(out, lep, Nl, max_lowocc)
         res["epst_e_status"], res["e_low_occupancy_fraction"] = status, frac
+        res["e_low_occupancy_energy_bound"] = efrac
         res["epst_e_own_unchecked"] = res["epst_e_own"]
-        if status != "valid":
+        if status not in OK:
             res["epst_e_own"] = np.nan
         _window(res, out, "epst_e", lep, Kl, Nl, max_lowocc)
+        _thinning(res, out, "epst_e", lep, Kl, Nl)
     for s in PASSIVE["tracers"]:
         m = _mass(meta, s)
         if estimator == "hist":
@@ -166,13 +216,15 @@ def passive_partition(meta: dict, out, estimator: str = "direct",
             d["epst_i_own"] = (Ks - Kb["own"][s - 1]) / Ns if Ns > 0 else np.nan
             d["epst_i_own_raw"] = (Ks - out.m("Kb_own_raw")[s - 1]) / Ns \
                 if (Ns > 0 and "Kb_own_raw" in out.names) else np.nan
-            status, frac = _bulk_status(out, [s], Ns, max_lowocc)
+            status, frac, efrac = _bulk_status(out, [s], Ns, max_lowocc)
             d["epst_status"], d["low_occupancy_fraction"] = status, frac
+            d["low_occupancy_energy_bound"] = efrac
             for key in ("epst_i_own", "epst_i_own_raw"):
                 d[key + "_unchecked"] = d[key]
-                if status != "valid":
+                if status not in OK:
                     d[key] = np.nan
             _window(d, out, "epst_i", [s], Ks, Ns, max_lowocc)
+            _thinning(d, out, "epst_i", [s], Ks, Ns)
         res["tracers"][s] = d
     return res
 

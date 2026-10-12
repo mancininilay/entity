@@ -3,8 +3,12 @@
 IC3: stale files of an abandoned future after a rollback restart, also before the
      new segment has caught up and after a cadence change, for every output type.
 IC4: passive tracers never enter a physical energy residual by default.
-IC5: eps-tilde is invalid (NaN, explicit status) at low box occupancy, and the
-     variance-corrected estimator meets its stated bias bound at n >= nmin.
+IC5: eps-tilde is NaN with an explicit status when it fails the occupancy screen.
+RV1 (Codex, 2026-10-12): the screen is an occupancy check, not an accuracy
+     bound; the energy share of under-occupied boxes is screened (RV1a), and
+     the finite-sample bias of the estimator, which no occupancy rule bounds,
+     is exposed by the thinning diagnostic (RV1b, Codex's exact two-stream
+     counterexample kept as a witness of the limitation).
 """
 
 import json
@@ -166,12 +170,13 @@ def test_ic5_low_occupancy_invalid():
     meta = _meta()
     # every ion alone in its box: Kb = K, eps-tilde = 0, occupancy fraction 1
     r = partition.active_partition(meta, _out_with(10.0, 50.0, 50.0, 10.0))
-    assert r["epst_i_status"] == "invalid_low_occupancy"
+    assert r["epst_i_status"] == "low_occupancy"
     assert np.isnan(r["epst_i_own"]) and r["epst_i_own_unchecked"] == 0.0
     assert r["i_low_occupancy_fraction"] == 1.0
     # well-occupied boxes: valid
     r = partition.active_partition(meta, _out_with(10.0, 50.0, 20.0, 0.1))
-    assert r["epst_i_status"] == "valid" and abs(r["epst_i_own"] - 3.0) < 1e-12
+    # format 3 without Klowocc: screened on the number fraction only
+    assert r["epst_i_status"] == "occupancy_ok_number_only" and abs(r["epst_i_own"] - 3.0) < 1e-12
     # an invalid value in the averaging window propagates
     assert np.isnan(partition.steady([1.0, np.nan, 1.0], n=3)[0])
     assert partition.steady([1.0, np.nan, 1.0], n=3, nan_policy="omit")[0] == 1.0
@@ -194,10 +199,11 @@ def _kb_estimator(b):
 
 
 @pytest.mark.parametrize("beta_b,sig", [(0.3, 0.3), (0.0, 0.3), (0.5, 0.2)])
-def test_ic5_estimator_bias_bound(beta_b, sig):
-    """Known bulk flow: drifting isotropic Gaussian in four-velocity. The bias of
-    the corrected bulk energy, in units of the true eps-tilde, is <= 1.5% at
-    n = 20 (the default nmin) and decreases with n; the raw estimator is ~1/n."""
+def test_ic5_estimator_gaussian_calibration(beta_b, sig):
+    """Calibration on drifting isotropic Gaussians in four-velocity (beta_b <= 0.5):
+    the bias of the corrected bulk energy is <= 1.5% of the true eps-tilde at
+    n = 20 and the raw estimator's is ~1/n. A calibration for these flows only,
+    not a bound for other distributions (see test_rv1b_two_stream_limitation)."""
     rng = np.random.default_rng(7)
 
     def sample(n, nbox):
@@ -238,3 +244,69 @@ def test_ic5_window_change_reported():
     assert r["epst_i_own"] == 3.0
     assert r["epst_i_own_w1_unchecked"] == 2.5 and np.isnan(r["epst_i_own_w1"])
     assert abs(r["epst_i_window_change"] - 0.5 / 3.0) < 1e-12
+
+
+NAMES3 = NAMES + ["Kb_own_w1", "Nlowocc_w1", "Klowocc", "Kblowocc", "Klowocc_w1",
+                  "Kblowocc_w1", "Kb_own_half"]
+
+
+def _out3(ion):
+    """Format 3 output; ion = dict of per-species moment values for species 6, 9."""
+    moms = np.zeros((9, len(NAMES3)))
+    for s in (6, 9):
+        for k, v in ion.items():
+            moms[s - 1, NAMES3.index(k)] = v / 2
+    for s in (4, 5, 7, 8):
+        moms[s - 1, NAMES3.index("N")] = 100
+        moms[s - 1, NAMES3.index("K")] = 300
+    return readers.RecmixOutput(1, 1.0, 1, 1, np.zeros((9, 4)), moms, NAMES3, 11, None)
+
+
+def test_rv1a_energy_share_screened():
+    """Codex RV1a: 990 well-sampled ions with one unit of random energy each and
+    10 isolated ions with 1000 units each. The number fraction (1%) passes; the
+    energy share of the singleton boxes, max(Klowocc, Kblowocc)/(K - Kb_own) ~ 10,
+    does not."""
+    ion = {"N": 1000.0, "K": 990.0 + 10000.0, "Kb_own": 10000.0, "Kb_own_raw": 10000.0,
+           "Nlowocc": 10.0, "Klowocc": 10000.0, "Kblowocc": 10000.0}
+    r = partition.active_partition(_meta(), _out3(ion))
+    assert r["epst_i_status"] == "low_occupancy" and np.isnan(r["epst_i_own"])
+    assert r["i_low_occupancy_fraction"] == 0.01
+    assert abs(r["i_low_occupancy_energy_bound"] - 10000.0 / 990.0) < 1e-12
+    # without the energy columns (format 3 before v1.5) the screen cannot see it
+    r = partition.active_partition(_meta(), _out_with(1000.0, 10990.0, 10000.0, 10.0))
+    assert r["epst_i_status"] == "occupancy_ok_number_only"
+
+
+def _expected_epst_two_stream(n, p=0.99, b=0.99):
+    """Exact expectation (binomial enumeration) of the rec_mix corrected estimator
+    for boxes of n independent particles with beta_x = +b (prob p) or -b."""
+    import math
+    gp = 1 / math.sqrt(1 - b * b)
+    kb = 0.0
+    for k in range(n + 1):
+        prob = math.comb(n, k) * p ** k * (1 - p) ** (n - k)
+        braw = ((2 * k - n) * b / n) ** 2
+        s2 = (n * b * b - n * braw) / (n - 1)
+        bc = max(braw - s2 / n, 0.0)
+        kb += prob * (1 / math.sqrt(1 - min(bc, 1 - 1e-12)) - 1)
+    mb = (2 * p - 1) * b
+    return gp - 1 - kb, gp - 1 / math.sqrt(1 - mb * mb)
+
+
+def test_rv1b_two_stream_limitation():
+    """Codex RV1b, kept as a witness of a documented limitation: with 20 particles
+    per box (every box passes the occupancy screen) the corrected estimator
+    underestimates eps-tilde by 69%. The thinning diagnostic exposes it: halving
+    the sample changes the estimate by ~40%, far above a few percent."""
+    e20, true = _expected_epst_two_stream(20)
+    e10, _ = _expected_epst_two_stream(10)
+    assert abs(e20 / true - 1 - (-0.6932490337670086)) < 1e-9
+    assert abs(e10 / e20 - 1) > 0.3
+    # and the partition reports that change from Kb_own_half
+    ion = {"N": 1000.0, "K": 1000.0 * (1 / np.sqrt(1 - 0.99 ** 2) - 1),
+           "Kb_own": 1000.0 * (1 / np.sqrt(1 - 0.99 ** 2) - 1 - e20),
+           "Kb_own_raw": 0.0, "Kb_own_half": 1000.0 * (1 / np.sqrt(1 - 0.99 ** 2) - 1 - e10)}
+    r = partition.active_partition(_meta(), _out3(ion))
+    assert r["epst_i_status"] == "occupancy_ok"
+    assert abs(r["epst_i_thinning_change"] - (e10 / e20 - 1)) < 1e-9

@@ -141,7 +141,10 @@ species draw the same random numbers with or without them.
   Kb_own and Kb_all (bulk kinetic energy, below), Ntot and Ktot (whole domain,
   unmasked), Kb_own_raw (without the variance correction), Nlowocc (masked
   particles whose own-species box holds fewer than `bulk_nmin` particles),
-  Kb_own_w1 and Nlowocc_w1 (the same with window 1, for the window sensitivity).
+  Kb_own_w1 and Nlowocc_w1 (the same with window 1, for the window sensitivity),
+  Klowocc and Kblowocc (kinetic and bulk energy of the masked particles in
+  under-occupied boxes, also with window 1), Kb_own_half (box means from the
+  particles with dx1 < 1/2, weighted by the full cell counts: thinning test).
   Format 1 (`"P13RMX01"`: no run id, no fill) is still read.
 * `cvbudget.bin` (appended): records of 61 float64: label, time, segment_start,
   run_id, then per species (N_cv, I_cv = sum_CV m (gamma - 1), in_E, out_E, in_N,
@@ -193,12 +196,19 @@ outputs the mean 3-velocity of **each species**:
   `V_...` (Tristan velx) with the same top-hat smoothing (`order = 4`,
   `method = "const"`, i.e. 5 x 5 cells).
 
-Validity (Codex IC5): the analysis reports eps-tilde of a population only if at
-most 2% of its masked particles sit in boxes with fewer than `bulk_nmin` (20)
-particles; otherwise NaN with status `invalid_low_occupancy`. At n >= 20 the
-variance-corrected estimator is biased by at most ~1.2% of eps-tilde. eps-tilde
-depends on the window (it measures random motion below the box scale); the
-change from window 1 to `bulk_window` is reported with every value.
+What the bulk-energy status means (Codex IC5, RV1). The analysis applies an
+occupancy screen, not an accuracy certificate: eps-tilde of a population is
+reported (`occupancy_ok`) only if at most 2% of its masked particles sit in
+boxes with fewer than `bulk_nmin` (20) particles and the energy those boxes can
+carry, max(Klowocc, Kblowocc), is at most 2% of K - Kb_own; otherwise NaN with
+status `low_occupancy`. No occupancy rule bounds the finite-sample bias of the
+estimator in well-occupied boxes (gamma of the box-mean velocity is nonlinear,
+steeply so near beta = 1); the thinning change, from Kb_own_half, measures that
+dependence on the actual distribution and is reported with every value, as is
+the change from window 1 to `bulk_window`. The bulk frame is defined on a
+(2w + 1)^2-cell top-hat box (w = 2: 5 x 5 cells, Tristan's convention); the
+own-species eps-tilde is a secondary observable until validated on pilot data
+(tech spec III.8).
 
 ## Analysis and tests
 

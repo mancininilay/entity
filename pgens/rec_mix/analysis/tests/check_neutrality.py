@@ -28,7 +28,7 @@ def main(sim, block=10):
     hi0 = int(y0 + 10 * a) + 1
     hi1 = N2 - pad - 12
     rows = [(lo0, lo1), (hi0, hi1)]
-    res = neutrality.local_test(F["Charge"], rows, (0, N1), block, sigma)
+    res = neutrality.local_test(F["Charge"], rows, (0, N1), block, sigma, ppc0=ppc0)
     res.update({"step": F["step"], "rows": rows, "global_mean_charge": float(F["Charge"].mean())})
     print(json.dumps(res, indent=1))
     return res

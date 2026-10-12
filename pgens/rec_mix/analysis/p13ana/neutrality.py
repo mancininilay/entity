@@ -24,10 +24,14 @@
     padding and the injection rows):
       * the rms block charge is within [0.8, 1.25] of the model (the rms of
         N >= 50 blocks has relative scatter ~ 1/sqrt(2N));
-      * the largest |rho_block|/sigma_model is below the Bonferroni bound
-        z_N = Phi^-1(1 - alpha/(2N)), alpha = 1e-3 (a simultaneous bound over
-        all blocks, not a pointwise 4 sigma rule).
-    Block correlations through shared edges make the maximum test conservative.
+      * the largest block charge is below a Bonferroni bound over the N blocks
+        (family-wise error alpha = 1e-3; Bonferroni needs no independence, but
+        it needs correct marginal tails). Since v1.5 (Codex 2026-10-12, 5.1) the
+        bound is calibrated on the discrete crossing distribution: each crossing
+        changes Q by +-1 with equal probability, crossings are rare and
+        independent, so Q = N+ - N- with N+- ~ Poisson(Var/2) (Skellam). The
+        Gaussian bound z_N = Phi^-1(1 - alpha/(2N)) is reported as an
+        approximation only.
 """
 
 from __future__ import annotations
@@ -81,10 +85,28 @@ def bonferroni_z(nblocks: int, alpha: float = 1e-3) -> float:
     return NormalDist().inv_cdf(1 - alpha / (2 * nblocks))
 
 
+def skellam_threshold(var_q: float, nblocks: int, alpha: float = 1e-3) -> int:
+    """Smallest integer c with nblocks * P(|Q| > c) <= alpha for
+    Q = N+ - N-, N+- ~ Poisson(var_q/2) independent (charge in units of e)."""
+    lam = 0.5 * var_q
+    kmax = int(lam + 12.0 * math.sqrt(lam + 1.0) + 40)
+    k = np.arange(kmax + 1)
+    lp = k * math.log(lam) - lam - np.array([math.lgamma(x + 1.0) for x in k]) if lam > 0 else None
+    p = np.exp(lp) if lam > 0 else np.eye(1, kmax + 1)[0]
+    pq = np.convolve(p, p[::-1])          # P(Q = d), d = -kmax..kmax
+    d = np.arange(-kmax, kmax + 1)
+    for c in range(0, kmax + 1):
+        if nblocks * pq[np.abs(d) > c].sum() <= alpha:
+            return c
+    return kmax
+
+
 def local_test(charge: np.ndarray, rows: list[tuple[int, int]], cols: tuple[int, int],
-               block: int, sigma: float, alpha: float = 1e-3) -> dict:
-    """charge: Entity `Charge` [i1, i2] (smoothing 0). rows: list of (j0, j1)
-    ranges in x2 (far upstream); cols: (i0, i1) range in x1."""
+               block: int, sigma: float, alpha: float = 1e-3, ppc0: float | None = None) -> dict:
+    """charge: Entity `Charge` [i1, i2] (smoothing 0, units e n0). rows: list of
+    (j0, j1) ranges in x2 (far upstream); cols: (i0, i1) range in x1. With ppc0,
+    the block charges are converted to elementary charges and the maximum is
+    also tested against the discrete (Skellam) Bonferroni bound."""
     vals = []
     i0, i1 = cols
     for j0, j1 in rows:
@@ -96,6 +118,16 @@ def local_test(charge: np.ndarray, rows: list[tuple[int, int]], cols: tuple[int,
     rms = float(np.sqrt(np.mean(v ** 2)))
     zmax = float(np.max(np.abs(v)) / sigma)
     zn = bonferroni_z(v.size, alpha)
-    return {"nblocks": int(v.size), "sigma_model": sigma, "rms": rms, "rms_ratio": rms / sigma,
-            "max_abs": float(np.max(np.abs(v))), "z_max": zmax, "z_bound": zn,
-            "pass": bool(0.8 <= rms / sigma <= 1.25 and zmax <= zn)}
+    res = {"nblocks": int(v.size), "sigma_model": sigma, "rms": rms, "rms_ratio": rms / sigma,
+           "max_abs": float(np.max(np.abs(v))), "z_max": zmax, "z_bound": zn,
+           "z_bound_note": "Gaussian marginal tails: approximate"}
+    ok_max = zmax <= zn
+    if ppc0 is not None:
+        q = v * block * block * ppc0                      # net charge per block, units of e
+        var_q = (sigma * block * block * ppc0) ** 2
+        c = skellam_threshold(var_q, v.size, alpha)
+        res.update({"q_max": float(np.max(np.abs(q))), "q_bound": c,
+                    "q_nonint_max": float(np.max(np.abs(q - np.rint(q))))})
+        ok_max = res["q_max"] <= c
+    res["pass"] = bool(0.8 <= rms / sigma <= 1.25 and ok_max)
+    return res
