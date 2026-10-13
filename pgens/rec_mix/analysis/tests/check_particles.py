@@ -203,15 +203,18 @@ def ambiguity_report(sim, label):
         if have_v:
             v = V["species"][s]
             # exact positions of the dump through Entity's conversion
-            # (kernels/prtls_to_phys.hpp: x = x_min + (float(i_local) + dx), float)
+            # kernels/prtls_to_phys.hpp casts both local cells and dx to real_t.
+            # The dump momentum dtype records real_t; dx can remain float32
+            # even in a double-precision build.
+            real_dtype = v["u1"].dtype
             off1 = np.array([rk["off1"] for rk in V["ranks"]])
             off2 = np.array([rk["off2"] for rk in V["ranks"]])
             rank_index = {rk["rank"]: k for k, rk in enumerate(V["ranks"])}
             ri = np.array([rank_index[x] for x in v["rank"]], dtype=np.int64) if v["rank"].size else \
                 np.zeros(0, np.int64)
             o1, o2 = off1[ri], off2[ri]
-            X1 = (o1.astype(np.float32) + ((v["i1"] - o1).astype(np.float32) + v["dx1"]).astype(np.float32))
-            X2 = (o2.astype(np.float32) + ((v["i2"] - o2).astype(np.float32) + v["dx2"]).astype(np.float32))
+            X1 = o1.astype(real_dtype) + ((v["i1"] - o1).astype(real_dtype) + v["dx1"].astype(real_dtype))
+            X2 = o2.astype(real_dtype) + ((v["i2"] - o2).astype(real_dtype) + v["dx2"].astype(real_dtype))
             # multiset comparison of (X1, X2, U1, U2, U3) between the BP output and the emulation
             a = np.stack([p["X1"], p["X2"], p["U1"], p["U2"], p["U3"]], 1)
             b = np.stack([X1.astype(np.float64), X2.astype(np.float64), v["u1"].astype(np.float64),
