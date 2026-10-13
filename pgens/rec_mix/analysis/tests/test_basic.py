@@ -178,3 +178,31 @@ def test_d39_cold_refused():
         mi.derived("active", 40, 0.1, 25, 5.0, 0.01, 89.0, 4.878524)    # cold skindepth0
     with pytest.raises(TypeError):
         regimes.scales("active", 40, 0.1, 25, 5)                         # positional (pre-D39) call
+
+
+# Rusty CUDA regression: orientation must follow the BP attribute even when
+# a square grid makes both candidate shapes identical.
+def test_entity_field_layout_metadata():
+    import types
+    from unittest.mock import patch
+    from p13ana import readers
+
+    for shape in ((3, 5), (4, 4)):
+        physical = 100 * np.arange(shape[0])[:, None] + np.arange(shape[1])[None, :]
+        for layout in (0, 1):
+            class Reader:
+                def __init__(self, path): pass
+                def __enter__(self): return self
+                def __exit__(self, *args): pass
+                def available_variables(self): return {"fB1": {}}
+                def read_attribute(self, name):
+                    return {"Dimension": 2, "LayoutRight": layout}[name]
+                def read(self, name):
+                    return {"fB1": physical if layout else physical.T,
+                            "X1": np.arange(shape[0]), "X2": np.arange(shape[1]),
+                            "Step": 1, "Time": 0.45}[name]
+            with patch.dict(sys.modules, {"adios2": types.SimpleNamespace(FileReader=Reader)}):
+                fields = readers.read_entity_fields("mock.bp")
+            np.testing.assert_array_equal(fields["B1"], physical)
+            np.testing.assert_array_equal(fields["X1"], np.arange(shape[0]))
+            np.testing.assert_array_equal(fields["X2"], np.arange(shape[1]))

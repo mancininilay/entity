@@ -410,7 +410,12 @@ def list_entity_fields(sim_dir: str, allow_unmanifested: bool = False) -> list[s
 
 def read_entity_fields(path: str, names: list[str] | None = None) -> dict:
     """Read an Entity field output. Keys are the stored names without the leading
-    'f' (e.g. 'E3', 'N_4_5_6', 'V2_6', 'mixing'), plus 'X1', 'X2', 'step', 'time'."""
+    'f' (e.g. 'E3', 'N_4_5_6', 'V2_6', 'mixing'), plus 'X1', 'X2', 'step', 'time'.
+
+    Fields always use physical axis order (X1, X2). Entity records LayoutRight
+    in BP: CUDA's LayoutLeft fields are stored with reversed dimensions. Use
+    that attribute, not a shape guess, which would be ambiguous on square grids.
+    This reader is for the 2D rec_mix outputs."""
     from adios2 import FileReader
 
     out = {}
@@ -418,10 +423,18 @@ def read_entity_fields(path: str, names: list[str] | None = None) -> dict:
         avail = r.available_variables()
         if names is None:
             names = [k[1:] for k in avail if k.startswith("f")]
-        for n in names:
-            out[n] = np.asarray(r.read("f" + n))
+        dim = int(np.asarray(r.read_attribute("Dimension")).item())
+        right = int(np.asarray(r.read_attribute("LayoutRight")).item())
+        if dim != 2 or right not in (0, 1):
+            raise ValueError(f"{path}: expected 2D Entity fields with LayoutRight 0 or 1")
         out["X1"] = np.asarray(r.read("X1"))
         out["X2"] = np.asarray(r.read("X2"))
+        shape = (out["X1"].size, out["X2"].size)
+        for n in names:
+            raw = np.asarray(r.read("f" + n))
+            out[n] = raw if right else raw.T
+            if out[n].shape != shape:
+                raise ValueError(f"{path}: field {n} has physical shape {out[n].shape}, expected {shape}")
         out["step"] = int(np.asarray(r.read("Step")))
         out["time"] = float(np.asarray(r.read("Time")))
     return out

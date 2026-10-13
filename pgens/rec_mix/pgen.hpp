@@ -2411,8 +2411,13 @@ namespace user {
           auto h_u3  = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), Kokkos::subview(sp.ux3, rng));
           auto h_w   = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), Kokkos::subview(sp.weight, rng));
           auto h_tag = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), Kokkos::subview(sp.tag, rng));
-          auto h_pld = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(),
-                                                           Kokkos::subview(sp.pld_i, rng, Kokkos::ALL));
+          // A leading-row slice of a CUDA LayoutLeft payload view is strided
+          // when np < capacity. Pack it on the device before the host copy;
+          // cross-space deep_copy requires matching contiguous layouts.
+          typename decltype(sp.pld_i)::non_const_type packed_pld(
+            "rec_mix::validation_payload", np, sp.pld_i.extent(1));
+          Kokkos::deep_copy(packed_pld, Kokkos::subview(sp.pld_i, rng, Kokkos::ALL));
+          auto h_pld = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), packed_pld);
           for (std::size_t p = 0; p < static_cast<std::size_t>(np); ++p) {
             if (h_tag(p) != ParticleTag::alive) {
               continue;
