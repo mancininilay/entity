@@ -87,13 +87,20 @@ struct Checker {
       { x1, x2, phi(pold) },
       { ux1(pold), ux2(pold), ux3(pold) },
       u_Phys);
-    if (not cmp::AlmostEqual(u_Phys[0], buff_ux1(p))) {
+    // A Cartesian-to-tetrad rotation can cancel large terms in a component.
+    // Bound floating-point roundoff by the input vector's L1 scale, not by
+    // that small component. Allow both evaluations' arithmetic/trig rounding
+    // (including different FMA contraction) at 16 machine epsilons.
+    const real_t rotation_roundoff =
+      16 * Kokkos::Experimental::epsilon<real_t>::value *
+      (math::abs(ux1(pold)) + math::abs(ux2(pold)) + math::abs(ux3(pold)));
+    if (not (math::abs(u_Phys[0] - buff_ux1(p)) <= rotation_roundoff)) {
       raise::KernelError(HERE, "u_Phys[0] != buff_ux1");
     }
-    if (not cmp::AlmostEqual(u_Phys[1], buff_ux2(p))) {
+    if (not (math::abs(u_Phys[1] - buff_ux2(p)) <= rotation_roundoff)) {
       raise::KernelError(HERE, "u_Phys[1] != buff_ux2");
     }
-    if (not cmp::AlmostEqual(u_Phys[2], buff_ux3(p))) {
+    if (not (math::abs(u_Phys[2] - buff_ux3(p)) <= rotation_roundoff)) {
       Kokkos::printf("prtls_to_phys mismatch: p=%u expected=%.17g actual=%.17g "
                      "input=(%.17g,%.17g,%.17g) phi=%.17g\n",
                      static_cast<unsigned int>(pold), static_cast<double>(u_Phys[2]),
