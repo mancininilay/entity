@@ -94,6 +94,12 @@ struct Checker {
       raise::KernelError(HERE, "u_Phys[1] != buff_ux2");
     }
     if (not cmp::AlmostEqual(u_Phys[2], buff_ux3(p))) {
+      Kokkos::printf("prtls_to_phys mismatch: p=%u expected=%.17g actual=%.17g "
+                     "input=(%.17g,%.17g,%.17g) phi=%.17g\n",
+                     static_cast<unsigned int>(pold), static_cast<double>(u_Phys[2]),
+                     static_cast<double>(buff_ux3(p)), static_cast<double>(ux1(pold)),
+                     static_cast<double>(ux2(pold)), static_cast<double>(ux3(pold)),
+                     static_cast<double>(phi(pold)));
       raise::KernelError(HERE, "u_Phys[2] != buff_ux3");
     }
     if (not cmp::AlmostEqual(weight(pold), buff_wei(p))) {

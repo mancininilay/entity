@@ -202,6 +202,11 @@ auto main(int argc, char* argv[]) -> int {
     emitting_tag_h(0)   = ParticleTag::alive;
     emitting_tag_h(1)   = ParticleTag::alive;
     Kokkos::deep_copy(emitting_species.tag, emitting_tag_h);
+    // A massless particle needs nonzero momentum: positionPush divides by |u|.
+    // This policy emits without changing the emitter momentum.
+    Kokkos::deep_copy(emitting_species.ux1, ONE);
+    Kokkos::deep_copy(emitting_species.i1, 64);
+    emitting_species.set_npart(2u);
 
     auto emitted_species_1 = Particles<decltype(metric)::Dim, decltype(metric)::CoordType>(
       2,
@@ -299,6 +304,14 @@ auto main(int argc, char* argv[]) -> int {
       emitted_species_1.set_npart(emitted_species_1.npart() + n_injected[0]);
       emitted_species_2.set_counter(emitted_species_2.counter() + n_injected[1]);
       emitted_species_2.set_npart(emitted_species_2.npart() + n_injected[1]);
+    }
+    auto emitter_i = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), emitting_species.i1);
+    auto emitter_dx = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), emitting_species.dx1);
+    for (auto p = 0u; p < 2u; ++p) {
+      raise::ErrorIf(!(emitter_i(p) >= 0 && emitter_i(p) < 128 &&
+                       emitter_dx(p) >= 0 && emitter_dx(p) < 1),
+                     "Emitter position is nonfinite or outside the periodic domain",
+                     HERE);
     }
     raise::ErrorIf(emitted_species_1.npart() != 8u,
                    "Unexpected number of particles for emitted species 1",

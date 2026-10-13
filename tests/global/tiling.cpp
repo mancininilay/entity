@@ -183,8 +183,10 @@ auto main(int argc, char* argv[]) -> int {
       auto ndead_h = Kokkos::create_mirror_view(ndead);
       Kokkos::deep_copy(ndead_h, ndead);
 
-      test_tiling<Dim::_1D>(i1, i2, i3, tag, tile_indices, npart, { nx1 }, ndead_h());
-      test_tiling<Dim::_2D>(i1, i2, i3, tag, tile_indices, npart, { nx1, nx2 }, ndead_h());
+      // Match actual particle storage: unused dimensions are empty views.
+      array_t<int*> unused;
+      test_tiling<Dim::_1D>(i1, unused, unused, tag, tile_indices, npart, { nx1 }, ndead_h());
+      test_tiling<Dim::_2D>(i1, i2, unused, tag, tile_indices, npart, { nx1, nx2 }, ndead_h());
       test_tiling<Dim::_3D>(i1,
                             i2,
                             i3,
@@ -202,7 +204,7 @@ auto main(int argc, char* argv[]) -> int {
 
       array_t<int*>   i1 { "i1", npart };
       array_t<int*>   i2 { "i2", npart };
-      array_t<int*>   i3 { "i2" };
+      array_t<int*>   i3;
       array_t<short*> tag { "tag", npart };
 
       for (auto tile_size { 6u }; tile_size <= 6u; ++tile_size) {

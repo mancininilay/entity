@@ -196,7 +196,10 @@ namespace sort {
           }
         }();
         const auto key2 = [&]() -> int {
-          if constexpr (UsePrev) {
+          // Lower-dimensional particles have no storage for unused axes.
+          if constexpr (D == Dim::_1D) {
+            return 0;
+          } else if constexpr (UsePrev) {
             const int raw = (i2(p) < i2_prev(p)) ? i2(p) : i2_prev(p);
             return clamp_axis(raw, ncells2);
           } else {
@@ -204,7 +207,9 @@ namespace sort {
           }
         }();
         const auto key3 = [&]() -> int {
-          if constexpr (UsePrev) {
+          if constexpr (D != Dim::_3D) {
+            return 0;
+          } else if constexpr (UsePrev) {
             const int raw = (i3(p) < i3_prev(p)) ? i3(p) : i3_prev(p);
             return clamp_axis(raw, ncells3);
           } else {

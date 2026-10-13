@@ -27,8 +27,12 @@ function(gen_test title is_parallel)
   target_link_libraries(${exec} PRIVATE ${libs})
 
   if(${is_parallel})
+    set(nproc 2)
+    if(ARGC GREATER 2)
+      set(nproc ${ARGV2})
+    endif()
     add_test(NAME "FRAMEWORK::${title}"
-             COMMAND "${MPIEXEC_EXECUTABLE}" "${MPIEXEC_NUMPROC_FLAG}" "2"
+             COMMAND "${MPIEXEC_EXECUTABLE}" "${MPIEXEC_NUMPROC_FLAG}" "${nproc}"
                      "${exec}")
   else()
     add_test(NAME "FRAMEWORK::${title}" COMMAND "${exec}")
@@ -53,7 +57,7 @@ endif()
 gen_test(fields false)
 gen_test(grid_mesh false)
 if(${DEBUG})
-  gen_test(metadomain false)
+  gen_test(metadomain ${mpi} 4)
 endif()
 
 if(${mpi})

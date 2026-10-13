@@ -59,47 +59,54 @@ auto main(int argc, char* argv[]) -> int {
       nx2        += self.mesh.n_active(in::x2);
       raise::ErrorIf(self.index() != idx, "Domain::index() failed", HERE);
 
-      // check field allocations
-      raise::ErrorIf(self.fields.em.extent(0) != self.mesh.n_all(in::x1),
-                     "Domain::fields.em(0) failed",
-                     HERE);
-      raise::ErrorIf(self.fields.em.extent(1) != self.mesh.n_all(in::x2),
-                     "Domain::fields.em(1) failed",
-                     HERE);
-      raise::ErrorIf(self.fields.em.extent(2) != 6,
-                     "Domain::fields.em(2) failed",
-                     HERE);
+      // MPI allocates only this rank's domain; other domains are placeholders.
+      if (!self.is_placeholder()) {
+        // check field allocations
+        raise::ErrorIf(self.fields.em.extent(0) != self.mesh.n_all(in::x1),
+                       "Domain::fields.em(0) failed",
+                       HERE);
+        raise::ErrorIf(self.fields.em.extent(1) != self.mesh.n_all(in::x2),
+                       "Domain::fields.em(1) failed",
+                       HERE);
+        raise::ErrorIf(self.fields.em.extent(2) != 6,
+                       "Domain::fields.em(2) failed",
+                       HERE);
 
-      // check current allocations
-      raise::ErrorIf(self.fields.cur.extent(0) != self.mesh.n_all(in::x1),
-                     "Domain::fields.cur(0) failed",
-                     HERE);
-      raise::ErrorIf(self.fields.cur.extent(1) != self.mesh.n_all(in::x2),
-                     "Domain::fields.cur(1) failed",
-                     HERE);
-      raise::ErrorIf(self.fields.cur.extent(2) != 3,
-                     "Domain::fields.cur(2) failed",
-                     HERE);
+        // check current allocations
+        raise::ErrorIf(self.fields.cur.extent(0) != self.mesh.n_all(in::x1),
+                       "Domain::fields.cur(0) failed",
+                       HERE);
+        raise::ErrorIf(self.fields.cur.extent(1) != self.mesh.n_all(in::x2),
+                       "Domain::fields.cur(1) failed",
+                       HERE);
+        raise::ErrorIf(self.fields.cur.extent(2) != 3,
+                       "Domain::fields.cur(2) failed",
+                       HERE);
 
-      // check em0/aux/cur0 are unallocated for SRPIC
-      raise::ErrorIf(self.fields.em0.extent(0) != 0,
-                     "Domain::fields.em0(0) failed",
-                     HERE);
-      raise::ErrorIf(self.fields.em0.extent(1) != 0,
-                     "Domain::fields.em0(1) failed",
-                     HERE);
-      raise::ErrorIf(self.fields.aux.extent(0) != 0,
-                     "Domain::fields.aux(0) failed",
-                     HERE);
-      raise::ErrorIf(self.fields.aux.extent(1) != 0,
-                     "Domain::fields.aux(1) failed",
-                     HERE);
-      raise::ErrorIf(self.fields.cur0.extent(0) != 0,
-                     "Domain::fields.cur0(0) failed",
-                     HERE);
-      raise::ErrorIf(self.fields.cur0.extent(1) != 0,
-                     "Domain::fields.cur0(1) failed",
-                     HERE);
+        // check em0/aux/cur0 are unallocated for SRPIC
+        raise::ErrorIf(self.fields.em0.extent(0) != 0,
+                       "Domain::fields.em0(0) failed",
+                       HERE);
+        raise::ErrorIf(self.fields.em0.extent(1) != 0,
+                       "Domain::fields.em0(1) failed",
+                       HERE);
+        raise::ErrorIf(self.fields.aux.extent(0) != 0,
+                       "Domain::fields.aux(0) failed",
+                       HERE);
+        raise::ErrorIf(self.fields.aux.extent(1) != 0,
+                       "Domain::fields.aux(1) failed",
+                       HERE);
+        raise::ErrorIf(self.fields.cur0.extent(0) != 0,
+                       "Domain::fields.cur0(0) failed",
+                       HERE);
+        raise::ErrorIf(self.fields.cur0.extent(1) != 0,
+                       "Domain::fields.cur0(1) failed",
+                       HERE);
+      } else {
+        raise::ErrorIf(self.fields.em.size() != 0 || self.fields.cur.size() != 0,
+                       "Remote placeholder unexpectedly owns field storage",
+                       HERE);
+      }
 
       // check boundaries and offsets
       if (idx % 2 == 0) {
