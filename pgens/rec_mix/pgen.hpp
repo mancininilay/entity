@@ -58,6 +58,7 @@
 #include "framework/domain/domain.h"
 #include "framework/domain/metadomain.h"
 #include "kernels/injectors.hpp"
+#include "injection_segments.hpp"
 
 #include <Kokkos_Core.hpp>
 #include <Kokkos_ScatterView.hpp>
@@ -437,6 +438,8 @@ namespace user {
       npart_t          dom_idx;
       random_number_pool_t pool;
       array_t<npart_t> idx { "rm_inj_idx" };
+      array_t<npart_t*> segment_ends; // empty in the unchanged default path
+      int segment_width { 0 };
 
       template <class P>
       static auto make_arr(P& sp) -> Arr {
@@ -501,10 +504,20 @@ namespace user {
         }
       }
 
-      Inline void operator()(npart_t) const {
+      Inline void operator()(npart_t trial) const {
         if constexpr (D == Dim::_2D) {
           auto   gen = pool.get_state();
-          real_t x1  = x1min + Random<real_t>(gen) * (x1max - x1min);
+          real_t xmin = x1min, xmax = x1max;
+          if (segment_width > 0) {
+            const int segment = segment_for_trial(trial, segment_ends);
+            xmin = x1min + static_cast<real_t>(segment * segment_width);
+            xmax = xmin + static_cast<real_t>(segment_width);
+          }
+          real_t x1  = xmin + Random<real_t>(gen) * (xmax - xmin);
+          // Float arithmetic can round a draw onto the segment's upper face.
+          if (segment_width > 0 and x1 >= xmax) {
+            x1 = Kokkos::nextafter(xmax, xmin);
+          }
           real_t x2  = x2min + Random<real_t>(gen) * (x2max - x2min);
           bool   acc = true;
           if (sheet_profile) {
@@ -792,6 +805,7 @@ namespace user {
     double              spec_min { 1e-3 }, spec_max { 1e5 };
     int                 spec_num { 300 };
     int                 bulk_window { 2 }, inj_avg_cells { 11 };
+    int                 inj_segment_cells { 0 }; // 0: original per-domain controller
     int                 bulk_nmin { 20 }; // box occupancy below which the bulk estimate is flagged
     bool                inject_on { true }, load_tracers { true }; // test switches
     int                 cv_slot_cfg { -1 }; // user int payload slot of the CV flag (-1: last)
@@ -960,6 +974,9 @@ namespace user {
       bulk_window    = getInt("bulk_window", 2);
       bulk_nmin      = getInt("bulk_nmin", 20);
       inj_avg_cells  = getInt("inj_avg_cells", 11);
+      inj_segment_cells = getInt("inj_segment_cells", 0);
+      raise::ErrorIf(inj_segment_cells < 0 or inj_avg_cells <= 0,
+                     "rec_mix: inj_segment_cells must be >= 0 and inj_avg_cells > 0", HERE);
       cv_slot_cfg    = getInt("cv_payload_slot", -1);
       allow_any_pusher = has("allow_any_pusher")
                            ? params.template get<bool>("setup.allow_any_pusher")
@@ -1024,6 +1041,29 @@ namespace user {
                          padding,
                          nfilter + 4));
         padding = nfilter + 4;
+      }
+      if (inj_segment_cells > 0 and inject_on) {
+        // Check all domain geometry on every rank, before loading particles.
+        for (unsigned int d = 0; d < metadomain.ndomains(); ++d) {
+          const auto& dom = metadomain.subdomain(d);
+          const int off1 = static_cast<int>(dom.offset_ncells()[0]);
+          const int n1 = static_cast<int>(dom.mesh.n_active(in::x1));
+          raise::ErrorIf(not recmix::segments_aligned(off1, n1, inj_segment_cells),
+                         "rec_mix: injector segments must divide every outflow domain "
+                         "and align to the global origin", HERE);
+          const int off2 = static_cast<int>(dom.offset_ncells()[1]);
+          const int n2 = static_cast<int>(dom.mesh.n_active(in::x2));
+          for (int side = 0; side < 2; ++side) {
+            const int j = side == 0 ? padding : N2 - padding - 1;
+            if (j >= off2 and j < off2 + n2) {
+              const int a = side == 0 ? j : j - inj_avg_cells + 1;
+              const int b = side == 0 ? j + inj_avg_cells : j + 1;
+              raise::ErrorIf(a < off2 or b > off2 + n2,
+                             "rec_mix: complete injector averaging strip must fit "
+                             "inside the inflow domain", HERE);
+            }
+          }
+        }
       }
       dt   = static_cast<double>(params.template get<real_t>("algorithms.timestep.dt"));
       ppc0 = static_cast<double>(params.template get<real_t>("particles.ppc0"));
@@ -1373,6 +1413,8 @@ namespace user {
         << ", T_cs = " << T_cs << " me c^2 (" << sheet_init << ")\n"
         << "  N1 x N2 = " << N1 << " x " << N2 << ", t_lc = " << N1
         << ", t_open = " << t_open << "\n"
+        << "  injector averaging: " << inj_avg_cells << " rows, outflow segment = "
+        << inj_segment_cells << " cells (0 = local domain)\n"
         << "  padding = " << padding << ", nfilter = " << nfilter
         << ", match ds (x1, x2) = (" << w_out << ", " << w_in << ")\n"
         << "  CV = [" << cv1a << ", " << cv1b << ") x [" << cv2a << ", " << cv2b << ")\n";
@@ -1433,6 +1475,7 @@ namespace user {
         << ", \"usr_interval\": " << usr_interval << ", \"line_interval\": " << line_interval
         << ", \"cv_interval\": " << cv_interval << ", \"cv_margin\": " << cv_margin
         << ", \"bulk_window\": " << bulk_window << ", \"inj_avg_cells\": " << inj_avg_cells
+        << ", \"inj_segment_cells\": " << inj_segment_cells
         << "},\n";
       f << "  \"derived\": {\"Dmass\": " << Dmass << ", \"sigma0\": " << sigma0
         << ", \"skindepth0\": " << skindepth0 << ", \"larmor0\": " << larmor0
@@ -1573,16 +1616,8 @@ namespace user {
       return std::mt19937_64 { z };
     }
 
-    // Tristan: n < 10 -> Poisson(n), else ceiling(n)
     static auto tristan_round(double n, std::mt19937_64& rng) -> std::size_t {
-      if (n <= 0.0) {
-        return 0;
-      }
-      if (n < 10.0) {
-        std::poisson_distribution<long long> pd(n);
-        return static_cast<std::size_t>(pd(rng));
-      }
-      return static_cast<std::size_t>(std::ceil(n));
+      return recmix::tristan_round(n, rng);
     }
 
     // inject ntrials co-located particles of species (sA[, sB]) in the global
@@ -1601,7 +1636,8 @@ namespace user {
                    double         uB3,
                    bool           sheet_profile,
                    std::mt19937_64& rng,
-                   double         ysheet = -1.0) -> std::size_t {
+                   double         ysheet = -1.0,
+                   const std::vector<std::size_t>& segment_trials = {}) -> std::size_t {
       const auto off1 = static_cast<double>(dom.offset_ncells()[0]);
       const auto off2 = static_cast<double>(dom.offset_ncells()[1]);
       const auto n1   = static_cast<double>(dom.mesh.n_active(in::x1));
@@ -1613,7 +1649,16 @@ namespace user {
       if (x1b <= x1a or x2b <= x2a or ndens <= 0.0) {
         return 0;
       }
-      const auto ntrials = tristan_round(ndens * (x1b - x1a) * (x2b - x2a), rng);
+      std::size_t ntrials { 0 };
+      if (segment_trials.empty()) {
+        ntrials = tristan_round(ndens * (x1b - x1a) * (x2b - x2a), rng);
+      } else {
+        for (auto n : segment_trials) {
+          raise::ErrorIf(n > std::numeric_limits<npart_t>::max() - ntrials,
+                         "rec_mix: segmented injection trial count overflow", HERE);
+          ntrials += n;
+        }
+      }
       if (ntrials == 0) {
         return 0;
       }
@@ -1662,6 +1707,17 @@ namespace user {
         static_cast<npart_t>(dom.index()),
         dom.random_pool()
       };
+      if (not segment_trials.empty()) {
+        kern.segment_ends = array_t<npart_t*>("rm_segment_ends", segment_trials.size());
+        auto ends = Kokkos::create_mirror_view(kern.segment_ends);
+        npart_t total { 0 };
+        for (std::size_t j = 0; j < segment_trials.size(); ++j) {
+          total += static_cast<npart_t>(segment_trials[j]);
+          ends(j) = total;
+        }
+        Kokkos::deep_copy(kern.segment_ends, ends);
+        kern.segment_width = inj_segment_cells;
+      }
       Kokkos::parallel_for("rec_mix::InjectBox", static_cast<npart_t>(ntrials), kern);
       auto n_h = Kokkos::create_mirror_view(kern.idx);
       Kokkos::deep_copy(n_h, kern.idx);
@@ -1860,6 +1916,53 @@ namespace user {
       return cnt;
     }
 
+    // Count once per species, and inject once per species pair, for all segments.
+    void InjectSegmented(Domain<S, M>& dom, timestep_t step, int side,
+                         int ga, int gb, int jinj) {
+      const int off1 = static_cast<int>(dom.offset_ncells()[0]);
+      const int off2 = static_cast<int>(dom.offset_ncells()[1]);
+      const int n1 = static_cast<int>(dom.mesh.n_active(in::x1));
+      const int nseg = n1 / inj_segment_cells;
+      array_t<unsigned long long*> counts("rm_segment_counts", nseg);
+      Kokkos::deep_copy(counts, 0ULL);
+      for (const auto s : inj_count) {
+        const auto& sp = dom.species[s - 1];
+        Kokkos::parallel_for("rec_mix::CountSegments", sp.rangeActiveParticles(),
+          recmix::CountSegments_kernel { sp.i1, sp.i2, sp.tag, counts,
+                                         ga - off2, gb - off2, inj_segment_cells, n1 });
+      }
+      auto host_counts = Kokkos::create_mirror_view(counts);
+      Kokkos::deep_copy(host_counts, counts);
+      std::vector<double> deficit(nseg);
+      for (int j = 0; j < nseg; ++j) {
+        deficit[j] = recmix::segment_pair_deficit(host_counts(j), gb - ga,
+                                                inj_segment_cells, ppc0);
+      }
+      const int se = side == 0 ? 4 : 7;
+      auto rng = host_rng(dom, static_cast<std::uint64_t>(step), 1 + side);
+      const auto batch = [&](int sa, int sb, double fraction, double ta, double tb) {
+        std::vector<std::size_t> trials(nseg);
+        for (int j = 0; j < nseg; ++j) {
+          trials[j] = tristan_round(deficit[j] * fraction * inj_segment_cells, rng);
+        }
+        InjectBox(dom, sa, sb, 1.0, off1, off1 + n1, jinj, jinj + 1.0,
+                  ta, tb, 0.0, 0.0, false, rng, -1.0, trials);
+      };
+      if (active) {
+        if (q < 1.0) {
+          batch(se, se + 1, 1.0 - q, theta(se), theta(se + 1));
+        }
+        if (q > 0.0) {
+          batch(se, se + 2, q, theta(se), theta(se + 2));
+        }
+      } else {
+        batch(se, se + 1, 1.0, theta(se), theta(se + 1));
+        for (int k = 0; k < 3; ++k) {
+          batch(3 * (k + 1), -1, 1.0, test_temperatures[k] / test_masses[k], 0.0);
+        }
+      }
+    }
+
     void Inject(Domain<S, M>& dom, timestep_t step) {
       const int off2 = static_cast<int>(dom.offset_ncells()[1]);
       const int n2   = static_cast<int>(dom.mesh.n_active(in::x2));
@@ -1875,6 +1978,10 @@ namespace user {
         int gb = (side == 0) ? (jinj + inj_avg_cells) : (jinj + 1);
         ga     = std::max(ga, off2);
         gb     = std::min(gb, off2 + n2);
+        if (inj_segment_cells > 0) {
+          InjectSegmented(dom, step, side, ga, gb, jinj);
+          continue;
+        }
         double cnt { 0.0 };
         for (const auto s : inj_count) {
           cnt += CountInRows(dom.species[s - 1], ga - off2, gb - off2);

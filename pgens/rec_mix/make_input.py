@@ -195,6 +195,9 @@ def main():
     ap.add_argument("--cs-width", type=float, default=400.0, help="a in cells")
     ap.add_argument("--cs-overdensity", type=float, default=3.0)
     ap.add_argument("--padding", type=int, default=12)
+    ap.add_argument("--inj-segment-cells", type=int, default=0,
+                    help="outflow length of each injector controller; 0 keeps the local-domain "
+                         "average, 13 matches the initial C2-a/e Tristan decomposition")
     ap.add_argument("--ds-abs", type=int, default=10)
     ap.add_argument("--filters", type=int, default=8)
     ap.add_argument("--cfl", type=float, default=0.45 * math.sqrt(2.0))
@@ -243,6 +246,12 @@ def main():
         raise SystemExit("make_input: --sigma is no longer accepted (P13-D39): the p1.1 labels are hot "
                          "magnetizations. Give --sigma-hot (nominal) and optionally the literal inputs "
                          "--sigma-input/--c-omp, or --reference C2-x.")
+    if a.inj_segment_cells < 0:
+        raise SystemExit("make_input: --inj-segment-cells must be >= 0")
+    if a.inj_segment_cells:
+        nd = a.decomposition[0]
+        if nd <= 0 or a.n1 % nd or (a.n1 // nd) % a.inj_segment_cells:
+            raise SystemExit("make_input: injector segments must divide each outflow domain")
     ref = REFERENCES[a.reference] if a.reference else None
     if ref is not None:
         for k in ("layout", "q", "mu", "sigma_hot", "sigma_input", "c_omp", "test_masses"):
@@ -393,6 +402,7 @@ def main():
     if a.beta_rec_target is not None:
         L.append(f"  beta_rec_target  = {fmt(a.beta_rec_target)}")
     L.append(f"  injector_padding = {a.padding}")
+    L.append(f"  inj_segment_cells = {a.inj_segment_cells}")
     L.append(f"  ds_abs           = {a.ds_abs}")
     L.append("  mixing_threshold = 0.01")
     L.append(f"  usr_interval     = {a.usr_interval}")

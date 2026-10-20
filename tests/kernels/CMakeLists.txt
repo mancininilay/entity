@@ -41,3 +41,7 @@ gen_test(ext_force)
 gen_test(reduced_stats)
 gen_test(custom_emission)
 gen_test(custom_prtl_update)
+
+if("${pgen}" STREQUAL "rec_mix")
+  gen_test(rec_mix_segments)
+endif()

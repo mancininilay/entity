@@ -123,6 +123,7 @@ species draw the same random numbers with or without them.
 | `bulk_window` | 2 | half-width of the top-hat box for bulk velocities (Tristan smooth_window), at most N_GHOSTS = 2 |
 | `bulk_nmin` | 20 | own-species box occupancy below which a particle counts in `Nlowocc` |
 | `inj_avg_cells` | 11 | rows averaged by the injector |
+| `inj_segment_cells` | 0 | outflow cells per independent injector controller; 0 retains the original per-domain average |
 | `inject`, `load_tracers` | true, true | test switches (C0.4, C1.7) |
 | `allow_any_pusher` | false | test switch: accept species not pushed with Vay |
 | `geometry` | "open" | "closed_box": doubly periodic double sheet (C1.14 drift), see below |
@@ -303,3 +304,30 @@ legacy Tristan bulk subtraction is not reproduced (P13-D38). Tech spec III.8.
   `results.json`). See its docstring for the builds it needs.
 
 Specification and status: `Resources/p1.3/technical-spec.md`, V.2 and Part VIII.
+
+## Injector segments (P13-D43, Codex 1, 2026-10-20)
+
+`--inj-segment-cells 13` writes `setup.inj_segment_cells = 13`. The injector
+averages the depositing upstream populations over each 13-by-11-cell strip
+and applies the existing nonnegative density deficit, fixed composition and
+Poisson/ceiling count rule separately to each segment. This matches the
+initial outflow subdomain length of the C2-a/e Tristan reference without
+requiring the historical CPU decomposition. It does not alter field boundaries,
+normalization, thermal sampling or current filtering. Zero, including omitted
+settings in existing inputs/checkpoints, preserves the original per-domain path.
+The chosen value is recorded in `recmix.meta.json` inputs and the startup report.
+
+Segments start at global x1=0. Each outflow domain must contain whole segments
+and both faces must align; the full averaging strip must lie inside its inflow
+domain. Unsupported decompositions fail before particle loading. The geometry
+and count law are independent of the supported decomposition, but the stochastic
+realization is not bitwise independent of domain layout or execution backend.
+Do not assume 13 cells for other continuity references without their own audit.
+
+All segments are counted in one traversal per depositing species and injected
+in one batched kernel per species pair (or tracer), with an exclusive prefix of
+per-segment trial counts. This avoids full-particle rescans and kernel launches
+per segment. The unchanged capacity, tracking, payload and paired-neutrality
+paths still apply. `KERNELS::rec_mix_segments` checks fixed counting/deficit
+witnesses, prefix assignment, alignment and the inherited rounding law on the
+configured backend. Full simulation checks remain necessary for acceptance.
