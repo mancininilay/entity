@@ -202,6 +202,9 @@ add_subdirectory(${SRC_DIR}/archetypes ${CMAKE_CURRENT_BINARY_DIR}/archetypes)
 add_subdirectory(${SRC_DIR}/framework ${CMAKE_CURRENT_BINARY_DIR}/framework)
 add_subdirectory(${SRC_DIR}/output ${CMAKE_CURRENT_BINARY_DIR}/output)
 
+# ------------------------------- Host tools ------------------------------- #
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/tools ${CMAKE_CURRENT_BINARY_DIR}/tools)
+
 # ------------------------------- Main source ------------------------------ #
 
 if(NOT DEFINED pgens)
