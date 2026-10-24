@@ -31,6 +31,7 @@
 #define ARCHETYPES_HADRONIC_BH_PHYSICS_H
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstddef>
 #include <cstdio>
@@ -63,6 +64,8 @@ namespace arch::bh {
     // registered node densities per decade of y
     inline constexpr int    NODES_PER_DECADE_FINE   = 256;
     inline constexpr int    NODES_PER_DECADE_COARSE = 64;
+    // a regular node closer than this (in y) to the upper edge is replaced by it
+    inline constexpr double ENDPOINT_COALESCING     = 1.0e-9;
   } // namespace constants
 
   // ------------------------------------------------------------------------ //
@@ -141,6 +144,23 @@ namespace arch::bh {
 
   inline double q_k(double k) {
     return q_k_delta(k - 2.0);
+  }
+
+  /**
+   * @brief Strict decimal parsing: the whole token must be consumed, no
+   *        leading whitespace, and the value must be finite
+   */
+  inline bool parse_number_strict(const std::string& s, double& out) {
+    if (s.empty() || std::isspace(static_cast<unsigned char>(s[0]))) {
+      return false;
+    }
+    char*        end = nullptr;
+    const double v   = std::strtod(s.c_str(), &end);
+    if (end == s.c_str() || *end != '\0' || !std::isfinite(v)) {
+      return false;
+    }
+    out = v;
+    return true;
   }
 
   // ------------------------------------------------------------------------ //
@@ -409,6 +429,20 @@ namespace arch::bh {
       return 0.0;
     }
 
+    // normalisation constant C of the number spectrum n~ = C f(eps) on the
+    // retained range (1 for a mono bath)
+    virtual double number_normalization() const {
+      return 1.0;
+    }
+
+    // mean photon energy of the normalised spectrum on the retained range
+    virtual double mean_eps() const = 0;
+
+    // source file of a tabulated spectrum, "" otherwise
+    virtual std::string source_file() const {
+      return "";
+    }
+
     // the cutoff energy that sets Gamma_th: eps0 or eps_max
     double eps_cut() const {
       return is_mono() ? eps0() : eps_max();
@@ -474,6 +508,10 @@ namespace arch::bh {
       throw std::logic_error("MonoBath: density is a delta function");
     }
 
+    double mean_eps() const override {
+      return m_eps0;
+    }
+
     // shortest decimal representation that round-trips in double
     static std::string json_number(double v) {
       char buf[64];
@@ -492,6 +530,48 @@ namespace arch::bh {
 
   inline std::string json_number(double v) {
     return MonoBath::json_number(v);
+  }
+
+  /**
+   * @brief JSON string literal: quotes, backslashes and control characters escaped
+   */
+  inline std::string json_string(const std::string& str) {
+    std::string out = "\"";
+    for (const char c : str) {
+      const auto ch = static_cast<unsigned char>(c);
+      switch (ch) {
+        case '"':
+          out += "\\\"";
+          break;
+        case '\\':
+          out += "\\\\";
+          break;
+        case '\b':
+          out += "\\b";
+          break;
+        case '\f':
+          out += "\\f";
+          break;
+        case '\n':
+          out += "\\n";
+          break;
+        case '\r':
+          out += "\\r";
+          break;
+        case '\t':
+          out += "\\t";
+          break;
+        default:
+          if (ch < 0x20) {
+            char buf[8];
+            std::snprintf(buf, sizeof(buf), "\\u%04x", ch);
+            out += buf;
+          } else {
+            out += c;
+          }
+      }
+    }
+    return out + "\"";
   }
 
   class PowerlawBath : public PhotonBath {
@@ -539,14 +619,27 @@ namespace arch::bh {
       return m_index;
     }
 
+    double number_normalization() const override {
+      return m_norm;
+    }
+
+    double mean_eps() const override {
+      return m_norm * power_integral(m_eps_min, m_eps_max, 1.0 - m_index);
+    }
+
     /**
      * @brief int_a^b eps^p deps (exact)
      */
     static double power_integral(double a, double b, double p) {
-      if (std::abs(p + 1.0) < 1.0e-12) {
-        return std::log(b / a);
+      // (b^t - a^t)/t = a^t L expm1(x)/x with t = p + 1, L = ln(b/a), x = t L;
+      // the limit expm1(x)/x -> 1 is taken on |x|, not on |t| alone
+      const double t = p + 1.0;
+      const double L = std::log(b / a);
+      const double x = t * L;
+      if (std::abs(x) < 1.0e-18) {
+        return std::pow(a, t) * L;
       }
-      return (std::pow(b, p + 1.0) - std::pow(a, p + 1.0)) / (p + 1.0);
+      return std::pow(a, t) * L * (std::expm1(x) / x);
     }
 
   private:
@@ -579,6 +672,7 @@ namespace arch::bh {
       const double e_tail = tail_energy(eps_max / theta) * theta * theta *
                             theta * theta;
       m_norm           = 1.0 / n_ret;
+      m_mean           = e_ret / n_ret;
       m_clipped_number = (n_head + n_tail) / n_total;
       m_clipped_energy = (e_head + e_tail) / e_total;
       m_closure_number = (n_head + n_ret + n_tail) / n_total - 1.0;
@@ -631,6 +725,14 @@ namespace arch::bh {
 
     double theta() const {
       return m_theta;
+    }
+
+    double number_normalization() const override {
+      return m_norm;
+    }
+
+    double mean_eps() const override {
+      return m_mean;
     }
 
     // unnormalised Planck number spectrum eps^2 / (exp(eps/theta) - 1)
@@ -699,7 +801,7 @@ namespace arch::bh {
     }
 
     double m_theta, m_eps_min, m_eps_max;
-    double m_norm { 1.0 };
+    double m_norm { 1.0 }, m_mean { 0.0 };
     double m_clipped_number { 0.0 }, m_clipped_energy { 0.0 };
     double m_closure_number { 0.0 }, m_closure_energy { 0.0 };
   };
@@ -720,17 +822,36 @@ namespace arch::bh {
         throw std::invalid_argument("TableBath: cannot open " + file);
       }
       std::string line;
+      std::size_t lineno = 0;
       while (std::getline(in, line)) {
+        ++lineno;
         const auto hash = line.find('#');
         if (hash != std::string::npos) {
           line = line.substr(0, hash);
         }
-        std::istringstream ss(line);
-        double             e, n;
-        if (ss >> e >> n) {
-          m_eps.push_back(e);
-          m_n.push_back(n);
+        if (line.find_first_not_of(" \t\r") == std::string::npos) {
+          continue; // blank or comment-only line
         }
+        std::istringstream  ss(line);
+        std::string         tok;
+        std::vector<double> vals;
+        while (ss >> tok) {
+          double v = 0.0;
+          if (!parse_number_strict(tok, v)) {
+            throw std::invalid_argument("TableBath: " + file + ":" +
+                                        std::to_string(lineno) + ": token '" +
+                                        tok + "' is not a finite number");
+          }
+          vals.push_back(v);
+        }
+        if (vals.size() != 2) {
+          throw std::invalid_argument(
+            "TableBath: " + file + ":" + std::to_string(lineno) +
+            ": expected exactly two columns (eps, dn/deps), found " +
+            std::to_string(vals.size()));
+        }
+        m_eps.push_back(vals[0]);
+        m_n.push_back(vals[1]);
       }
       init(eps_min_clip, eps_max_clip);
     }
@@ -751,7 +872,7 @@ namespace arch::bh {
 
     std::vector<std::pair<std::string, std::string>> parameters() const override {
       return {
-        {    "file",         "\"" + m_file + "\"" },
+        {    "file",          json_string(m_file) },
         { "eps_min",       json_number(m_eps_min) },
         { "eps_max",       json_number(m_eps_max) },
         { "n_nodes", std::to_string(m_eps.size()) }
@@ -792,6 +913,18 @@ namespace arch::bh {
       return m_clipped_energy;
     }
 
+    double number_normalization() const override {
+      return m_norm;
+    }
+
+    double mean_eps() const override {
+      return m_mean;
+    }
+
+    std::string source_file() const override {
+      return m_file;
+    }
+
   private:
     void init(double eps_min_clip, double eps_max_clip) {
       if (m_eps.size() < 2 || m_eps.size() != m_n.size()) {
@@ -825,6 +958,7 @@ namespace arch::bh {
       const double n_ret   = integral(m_eps_min, m_eps_max, 0);
       const double e_ret   = integral(m_eps_min, m_eps_max, 1);
       m_norm               = 1.0 / n_ret;
+      m_mean               = e_ret / n_ret;
       m_clipped_number     = 1.0 - n_ret / n_total;
       m_clipped_energy     = 1.0 - e_ret / e_total;
     }
@@ -858,8 +992,8 @@ namespace arch::bh {
 
     std::string         m_file;
     std::vector<double> m_eps, m_n, m_p;
-    double              m_eps_min { 0.0 }, m_eps_max { 0.0 }, m_norm { 1.0 };
-    double              m_clipped_number { 0.0 }, m_clipped_energy { 0.0 };
+    double m_eps_min { 0.0 }, m_eps_max { 0.0 }, m_norm { 1.0 }, m_mean { 0.0 };
+    double m_clipped_number { 0.0 }, m_clipped_energy { 0.0 };
   };
 
   // ------------------------------------------------------------------------ //
@@ -1109,9 +1243,10 @@ namespace arch::bh {
     double eps_prime_max { 0.0 };     // min(0.05 mu_r, 1000)
     double gamma_envelope { 0.0 };    // Gamma at which eps'_hi = eps_prime_max
     double I_peak { 0.0 };
+    double gamma_at_I_peak { 0.0 }; // Gamma of the peak of I (Gamma_max if there)
     // bath
-    double clipped_number_fraction { 0.0 };
-    double clipped_energy_fraction { 0.0 };
+    double              clipped_number_fraction { 0.0 };
+    double              clipped_energy_fraction { 0.0 };
     // nodes
     std::vector<double> gamma, beta, y, J, I, Dmean, eps_mean;
 
@@ -1136,8 +1271,28 @@ namespace arch::bh {
                                  double            gamma_p_max,
                                  double*           eps_prime_max_out = nullptr,
                                  double* gamma_envelope_out = nullptr) {
+    if (!std::isfinite(mu_r) || !(mu_r > 0.0)) {
+      throw std::invalid_argument(
+        "table_upper_edge: physical_mass_ratio must be finite and positive, "
+        "got " +
+        std::to_string(mu_r));
+    }
     const double kmax = std::min(constants::ENVELOPE_FRACTION * mu_r,
                                  constants::K_MAX);
+    if (!(kmax > constants::K_MIN)) {
+      throw std::invalid_argument(
+        "table_upper_edge: no Bethe-Heitler-active interval: "
+        "physical_mass_ratio = " +
+        std::to_string(mu_r) + " gives a kernel cap min(0.05 mu_r, 1000) = " +
+        std::to_string(kmax) + " <= 2");
+    }
+    if (gamma_p_max != 0.0 &&
+        (!std::isfinite(gamma_p_max) || !(gamma_p_max > 1.0))) {
+      throw std::invalid_argument(
+        "table_upper_edge: gamma_p_max must be a finite number > 1 (0 = "
+        "auto), got " +
+        std::to_string(gamma_p_max));
+    }
     const double A    = kmax / bath.eps_cut();
     const double genv = gamma_from_A(A);
     if (eps_prime_max_out) {
@@ -1219,7 +1374,11 @@ namespace arch::bh {
       const double Im = std::max(fc, fd);
       if (Im > T.I_peak) {
         T.I_peak = Im;
+        y_peak   = fc > fd ? c : d;
       }
+      T.gamma_at_I_peak = (std::abs(y_peak - T.y_max) < ENDPOINT_COALESCING)
+                            ? T.gamma_max
+                            : T.gamma_th + std::pow(10.0, y_peak);
     }
 
     // lower edge: I(y) = LOWER_EDGE_FRACTION * I_peak by bisection in y
@@ -1256,7 +1415,7 @@ namespace arch::bh {
 
     // nodes
     std::vector<double> ys;
-    const double        y_tiny = 1.0e-9;
+    const double        y_tiny = ENDPOINT_COALESCING;
     const double        dyf    = 1.0 / NODES_PER_DECADE_FINE;
     const double        dyc    = 1.0 / NODES_PER_DECADE_COARSE;
     for (int i = 0; i <= NODES_PER_DECADE_FINE; ++i) {

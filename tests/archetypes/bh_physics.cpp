@@ -14,6 +14,7 @@
 
 #include "archetypes/hadronic/bh_physics.h"
 
+#include "archetypes/hadronic/bh_options.h"
 #include "archetypes/hadronic/bh_table_io.h"
 
 #include <algorithm>
@@ -24,6 +25,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -32,27 +34,87 @@ using namespace arch::bh;
 
 namespace {
 
-  int g_pass = 0, g_fail = 0;
+  // registered contract items (section 5 and section 4 of the contract, spec
+  // T3) are counted separately from implementation-chosen checks
+  int g_pass_contract = 0, g_fail_contract = 0;
+  int g_pass_impl = 0, g_fail_impl = 0;
 
-  bool check_abs(const std::string& name,
-                 double             measured,
-                 double             tol,
-                 const std::string& what = "max |rel. dev.|") {
+  enum Kind {
+    CONTRACT,
+    IMPL
+  };
+
+  void tally(Kind k, bool ok) {
+    if (k == CONTRACT) {
+      ok ? ++g_pass_contract : ++g_fail_contract;
+    } else {
+      ok ? ++g_pass_impl : ++g_fail_impl;
+    }
+  }
+
+  bool check_abs_k(Kind               k,
+                   const std::string& name,
+                   double             measured,
+                   double             tol,
+                   const std::string& what = "max |rel. dev.|") {
     const bool ok = std::isfinite(measured) && std::abs(measured) <= tol;
-    std::printf("[%s] %s: %s = %.6e (tol %.3e)\n",
+    std::printf("[%s] %s%s: %s = %.6e (tol %.3e)\n",
                 ok ? "PASS" : "FAIL",
+                k == IMPL ? "(impl) " : "",
                 name.c_str(),
                 what.c_str(),
                 measured,
                 tol);
-    ok ? ++g_pass : ++g_fail;
+    tally(k, ok);
     return ok;
   }
 
-  bool check_true(const std::string& name, bool ok, const std::string& what) {
-    std::printf("[%s] %s: %s\n", ok ? "PASS" : "FAIL", name.c_str(), what.c_str());
-    ok ? ++g_pass : ++g_fail;
+  bool check_true_k(Kind k, const std::string& name, bool ok, const std::string& what) {
+    std::printf("[%s] %s%s: %s\n",
+                ok ? "PASS" : "FAIL",
+                k == IMPL ? "(impl) " : "",
+                name.c_str(),
+                what.c_str());
+    tally(k, ok);
     return ok;
+  }
+
+  // contract items
+  bool check_abs(const std::string& name,
+                 double             measured,
+                 double             tol,
+                 const std::string& what = "max |rel. dev.|") {
+    return check_abs_k(CONTRACT, name, measured, tol, what);
+  }
+
+  bool check_true(const std::string& name, bool ok, const std::string& what) {
+    return check_true_k(CONTRACT, name, ok, what);
+  }
+
+  // implementation-chosen checks
+  bool impl_abs(const std::string& name,
+                double             measured,
+                double             tol,
+                const std::string& what = "max |rel. dev.|") {
+    return check_abs_k(IMPL, name, measured, tol, what);
+  }
+
+  bool impl_true(const std::string& name, bool ok, const std::string& what) {
+    return check_true_k(IMPL, name, ok, what);
+  }
+
+  // does f() throw? (for the negative tests)
+  template <class F>
+  bool throws(F&& f, std::string* msg = nullptr) {
+    try {
+      f();
+    } catch (const std::exception& e) {
+      if (msg) {
+        *msg = e.what();
+      }
+      return true;
+    }
+    return false;
   }
 
   void diag(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
@@ -140,25 +202,40 @@ namespace {
   };
 
   // CRPropa ElectronPairProduction loss rate on the CMB, (1/gamma) dgamma/dx
-  // in 1/Mpc versus log10(gamma). Source: the public generator of the CRPropa
-  // table, CRPropa3-data `calc_pairproduction.py` (Chodorowski eq. 3.11 with
-  // the phi fits, CMB T = 2.72548 K from `photonField.py`, constants from
-  // `units.py`, CODATA 2006), executed on 2026-10-24 at these Lorentz factors
-  // because the distributed data file was not reachable from the build
-  // container. Values are therefore a regeneration of the public table, not a
-  // transcription of the distributed file (see the step-1 report).
+  // in 1/Mpc versus log10(gamma): six rows of the distributed file
+  // lossrate_CMB.txt, read from the fixture
+  // tests/data/hadronic/anchors/crpropa-lossrate-CMB-6rows.txt, which carries
+  // the provenance (distributed-file SHA-256, CRPropa3-data commit, verified
+  // by Codex 1 on 2026-10-24). No expected value is regenerated here.
   struct CRPropaRow {
     double log10_gamma, rate_per_mpc;
   };
 
-  const std::vector<CRPropaRow> crpropa_cmb = {
-    {  9.00, 3.223586e-05 },
-    {  9.25, 1.322157e-04 },
-    {  9.50, 3.162189e-04 },
-    {  9.75, 5.350970e-04 },
-    { 10.00, 7.191011e-04 },
-    { 10.25, 8.238957e-04 }
-  };
+  std::vector<CRPropaRow> read_crpropa_fixture() {
+    const std::string path = std::string(BH_TEST_DATA_DIR) +
+                             "/anchors/crpropa-lossrate-CMB-6rows.txt";
+    std::ifstream in(path);
+    if (!in) {
+      throw std::runtime_error("cannot open the CRPropa fixture " + path);
+    }
+    std::vector<CRPropaRow> rows;
+    std::string             line;
+    while (std::getline(in, line)) {
+      if (line.empty() || line[0] == '#') {
+        continue;
+      }
+      std::istringstream ss(line);
+      std::string        a, b;
+      double             lg = 0.0, rate = 0.0;
+      if (!(ss >> a >> b) || !parse_number_strict(a, lg) ||
+          !parse_number_strict(b, rate)) {
+        throw std::runtime_error("malformed row in the CRPropa fixture: " + line);
+      }
+      rows.push_back({ lg, rate });
+    }
+    return rows;
+  }
+
   // conversion constants of CRPropa3-data units.py (CODATA 2006):
   constexpr double crpropa_theta_cmb = 4.5961675847e-10; // k T / m_e c^2
   constexpr double crpropa_n_ph      = 4.1071773549e+08; // m^-3, unclipped CMB
@@ -330,10 +407,10 @@ namespace {
            cum.Phi(d) / ((constants::PI / 24.0) * d4),
            cum.psi(d) / ((constants::PI / 24.0) * d4));
     }
-    check_abs("phi threshold law at kappa-2 = 1e-4",
-              cum.phi(1.0e-4) / ((constants::PI / 12.0) * 1.0e-16) - 1.0,
-              1.0e-3,
-              "phi/((pi/12)(kappa-2)^4) - 1");
+    impl_abs("phi threshold law at kappa-2 = 1e-4",
+             cum.phi(1.0e-4) / ((constants::PI / 12.0) * 1.0e-16) - 1.0,
+             1.0e-3,
+             "phi/((pi/12)(kappa-2)^4) - 1");
   }
 
   // ---------------------------------------------------------------------- //
@@ -499,6 +576,10 @@ namespace {
          theta,
          bath->clipped_number_fraction(),
          n_ph);
+    const auto crpropa_cmb = read_crpropa_fixture();
+    impl_true("CRPropa fixture read",
+              crpropa_cmb.size() == 6,
+              std::to_string(crpropa_cmb.size()) + " rows");
     double worst = 0.0;
     for (const auto& row : crpropa_cmb) {
       const double     gamma = std::pow(10.0, row.log10_gamma);
@@ -680,7 +761,7 @@ namespace {
                          std::abs(b.I / a.I - 1.0),
                          std::abs(b.eps_mean / a.eps_mean - 1.0) });
     }
-    check_abs("two-node table bath vs powerlaw(0.1, 1.5, 2)", worst, 1.0e-10);
+    impl_abs("two-node table bath vs powerlaw(0.1, 1.5, 2)", worst, 1.0e-10);
 
     // three-node table with a spectral break, written to and read from a file
     const std::vector<double> e3 { 0.1, 0.5, 1.5 }, n3 { 100.0, 4.0, 0.44 };
@@ -699,7 +780,7 @@ namespace {
     for (const double e : { 0.1, 0.2, 0.5, 0.7, 1.49 }) {
       dens = std::max(dens, std::abs(t_file->density(e) / t_vec->density(e) - 1.0));
     }
-    check_abs("table bath from file vs from vectors (density)", dens, 1.0e-14);
+    impl_abs("table bath from file vs from vectors (density)", dens, 1.0e-14);
     diag("three-node table: breakpoints %zu, clipped fractions (%.3e, %.3e)",
          t_vec->breakpoints().size(),
          t_vec->clipped_number_fraction(),
@@ -711,7 +792,7 @@ namespace {
       conv = std::max(
         { conv, std::abs(b.J / a.J - 1.0), std::abs(b.I / a.I - 1.0) });
     }
-    check_abs("three-node table bath: self-convergence (step halved)", conv, 1.0e-8);
+    impl_abs("three-node table bath: self-convergence (step halved)", conv, 1.0e-8);
     // clipped table: eps_max above 2 must be refused without a clip
     bool refused = false;
     try {
@@ -720,9 +801,9 @@ namespace {
     } catch (const std::invalid_argument&) {
       refused = true;
     }
-    check_true("table bath with eps_max >= 2 refused",
-               refused,
-               "invalid_argument thrown");
+    impl_true("table bath with eps_max >= 2 refused",
+              refused,
+              "invalid_argument thrown");
     TableBath clipped(std::vector<double> { 0.1, 3.0 },
                       std::vector<double> { 1.0, 1.0 },
                       -1.0,
@@ -746,14 +827,14 @@ namespace {
          "zeta(3) theta^3), energy fraction %.6e (of pi^4/15 theta^4)",
          bb.clipped_number_fraction(),
          bb.clipped_energy_fraction());
-    check_abs("blackbody moment closure (number)",
-              bb.closure_number(),
-              1.0e-12,
-              "(head+retained+tail)/total - 1");
-    check_abs("blackbody moment closure (energy)",
-              bb.closure_energy(),
-              1.0e-12,
-              "(head+retained+tail)/total - 1");
+    impl_abs("blackbody moment closure (number)",
+             bb.closure_number(),
+             1.0e-12,
+             "(head+retained+tail)/total - 1");
+    impl_abs("blackbody moment closure (energy)",
+             bb.closure_energy(),
+             1.0e-12,
+             "(head+retained+tail)/total - 1");
     // unit integral of the normalised density
     const double one = integrate_log(
       [&](double e) {
@@ -762,10 +843,10 @@ namespace {
       1.0e-6,
       1.9,
       {});
-    check_abs("blackbody density normalised to unity on [1e-6, 1.9]",
-              one - 1.0,
-              1.0e-10,
-              "integral - 1");
+    impl_abs("blackbody density normalised to unity on [1e-6, 1.9]",
+             one - 1.0,
+             1.0e-10,
+             "integral - 1");
     BlackbodyBath bb2(0.1, 0.05, 1.0);
     diag("blackbody theta=0.1 on [0.05, 1.0]: clipped number %.6e, energy %.6e",
          bb2.clipped_number_fraction(),
@@ -776,52 +857,699 @@ namespace {
     } catch (const std::invalid_argument&) {
       refused = true;
     }
-    check_true("eps_max = 2 refused", refused, "invalid_argument thrown");
+    impl_true("eps_max = 2 refused", refused, "invalid_argument thrown");
   }
 
   // ---------------------------------------------------------------------- //
   // Exchange file round trip
   // ---------------------------------------------------------------------- //
+  // header lines of `original` with selected keys overridden, followed by
+  // `data`; data_sha256 is recomputed from `data` unless overridden
+  std::string rebuild_file(const std::string&                 original,
+                           const std::string&                 data,
+                           std::map<std::string, std::string> overrides) {
+    std::size_t pos = 0;
+    while (pos < original.size() && original[pos] == '#') {
+      pos = original.find('\n', pos) + 1;
+    }
+    const std::string header = original.substr(0, pos);
+    overrides.emplace("data_sha256", json_string(Sha256::digest(data)));
+    std::string out;
+    std::size_t s0 = 0;
+    while (s0 < header.size()) {
+      const auto  nl          = header.find('\n', s0);
+      std::string line        = header.substr(s0, nl - s0);
+      s0                      = nl + 1;
+      const auto        colon = line.find(':');
+      const std::string key   = line.substr(2, colon - 2);
+      const auto        it    = overrides.find(key);
+      if (it != overrides.end()) {
+        line = "# " + key + ": " + it->second;
+      }
+      out += line + "\n";
+    }
+    return out + data;
+  }
+
   void test_file(const Case& c, const HadronicTablesHost& T, const Quadrature& q) {
-    std::printf("\n== exchange file round trip (%s) ==\n", c.name.c_str());
+    std::printf("\n== exchange file round trip and reader validation (%s) ==\n",
+                c.name.c_str());
     const auto tmp = std::filesystem::temp_directory_path() /
                      ("bh_physics_test_" + c.name + ".txt");
     TableFileMeta meta;
     meta.status = "test";
     write_table_file(tmp.string(), T, *c.bath, q, meta);
-    const auto back = read_table_file(tmp.string());
-    check_true(c.name + ": SHA-256 of the data block verifies",
-               back.sha_ok,
-               back.sha256_data);
-    double worst = 0.0;
-    for (std::size_t i = 0; i < T.size(); ++i) {
-      worst = std::max({ worst,
-                         std::abs(back.gamma[i] / T.gamma[i] - 1.0),
-                         std::abs(back.J[i] / T.J[i] - 1.0),
-                         std::abs(back.I[i] / T.I[i] - 1.0),
-                         std::abs(back.Dmean[i] / T.Dmean[i] - 1.0),
-                         std::abs(back.eps_mean[i] / T.eps_mean[i] - 1.0) });
+    TableFileContents back;
+    std::string       err;
+    const bool        ok = !throws(
+      [&] {
+        back = read_table_file(tmp.string());
+      },
+      &err);
+    impl_true(
+      c.name + ": exchange file reads back (schema 1.4, digest verified)",
+      ok,
+      ok ? back.data_sha256 : err);
+    if (ok) {
+      double worst = 0.0;
+      for (std::size_t i = 0; i < T.size(); ++i) {
+        worst = std::max({ worst,
+                           std::abs(back.gamma[i] / T.gamma[i] - 1.0),
+                           std::abs(back.J[i] / T.J[i] - 1.0),
+                           std::abs(back.I[i] / T.I[i] - 1.0),
+                           std::abs(back.Dmean[i] / T.Dmean[i] - 1.0),
+                           std::abs(back.eps_mean[i] / T.eps_mean[i] - 1.0) });
+      }
+      impl_abs(c.name + ": columns read back at %.12e",
+               worst,
+               1.0e-11,
+               "max |rel. rounding|");
+      impl_true(
+        c.name + ": header metadata decoded",
+        back.node_count == T.size() && back.first_decade_node_count == T.n_fine &&
+          back.gamma_th == T.gamma_th && back.gamma_max == T.gamma_max &&
+          back.producer == "entity-cpp" && back.status == "test" &&
+          back.format_revision == 1 && back.columns == canonical_columns() &&
+          back.header.count("photon_field") == 1 &&
+          back.gamma_at_I_peak == T.gamma_at_I_peak,
+        "photon_field = " + back.header.at("photon_field"));
     }
-    check_abs(c.name + ": columns read back at %.12e",
-              worst,
-              1.0e-11,
-              "max |rel. rounding|");
-    check_true(
-      c.name + ": header carries the bath, mu_r, grid and hash keys",
-      back.header.count("bath") && back.header.count("physical_mass_ratio") &&
-        back.header.count("gamma_th") && back.header.count("gamma_min") &&
-        back.header.count("gamma_max") && back.header.count("n_nodes") &&
-        back.header.count("clipped_number_fraction") &&
-        back.header.count("clipped_energy_fraction") &&
-        back.header.count("sha256_data") && back.header.count("status"),
-      "bath = " + back.header.at("bath"));
+
+    // negative tests on the literal bytes (R2)
+    std::string bytes;
+    {
+      std::ifstream      in(tmp, std::ios::binary);
+      std::ostringstream ss;
+      ss << in.rdbuf();
+      bytes = ss.str();
+    }
+    std::size_t pos = 0;
+    while (pos < bytes.size() && bytes[pos] == '#') {
+      pos = bytes.find('\n', pos) + 1;
+    }
+    const std::string header = bytes.substr(0, pos), data = bytes.substr(pos);
+    impl_true(c.name + ": unmodified bytes parse",
+              !throws(
+                [&] {
+                  parse_table_file(bytes);
+                },
+                &err),
+              err);
+    {
+      std::string d = data;
+      const auto  k = d.find_first_of("123456789");
+      d[k]          = (d[k] == '9') ? '8' : static_cast<char>(d[k] + 1);
+      impl_true("R2: changed data token rejected",
+                throws(
+                  [&] {
+                    parse_table_file(header + d);
+                  },
+                  &err),
+                err);
+    }
+    const auto nl1 = data.find('\n');
+    const std::string first = data.substr(0, nl1 + 1), rest = data.substr(nl1 + 1);
+    {
+      const std::string d = first + "\n" + rest;
+      impl_true("R2: inserted blank line rejected (stale digest)",
+                throws(
+                  [&] {
+                    parse_table_file(header + d);
+                  },
+                  &err),
+                err);
+      impl_true("R2: inserted blank line rejected (recomputed digest)",
+                throws(
+                  [&] {
+                    parse_table_file(rebuild_file(bytes, d, {}));
+                  },
+                  &err),
+                err);
+    }
+    {
+      const std::string d = first + "# a comment inside the data\n" + rest;
+      impl_true("R2: comment line inside the data rejected (recomputed digest)",
+                throws(
+                  [&] {
+                    parse_table_file(rebuild_file(bytes, d, {}));
+                  },
+                  &err),
+                err);
+    }
+    {
+      const std::string d = data.substr(0, data.size() - 1);
+      impl_true("R2: missing terminal newline rejected (stale digest)",
+                throws(
+                  [&] {
+                    parse_table_file(header + d);
+                  },
+                  &err),
+                err);
+      impl_true("R2: missing terminal newline rejected (recomputed digest)",
+                throws(
+                  [&] {
+                    parse_table_file(rebuild_file(bytes, d, {}));
+                  },
+                  &err),
+                err);
+    }
+    impl_true("R2: empty data block with a valid digest rejected",
+              throws(
+                [&] {
+                  parse_table_file(rebuild_file(bytes,
+                                                "",
+                                                {
+                                                  { "node_count", "0" }
+                  }));
+                },
+                &err),
+              err);
+    {
+      const std::string row = "2.500000000000e+00 9.165151389912e-01 "
+                              "-4.259687322723e-01 -8.697646740000e-04 "
+                              "3.830788020000e-03 4.404396000000e+00 "
+                              "5.000000000000e-01\n";
+      impl_true(
+        "R2: one-row table with negative J and a correct digest rejected",
+        throws(
+          [&] {
+            parse_table_file(rebuild_file(bytes,
+                                          row,
+                                          {
+                                            { "node_count", "1" }
+            }));
+          },
+          &err),
+        err);
+    }
+    {
+      const std::string rows = "2.500000000000e+00 9.165151389912e-01 "
+                               "-4.259687322723e-01 -8.697646740000e-04 "
+                               "3.830788020000e-03 4.404396000000e+00 "
+                               "5.000000000000e-01\n"
+                               "3.000000000000e+00 9.428090415821e-01 "
+                               "-5.799194697769e-02 1.272033260000e-02 "
+                               "6.561922080000e-02 5.158609000000e+00 "
+                               "5.000000000000e-01\n";
+      impl_true(
+        "R2: two-row table with negative J and a correct digest rejected",
+        throws(
+          [&] {
+            parse_table_file(rebuild_file(bytes,
+                                          rows,
+                                          {
+                                            { "node_count", "2" }
+            }));
+          },
+          &err),
+        err);
+      const std::string swapped = rows.substr(rows.find('\n') + 1) +
+                                  rows.substr(0, rows.find('\n') + 1);
+      std::string pos_rows = swapped;
+      const auto  neg      = pos_rows.find("-8.697646740000e-04");
+      pos_rows.replace(neg, 1, "+");
+      impl_true("R2: non-increasing gamma_p with a correct digest rejected",
+                throws(
+                  [&] {
+                    parse_table_file(rebuild_file(bytes,
+                                                  pos_rows,
+                                                  {
+                                                    { "node_count", "2" }
+                    }));
+                  },
+                  &err),
+                err);
+    }
+    impl_true("R2: header claiming 999 nodes rejected",
+              throws(
+                [&] {
+                  parse_table_file(rebuild_file(bytes,
+                                                data,
+                                                {
+                                                  { "node_count", "999" }
+                  }));
+                },
+                &err),
+              err);
+    {
+      std::string h2;
+      std::size_t s0 = 0;
+      while (s0 < header.size()) {
+        const auto        nl   = header.find('\n', s0);
+        const std::string line = header.substr(s0, nl - s0 + 1);
+        s0                     = nl + 1;
+        if (line.rfind("# data_sha256:", 0) != 0) {
+          h2 += line;
+        }
+      }
+      impl_true("R2: missing data_sha256 rejected",
+                throws(
+                  [&] {
+                    parse_table_file(h2 + data);
+                  },
+                  &err),
+                err);
+    }
+    {
+      const std::string d = first + "1 2 3 4 5 6 7 8\n" + rest;
+      impl_true("R2: eight-token row rejected (recomputed digest)",
+                throws(
+                  [&] {
+                    parse_table_file(rebuild_file(
+                      bytes,
+                      d,
+                      {
+                        { "node_count", std::to_string(T.size() + 1) }
+                    }));
+                  },
+                  &err),
+                err);
+    }
     // SHA-256 known-answer test (FIPS 180-4 example)
-    check_true(
+    impl_true(
       "SHA-256 known answer ('abc')",
       Sha256::digest("abc") ==
         "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
       Sha256::digest("abc"));
     std::filesystem::remove(tmp);
+  }
+
+  // ---------------------------------------------------------------------- //
+  // R5: the reader against a hand-written contract-1.4 file
+  // ---------------------------------------------------------------------- //
+  void test_foreign_reader() {
+    std::printf("\n== R5: reader against a hand-written contract-1.4 file (not "
+                "produced by the C++ writer) ==\n");
+    const std::string data =
+      "2.200000000000e+00 8.907234634e-01 -1.124938736608e+00 "
+      "2.330853550000e-06 9.064062080000e-06 3.888731000000e+00 "
+      "5.000000000000e-01\n"
+      "2.500000000000e+00 9.165151389912e-01 -4.259687322723e-01 "
+      "8.697646740000e-04 3.830788020000e-03 4.404396000000e+00 "
+      "5.000000000000e-01\n"
+      "3.000000000000e+00 9.428090415821e-01 -5.799194697769e-02 "
+      "1.272033260000e-02 6.561922080000e-02 5.158609000000e+00 "
+      "5.000000000000e-01\n";
+    std::string f;
+    f += "# format: \"bh-rate-table\"\n";
+    f += "# format_revision: 1\n";
+    f += "# producer: \"bhref\"\n";
+    f += "# version: \"v0.3.1\"\n";
+    f += "# status: \"frozen:\\\"v0.3.1\\\"\"\n";
+    f += "# physical_mass_ratio: 1836.15\n";
+    f += "# photon_field: {\"type\": \"table\", \"file\": "
+         "\"spec\\\\dir\\\\n\\\"q\\\".txt\", \"file_sha256\": \"00\"}\n";
+    f += "# gamma_p_max_input: null\n";
+    f += "# eps_prime_max: 91.8075\n";
+    f += "# gamma_envelope: 91.81022308907225\n";
+    f += "# gamma_th: 2.125\n";
+    f += "# gamma_min: 2.2\n";
+    f += "# gamma_max: 3.0\n";
+    f += "# y_min: -1.124938736608\n";
+    f += "# y_max: -0.05799194697769\n";
+    f += "# grid_variable: \"log10(gamma_p - gamma_th)\"\n";
+    f += "# lower_edge_fraction: 1e-12\n";
+    f += "# first_decade_intervals_per_decade: 256\n";
+    f += "# other_intervals_per_decade: 64\n";
+    f += "# endpoint_coalescing: 1e-9\n";
+    f += "# first_decade_node_count: 3\n";
+    f += "# node_count: 3\n";
+    f += "# I_peak: 6.56192208e-02\n";
+    f += "# gamma_at_I_peak: 3.0\n";
+    f += "# number_normalization: 1.0\n";
+    f += "# mean_photon_energy: 0.5\n";
+    f += "# discarded_number_fraction: 0.0\n";
+    f += "# discarded_energy_fraction: 0.0\n";
+    f += "# quadrature: {\"method\": \"scipy.integrate.quad\", \"epsrel\": "
+         "1e-12}\n";
+    f += "# columns: "
+         "[\"gamma_p\",\"beta_p\",\"y\",\"J\",\"I\",\"Dmean\",\"eps_mean\"]\n";
+    f += "# extra_unknown_key: {\"ignored\": true}\n";
+    f += "# data_sha256: \"" + Sha256::digest(data) + "\"\n";
+    f += data;
+    TableFileContents c;
+    std::string       err;
+    const bool        ok = !throws(
+      [&] {
+        c = parse_table_file(f, "hand-written");
+      },
+      &err);
+    impl_true("R5: hand-written schema-1.4 file accepted", ok, ok ? "" : err);
+    if (ok) {
+      impl_true(
+        "R5: decoded metadata",
+        c.producer == "bhref" && c.status == "frozen:\"v0.3.1\"" &&
+          c.node_count == 3 && c.format_revision == 1 &&
+          c.physical_mass_ratio == 1836.15 && c.columns == canonical_columns() &&
+          c.header.count("extra_unknown_key") == 1 && c.version == "v0.3.1",
+        "status = " + c.status);
+      impl_abs("R5: data values",
+               std::abs(c.J[1] / 8.69764674e-04 - 1.0) + std::abs(c.gamma[2] - 3.0),
+               1.0e-12,
+               "|dJ/J| + |dgamma|");
+    }
+    impl_true("R5: JSON string escapes decoded",
+              json_unescape("\"spec\\\\dir\\\\n\\\"q\\\".txt\"") ==
+                "spec\\dir\\n\"q\".txt",
+              json_unescape("\"spec\\\\dir\\\\n\\\"q\\\".txt\""));
+    {
+      const std::string nasty = "a\"b\\c\n\t\x01z";
+      impl_true("R5: json_string / json_unescape round trip",
+                json_unescape(json_string(nasty)) == nasty,
+                json_string(nasty));
+    }
+    {
+      std::string g = f;
+      const auto  i = g.find("# gamma_th:");
+      g.erase(i, g.find('\n', i) - i + 1);
+      impl_true("R5: missing required key rejected",
+                throws(
+                  [&] {
+                    parse_table_file(g);
+                  },
+                  &err),
+                err);
+    }
+    {
+      std::string g = f;
+      const auto  i = g.find("\"Dmean\"");
+      g.replace(i, 7, "\"D\"");
+      impl_true("R5: non-canonical columns rejected",
+                throws(
+                  [&] {
+                    parse_table_file(g);
+                  },
+                  &err),
+                err);
+    }
+    {
+      std::string g = f;
+      const auto  i = g.find("# format_revision: 1");
+      g.replace(i, 20, "# format_revision: 2");
+      impl_true("R5: unsupported format_revision rejected",
+                throws(
+                  [&] {
+                    parse_table_file(g);
+                  },
+                  &err),
+                err);
+    }
+    {
+      std::string g = f;
+      const auto  i = g.find("# I_peak: 6.56192208e-02");
+      g.replace(i, 24, "# I_peak: NaN");
+      impl_true("R5: non-finite numeric metadata rejected",
+                throws(
+                  [&] {
+                    parse_table_file(g);
+                  },
+                  &err),
+                err);
+    }
+  }
+
+  // ---------------------------------------------------------------------- //
+  // R1: validity envelope guards
+  // ---------------------------------------------------------------------- //
+  void test_envelope(const Quadrature& q) {
+    std::printf("\n== R1: validity envelope guards ==\n");
+    auto              bath = std::make_shared<MonoBath>(0.5);
+    BetheHeitlerRates R(bath, q);
+    std::string       err;
+    impl_true("R1: mu_r = 1 rejected (k_cap = 0.05)",
+              throws(
+                [&] {
+                  build_tables(R, 1.0);
+                },
+                &err),
+              err);
+    impl_true("R1: mu_r = 40 rejected (k_cap = 2)",
+              throws(
+                [&] {
+                  build_tables(R, 40.0);
+                },
+                &err),
+              err);
+    impl_true("R1: mu_r = NaN rejected",
+              throws(
+                [&] {
+                  build_tables(R, std::nan(""));
+                },
+                &err),
+              err);
+    impl_true("R1: mu_r = -1836.15 rejected",
+              throws(
+                [&] {
+                  build_tables(R, -1836.15);
+                },
+                &err),
+              err);
+    impl_true("R1: gamma_p_max = inf rejected",
+              throws(
+                [&] {
+                  build_tables(R, 1836.15, INFINITY);
+                },
+                &err),
+              err);
+    impl_true("R1: gamma_p_max = 1 rejected",
+              throws(
+                [&] {
+                  build_tables(R, 1836.15, 1.0);
+                },
+                &err),
+              err);
+    impl_true("R1: gamma_p_max = 2 (below Gamma_th = 2.125) rejected",
+              throws(
+                [&] {
+                  build_tables(R, 1836.15, 2.0);
+                },
+                &err),
+              err);
+
+    struct Row {
+      double mu_r, eps_prime_max, gamma_max; // gamma_max 0 = not checked
+    };
+
+    for (const Row& r : {
+           Row {   100.0,    5.0, 5.05 },
+           Row { 19999.0, 999.95,  0.0 },
+           Row { 20001.0, 1000.0,  0.0 }
+    }) {
+      const auto  T    = build_tables(R, r.mu_r);
+      const char* name = r.mu_r == 100.0
+                           ? "mu_r = 100"
+                           : (r.mu_r < 20000.0 ? "mu_r = 19999" : "mu_r = 20001");
+      validate_tables(T);
+      impl_abs(std::string("R1: ") + name + ": eps'_max",
+               T.eps_prime_max - r.eps_prime_max,
+               1.0e-12,
+               "eps'_max - " + std::to_string(r.eps_prime_max));
+      if (r.gamma_max > 0.0) {
+        impl_abs(std::string("R1: ") + name + ": Gamma_max",
+                 T.gamma_max - r.gamma_max,
+                 1.0e-12,
+                 "Gamma_max - 5.05");
+      }
+      const double eps_hi_last = T.gamma.back() * (1.0 + T.beta.back()) * 0.5;
+      impl_abs(std::string("R1: ") + name + ": eps'_hi at the last node = eps'_max",
+               eps_hi_last / T.eps_prime_max - 1.0,
+               1.0e-12,
+               "relative");
+      diag("  %s: Gamma_max = %.12f, eps'_hi(last) = %.12f, %zu nodes, I_peak "
+           "= %.6e at Gamma = %.6f",
+           name,
+           T.gamma_max,
+           eps_hi_last,
+           T.size(),
+           T.I_peak,
+           T.gamma_at_I_peak);
+    }
+    {
+      const auto T = build_tables(R, 1836.15, 10.0);
+      impl_abs("R1: explicit gamma_p_max = 10 honoured",
+               T.gamma_max - 10.0,
+               1.0e-12,
+               "Gamma_max - 10");
+    }
+  }
+
+  // ---------------------------------------------------------------------- //
+  // R3: strict spectrum rows and option strings
+  // ---------------------------------------------------------------------- //
+  void test_options() {
+    std::printf("\n== R3: strict spectrum rows and option parsing ==\n");
+    const auto tmp = std::filesystem::temp_directory_path() /
+                     "bh_physics_test_badspec.txt";
+    auto write = [&tmp](const std::string& content) {
+      std::ofstream f(tmp);
+      f << content;
+    };
+    std::string err;
+    write("0.1 100\n0.5 abc\n1.5 0.44\n");
+    impl_true("R3: non-numeric spectrum token rejected",
+              throws(
+                [&] {
+                  TableBath t(tmp.string());
+                },
+                &err),
+              err);
+    write("0.1 100\n0.5 4 7\n1.5 0.44\n");
+    impl_true("R3: three-column spectrum row rejected",
+              throws(
+                [&] {
+                  TableBath t(tmp.string());
+                },
+                &err),
+              err);
+    write("0.1 100\n0.5\n1.5 0.44\n");
+    impl_true("R3: one-column spectrum row rejected",
+              throws(
+                [&] {
+                  TableBath t(tmp.string());
+                },
+                &err),
+              err);
+    write("0.1 100\n0.5 inf\n1.5 0.44\n");
+    impl_true("R3: non-finite spectrum value rejected",
+              throws(
+                [&] {
+                  TableBath t(tmp.string());
+                },
+                &err),
+              err);
+    write("# comment\n0.1 100   # trailing comment\n\n0.5 4\n1.5 0.44\n");
+    err = "";
+    impl_true("R3: comments and blank lines in a spectrum file accepted",
+              !throws(
+                [&] {
+                  TableBath t(tmp.string());
+                },
+                &err),
+              err);
+    std::filesystem::remove(tmp);
+
+    using V      = std::vector<std::string>;
+    auto rejects = [&err](const std::string& name, const V& v) {
+      impl_true(name,
+                throws(
+                  [&] {
+                    parse_dump_options(v);
+                  },
+                  &err),
+                err);
+    };
+    rejects("R3: --eps0 '.5 malformed' rejected",
+            V { "--type", "mono", "--eps0", ".5 malformed", "--out", "x" });
+    rejects(
+      "R3: --gamma_p_max not-a-number rejected",
+      V { "--type", "mono", "--eps0", "0.5", "--gamma_p_max", "not-a-number", "--out", "x" });
+    rejects(
+      "R3: --gamma_p_max 0 rejected (no sentinel)",
+      V { "--type", "mono", "--eps0", "0.5", "--gamma_p_max", "0", "--out", "x" });
+    rejects("R3: --eps0 2.5 rejected",
+            V { "--type", "mono", "--eps0", "2.5", "--out", "x" });
+    rejects("R3: --eps0 nan rejected",
+            V { "--type", "mono", "--eps0", "nan", "--out", "x" });
+    rejects("R3: --eps0 1e400 rejected",
+            V { "--type", "mono", "--eps0", "1e400", "--out", "x" });
+    rejects("R3: --mu_r -5 rejected",
+            V { "--type", "mono", "--eps0", "0.5", "--mu_r", "-5", "--out", "x" });
+    rejects(
+      "R3: --theta 0 rejected",
+      V { "--type", "blackbody", "--theta", "0", "--eps_max", "1.9", "--out", "x" });
+    rejects("R3: unknown option rejected",
+            V { "--type", "mono", "--eps0", "0.5", "--bogus", "1", "--out", "x" });
+    rejects("R3: missing --out rejected", V { "--type", "mono", "--eps0", "0.5" });
+    {
+      const DumpOptions o = parse_dump_options(
+        V { "--type", "mono", "--eps0", "0.5", "--gamma_p_max", "auto", "--out", "x" });
+      impl_true("R3: --gamma_p_max auto selects the envelope",
+                o.gamma_p_max == 0.0 && o.spec.eps0 == 0.5 && o.mu_r == 1836.15,
+                "gamma_p_max = " + std::to_string(o.gamma_p_max));
+    }
+    {
+      const DumpOptions o = parse_dump_options(V { "--type",
+                                                   "blackbody",
+                                                   "--theta",
+                                                   "0.1",
+                                                   "--eps_min",
+                                                   "0",
+                                                   "--eps_max",
+                                                   "1.9",
+                                                   "--mu_r",
+                                                   "100",
+                                                   "--gamma_p_max",
+                                                   "4.5",
+                                                   "--out",
+                                                   "x" });
+      impl_true("R3: valid blackbody options parsed",
+                o.spec.theta == 0.1 && o.spec.eps_min == 0.0 &&
+                  o.spec.eps_max == 1.9 && o.mu_r == 100.0 &&
+                  o.gamma_p_max == 4.5 && o.out == "x",
+                "ok");
+    }
+  }
+
+  // ---------------------------------------------------------------------- //
+  // R4: power-segment integral
+  // ---------------------------------------------------------------------- //
+  void test_power_integral() {
+    std::printf(
+      "\n== R4: power-segment integral vs Gauss-Legendre reference ==\n");
+    static const GaussLegendre gl { 16 };
+    auto                       reference = [](double a, double b, double p) {
+      const int    npan = 256;
+      const double h    = (b - a) / npan;
+      double       sum  = 0.0;
+      for (int k = 0; k < npan; ++k) {
+        const double mid = a + h * (k + 0.5), half = 0.5 * h;
+        for (int i = 0; i < gl.order(); ++i) {
+          sum += half * gl.w[i] * std::pow(mid + half * gl.x[i], p);
+        }
+      }
+      return sum;
+    };
+
+    struct C {
+      double a, b, p;
+    };
+
+    double worst = 0.0;
+    for (const C& c : {
+           C { 0.1,    1.5, -1.0 + 2.0e-12 },
+           C { 0.1,    1.5, -1.0 + 1.0e-11 },
+           C { 0.1,    1.5,           -0.9 },
+           C { 0.1,    1.5,           -1.1 },
+           C { 0.1,    1.5,           -1.0 },
+           C { 0.1,    1.5,           -2.0 },
+           C { 0.5, 0.5001, -1.0 + 2.0e-12 },
+           C { 0.5, 0.5001, -1.0 + 1.0e-11 },
+           C { 0.5, 0.5001,           -0.9 },
+           C { 0.5, 0.5001,           -1.1 },
+           C { 0.5, 0.5001,           -1.0 }
+    }) {
+      const double v   = PowerlawBath::power_integral(c.a, c.b, c.p);
+      const double ref = reference(c.a, c.b, c.p);
+      const double rel = v / ref - 1.0;
+      worst            = std::max(worst, std::abs(rel));
+      diag("  int_%g^%g eps^(%.13g): %.16e, reference %.16e, rel %+.2e",
+           c.a,
+           c.b,
+           c.p,
+           v,
+           ref,
+           rel);
+    }
+    impl_abs("R4: power_integral vs Gauss-Legendre reference", worst, 1.0e-13);
+    PowerlawBath pl(0.1, 1.5, 2.0);
+    const double exact = std::log(15.0) / (10.0 - 1.0 / 1.5);
+    impl_abs("R4: powerlaw(0.1, 1.5, 2) mean photon energy (t = 0 branch)",
+             pl.mean_eps() / exact - 1.0,
+             1.0e-14,
+             "mean_eps/exact - 1");
+    diag("powerlaw mean photon energy %.15f (exact ln 15 / (10 - 2/3) = %.15f)",
+         pl.mean_eps(),
+         exact);
   }
 
   // ---------------------------------------------------------------------- //
@@ -877,7 +1605,7 @@ int main() {
   const auto t_start = std::chrono::steady_clock::now();
   Quadrature q; // registered defaults: h_log_delta = h_log_eps = 0.02, delta0 = 1e-8, GL-16
   std::printf("Bethe-Heitler startup tables: acceptance tests (contract 1.3 "
-              "section 5, items 1-6)\n");
+              "section 5, items 1-6; exchange format of contract 1.4)\n");
   std::printf("quadrature: h_log_delta = %g, h_log_eps = %g, delta0 = %g, GL "
               "order %d, k_max = %g\n",
               q.h_log_delta,
@@ -934,14 +1662,21 @@ int main() {
     test_crpropa(q);
     test_table_bath(q);
     test_blackbody();
+    test_envelope(q);
+    test_options();
+    test_power_integral();
+    test_foreign_reader();
   } catch (const std::exception& e) {
     std::printf("[FAIL] exception: %s\n", e.what());
-    ++g_fail;
+    ++g_fail_impl;
   }
 
-  std::printf("\n== summary: %d passed, %d failed (%.1f s) ==\n",
-              g_pass,
-              g_fail,
+  std::printf("\n== summary: contract items %d passed, %d failed; "
+              "implementation-chosen checks %d passed, %d failed (%.1f s) ==\n",
+              g_pass_contract,
+              g_fail_contract,
+              g_pass_impl,
+              g_fail_impl,
               seconds_since(t_start));
-  return g_fail == 0 ? 0 : 1;
+  return (g_fail_contract + g_fail_impl) == 0 ? 0 : 1;
 }

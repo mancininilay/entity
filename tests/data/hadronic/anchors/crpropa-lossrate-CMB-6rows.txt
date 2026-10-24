@@ -1,0 +1,15 @@
+# CRPropa ElectronPairProduction loss rate of a proton on the CMB: six rows
+# transcribed from the distributed file, verified by Codex 1 on 2026-10-24.
+# source: ElectronPairProduction/lossrate_CMB.txt of the CRPropa data distribution
+# distributed-file SHA-256: 3ceafd2d613de596c6917b0fbb0c29fde2fe97ae81b6ccc49ab242dae8f142c7
+# CRPropa3-data commit: d34b15be5436423de1be5c5745b3c4a686cd46ae
+# generator (public): CRPropa3-data calc_pairproduction.py, Chodorowski et al.
+#   1992 eq. 3.11 with the phi fits, CMB T = 2.72548 K, constants of units.py
+# rows selected: log10(gamma) = 9.00, 9.25, 9.50, 9.75, 10.00, 10.25
+# columns: log10(gamma)   (1/gamma) dgamma/dx [1/Mpc]
+9.00	3.223586e-05
+9.25	1.322157e-04
+9.50	3.162189e-04
+9.75	5.350970e-04
+10.00	7.191011e-04
+10.25	8.238957e-04

@@ -1,12 +1,14 @@
 /**
  * @file archetypes/hadronic/bh_table_io.h
  * @brief Exchange-file format of the Bethe-Heitler startup tables
- *        (contract revision 1.3, section 4) and a self-contained SHA-256
+ *        (contract revision 1.4, section 2) and a self-contained SHA-256
  *
- * File layout: UTF-8 text; header lines `# key: value` with JSON values;
- * then whitespace-separated columns `gamma_p beta_p y J I Dmean eps_mean`
- * at `%.12e`. The header carries the SHA-256 of the exact data block (every
- * byte from the first data line to the final newline).
+ * Contract 1.4 schema (section 2): UTF-8 text; header lines `# key: value`
+ * with strict JSON values, one key per line, no blank lines; the data block
+ * starts at the first line not beginning with `#` and runs to the end of the
+ * file; each data line is seven numbers at `%.12e` separated by one space and
+ * terminated by a newline; `data_sha256` is the SHA-256 of every byte of the
+ * data block. The reader hashes the literal bytes and validates the content.
  *
  * @namespaces:
  *   - arch::bh::
@@ -18,6 +20,7 @@
 #include "archetypes/hadronic/bh_physics.h"
 
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -165,13 +168,150 @@ namespace arch::bh {
   };
 
   // ------------------------------------------------------------------------ //
-  // Writer
+  // Minimal JSON helpers for the header values
+  // ------------------------------------------------------------------------ //
+
+  /**
+   * @brief Decode a JSON string literal (with its quotes); throws otherwise
+   */
+  inline std::string json_unescape(const std::string& raw) {
+    if (raw.size() < 2 || raw.front() != '"' || raw.back() != '"') {
+      throw std::runtime_error("expected a JSON string, got " + raw);
+    }
+    std::string out;
+    for (std::size_t i = 1; i + 1 < raw.size(); ++i) {
+      const char c = raw[i];
+      if (c != '\\') {
+        out += c;
+        continue;
+      }
+      if (i + 2 >= raw.size()) {
+        throw std::runtime_error("dangling escape in JSON string " + raw);
+      }
+      const char e = raw[++i];
+      switch (e) {
+        case '"':
+          out += '"';
+          break;
+        case '\\':
+          out += '\\';
+          break;
+        case '/':
+          out += '/';
+          break;
+        case 'b':
+          out += '\b';
+          break;
+        case 'f':
+          out += '\f';
+          break;
+        case 'n':
+          out += '\n';
+          break;
+        case 'r':
+          out += '\r';
+          break;
+        case 't':
+          out += '\t';
+          break;
+        case 'u': {
+          if (i + 4 >= raw.size()) {
+            throw std::runtime_error("truncated \\u escape in " + raw);
+          }
+          const unsigned long cp = std::stoul(raw.substr(i + 1, 4), nullptr, 16);
+          i += 4;
+          if (cp < 0x80) {
+            out += static_cast<char>(cp);
+          } else if (cp < 0x800) {
+            out += static_cast<char>(0xC0 | (cp >> 6));
+            out += static_cast<char>(0x80 | (cp & 0x3F));
+          } else {
+            out += static_cast<char>(0xE0 | (cp >> 12));
+            out += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+            out += static_cast<char>(0x80 | (cp & 0x3F));
+          }
+          break;
+        }
+        default:
+          throw std::runtime_error(
+            std::string("invalid escape \\") + e + " in " + raw);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * @brief Strict JSON number (finite); throws otherwise
+   */
+  inline double json_to_number(const std::string& raw, const std::string& key) {
+    double v = 0.0;
+    if (!parse_number_strict(raw, v) || raw == "nan" || raw == "inf") {
+      throw std::runtime_error(
+        "header key " + key + ": '" + raw + "' is not a finite JSON number");
+    }
+    return v;
+  }
+
+  /**
+   * @brief JSON array of strings, e.g. ["a", "b"]; throws otherwise
+   */
+  inline std::vector<std::string> json_string_array(const std::string& raw) {
+    auto trim = [](std::string s) {
+      const auto a = s.find_first_not_of(" \t");
+      const auto b = s.find_last_not_of(" \t");
+      return (a == std::string::npos) ? std::string() : s.substr(a, b - a + 1);
+    };
+    const std::string t = trim(raw);
+    if (t.size() < 2 || t.front() != '[' || t.back() != ']') {
+      throw std::runtime_error("expected a JSON array, got " + raw);
+    }
+    std::vector<std::string> out;
+    std::string              inner = t.substr(1, t.size() - 2);
+    std::size_t              pos   = 0;
+    while (pos < inner.size()) {
+      const auto q1 = inner.find('"', pos);
+      if (q1 == std::string::npos) {
+        break;
+      }
+      std::size_t q2 = q1 + 1;
+      while (q2 < inner.size() && !(inner[q2] == '"' && inner[q2 - 1] != '\\')) {
+        ++q2;
+      }
+      if (q2 >= inner.size()) {
+        throw std::runtime_error("unterminated string in JSON array " + raw);
+      }
+      out.push_back(json_unescape(inner.substr(q1, q2 - q1 + 1)));
+      pos = q2 + 1;
+    }
+    return out;
+  }
+
+  /**
+   * @brief JSON number for the header; non-finite metadata is an error
+   */
+  inline std::string json_number_checked(double v, const std::string& key) {
+    if (!std::isfinite(v)) {
+      throw std::runtime_error(
+        "table header: " + key + " is not finite and cannot be written");
+    }
+    return json_number(v);
+  }
+
+  // ------------------------------------------------------------------------ //
+  // Writer (contract 1.4 exchange schema)
   // ------------------------------------------------------------------------ //
   struct TableFileMeta {
     std::string producer { "entity-cpp" };
     std::string status { "cpp_candidate" };
-    std::string commit { "unknown" };
+    std::string version { "unknown" }; // git commit of the producer
   };
+
+  inline const std::vector<std::string>& canonical_columns() {
+    static const std::vector<std::string> cols = { "gamma_p", "beta_p", "y",
+                                                   "J",       "I",      "Dmean",
+                                                   "eps_mean" };
+    return cols;
+  }
 
   inline std::string format_e12(double v) {
     char buf[40];
@@ -180,26 +320,40 @@ namespace arch::bh {
   }
 
   /**
-   * @brief The data block: one line per node, 7 columns at %.12e
+   * @brief SHA-256 of the bytes of a file
+   */
+  inline std::string sha256_of_file(const std::string& path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) {
+      throw std::runtime_error("sha256_of_file: cannot open " + path);
+    }
+    std::ostringstream ss;
+    ss << in.rdbuf();
+    return Sha256::digest(ss.str());
+  }
+
+  /**
+   * @brief The data block: one line per node, seven numbers at %.12e separated
+   *        by one space, each line terminated by a newline
    */
   inline std::string format_table_data(const HadronicTablesHost& T) {
     std::string out;
-    out.reserve(T.size() * 120);
+    out.reserve(T.size() * 140);
     for (std::size_t i = 0; i < T.size(); ++i) {
       out += format_e12(T.gamma[i]);
-      out += "  ";
+      out += ' ';
       out += format_e12(T.beta[i]);
-      out += "  ";
+      out += ' ';
       out += format_e12(T.y[i]);
-      out += "  ";
+      out += ' ';
       out += format_e12(T.J[i]);
-      out += "  ";
+      out += ' ';
       out += format_e12(T.I[i]);
-      out += "  ";
+      out += ' ';
       out += format_e12(T.Dmean[i]);
-      out += "  ";
+      out += ' ';
       out += format_e12(T.eps_mean[i]);
-      out += "\n";
+      out += '\n';
     }
     return out;
   }
@@ -217,51 +371,71 @@ namespace arch::bh {
     auto line = [&h](const std::string& key, const std::string& json) {
       h << "# " << key << ": " << json << "\n";
     };
-    auto str = [](const std::string& s) {
-      return "\"" + s + "\"";
+    auto num = [](const std::string& key, double v) {
+      return json_number_checked(v, key);
     };
-    line("format", str("entity-bh-table"));
-    line("format_revision", str("contract-1.3"));
-    line("producer", str(meta.producer));
-    line("status", str(meta.status));
-    line("commit", str(meta.commit));
+    line("format", json_string("bh-rate-table"));
+    line("format_revision", "1");
+    line("producer", json_string(meta.producer));
+    line("version", json_string(meta.version));
+    line("status", json_string(meta.status));
+    line("physical_mass_ratio", num("physical_mass_ratio", T.mu_r));
     {
-      std::string b = "{\"type\": " + str(bath.type());
+      std::string b = "{\"type\": " + json_string(bath.type());
       for (const auto& [k, v] : bath.parameters()) {
-        b += ", \"" + k + "\": " + v;
+        b += ", " + json_string(k) + ": " + v;
+      }
+      if (!bath.source_file().empty()) {
+        b += ", \"file_sha256\": " +
+             json_string(sha256_of_file(bath.source_file()));
       }
       b += "}";
-      line("bath", b);
+      line("photon_field", b);
     }
-    line("physical_mass_ratio", json_number(T.mu_r));
-    line("gamma_p_max",
-         T.gamma_p_max_input > 0.0 ? json_number(T.gamma_p_max_input) : "null");
-    line("eps_prime_max", json_number(T.eps_prime_max));
-    line("gamma_envelope", json_number(T.gamma_envelope));
-    line("gamma_th", json_number(T.gamma_th));
-    line("gamma_min", json_number(T.gamma_min));
-    line("gamma_max", json_number(T.gamma_max));
-    line("y_min", json_number(T.y_min));
-    line("y_max", json_number(T.y_max));
-    line("grid_variable", str("log10(gamma_p - gamma_th)"));
-    line("nodes_per_decade_fine", std::to_string(T.nodes_per_decade_fine));
-    line("nodes_per_decade_coarse", std::to_string(T.nodes_per_decade_coarse));
-    line("n_fine", std::to_string(T.n_fine));
-    line("n_coarse", std::to_string(T.n_coarse));
-    line("n_nodes", std::to_string(T.size()));
-    line("I_peak", json_number(T.I_peak));
-    line("lower_edge_fraction", json_number(constants::LOWER_EDGE_FRACTION));
-    line("clipped_number_fraction", json_number(T.clipped_number_fraction));
-    line("clipped_energy_fraction", json_number(T.clipped_energy_fraction));
+    line("gamma_p_max_input",
+         T.gamma_p_max_input > 0.0 ? num("gamma_p_max_input", T.gamma_p_max_input)
+                                   : "null");
+    line("eps_prime_max", num("eps_prime_max", T.eps_prime_max));
+    line("gamma_envelope", num("gamma_envelope", T.gamma_envelope));
+    line("gamma_th", num("gamma_th", T.gamma_th));
+    line("gamma_min", num("gamma_min", T.gamma_min));
+    line("gamma_max", num("gamma_max", T.gamma_max));
+    line("y_min", num("y_min", T.y_min));
+    line("y_max", num("y_max", T.y_max));
+    line("grid_variable", json_string("log10(gamma_p - gamma_th)"));
+    line("lower_edge_fraction",
+         num("lower_edge_fraction", constants::LOWER_EDGE_FRACTION));
+    line("first_decade_intervals_per_decade",
+         std::to_string(T.nodes_per_decade_fine));
+    line("other_intervals_per_decade", std::to_string(T.nodes_per_decade_coarse));
+    line("endpoint_coalescing",
+         num("endpoint_coalescing", constants::ENDPOINT_COALESCING));
+    line("first_decade_node_count", std::to_string(T.n_fine));
+    line("node_count", std::to_string(T.size()));
+    line("I_peak", num("I_peak", T.I_peak));
+    line("gamma_at_I_peak", num("gamma_at_I_peak", T.gamma_at_I_peak));
+    line("number_normalization",
+         num("number_normalization", bath.number_normalization()));
+    line("mean_photon_energy", num("mean_photon_energy", bath.mean_eps()));
+    line("discarded_number_fraction",
+         num("discarded_number_fraction", T.clipped_number_fraction));
+    line("discarded_energy_fraction",
+         num("discarded_energy_fraction", T.clipped_energy_fraction));
     line("quadrature",
-         "{\"delta0\": " + json_number(q.delta0) +
-           ", \"h_log_delta\": " + json_number(q.h_log_delta) +
-           ", \"h_log_eps\": " + json_number(q.h_log_eps) +
-           ", \"gl_order\": " + std::to_string(q.gl_order) +
-           ", \"k_max\": " + json_number(q.k_max) + "}");
-    line("columns", "[\"gamma_p\", \"beta_p\", \"y\", \"J\", \"I\", \"Dmean\", \"eps_mean\"]");
-    line("format_columns", str("%.12e"));
-    line("sha256_data", str(sha));
+         "{\"delta0\": " + num("quadrature.delta0", q.delta0) +
+           ", \"h_log_delta\": " + num("quadrature.h_log_delta", q.h_log_delta) +
+           ", \"h_log_eps\": " + num("quadrature.h_log_eps", q.h_log_eps) +
+           ", \"gl_order\": " + std::to_string(q.gl_order) + ", \"k_max\": " +
+           num("quadrature.k_max", q.k_max) + ", \"columns_format\": \"%.12e\"}");
+    {
+      std::string cols = "[";
+      for (std::size_t i = 0; i < canonical_columns().size(); ++i) {
+        cols += (i ? ", " : "") + json_string(canonical_columns()[i]);
+      }
+      cols += "]";
+      line("columns", cols);
+    }
+    line("data_sha256", json_string(sha));
     return h.str() + data;
   }
 
@@ -270,71 +444,248 @@ namespace arch::bh {
                                const PhotonBath&         bath,
                                const Quadrature&         q,
                                const TableFileMeta&      meta) {
-    std::ofstream out(path, std::ios::binary);
+    const std::string content = format_table_file(T, bath, q, meta);
+    std::ofstream     out(path, std::ios::binary);
     if (!out) {
       throw std::runtime_error("write_table_file: cannot open " + path);
     }
-    out << format_table_file(T, bath, q, meta);
+    out << content;
   }
 
   // ------------------------------------------------------------------------ //
-  // Reader (header map + columns; verifies the SHA-256 of the data block)
+  // Reader: hashes the literal data bytes, then validates everything
   // ------------------------------------------------------------------------ //
   struct TableFileContents {
     std::map<std::string, std::string> header; // key -> raw JSON text
-    std::vector<double>                gamma, beta, y, J, I, Dmean, eps_mean;
-    std::string                        sha256_data; // recomputed
-    bool                               sha_ok { false };
+    // decoded required metadata
+    std::string format, producer, version, status, grid_variable;
+    long        format_revision { 0 };
+    double      physical_mass_ratio { 0.0 };
+    double      eps_prime_max { 0.0 }, gamma_envelope { 0.0 };
+    double      gamma_th { 0.0 }, gamma_min { 0.0 }, gamma_max { 0.0 };
+    double      y_min { 0.0 }, y_max { 0.0 };
+    double      lower_edge_fraction { 0.0 }, endpoint_coalescing { 0.0 };
+    long        first_decade_intervals_per_decade { 0 };
+    long        other_intervals_per_decade { 0 };
+    std::size_t first_decade_node_count { 0 }, node_count { 0 };
+    double      I_peak { 0.0 }, gamma_at_I_peak { 0.0 };
+    double      number_normalization { 0.0 }, mean_photon_energy { 0.0 };
+    double      discarded_number_fraction { 0.0 };
+    double      discarded_energy_fraction { 0.0 };
+    std::vector<std::string> columns;
+    std::string              data_sha256; // from the header, verified
+    // columns
+    std::vector<double>      gamma, beta, y, J, I, Dmean, eps_mean;
   };
+
+  inline const std::vector<std::string>& required_header_keys() {
+    static const std::vector<std::string> keys = {
+      "format",
+      "format_revision",
+      "producer",
+      "version",
+      "status",
+      "physical_mass_ratio",
+      "photon_field",
+      "gamma_p_max_input",
+      "eps_prime_max",
+      "gamma_envelope",
+      "gamma_th",
+      "gamma_min",
+      "gamma_max",
+      "y_min",
+      "y_max",
+      "grid_variable",
+      "lower_edge_fraction",
+      "first_decade_intervals_per_decade",
+      "other_intervals_per_decade",
+      "endpoint_coalescing",
+      "first_decade_node_count",
+      "node_count",
+      "I_peak",
+      "gamma_at_I_peak",
+      "number_normalization",
+      "mean_photon_energy",
+      "discarded_number_fraction",
+      "discarded_energy_fraction",
+      "quadrature",
+      "columns",
+      "data_sha256"
+    };
+    return keys;
+  }
+
+  /**
+   * @brief Parse and validate a table file given as bytes
+   * @throws std::runtime_error on any violation of the schema, including a
+   *         missing or mismatched data_sha256
+   */
+  inline TableFileContents parse_table_file(
+    const std::string& bytes,
+    const std::string& name = "<memory>") {
+    auto fail = [&name](const std::string& what) {
+      throw std::runtime_error("table file " + name + ": " + what);
+    };
+    TableFileContents c;
+    // --- header: lines starting with '#', up to the first line that does not
+    std::size_t       pos    = 0;
+    std::size_t       lineno = 0;
+    while (pos < bytes.size() && bytes[pos] == '#') {
+      const auto nl = bytes.find('\n', pos);
+      if (nl == std::string::npos) {
+        fail("header line " + std::to_string(lineno + 1) + " lacks a newline");
+      }
+      ++lineno;
+      const std::string line  = bytes.substr(pos, nl - pos);
+      const auto        colon = line.find(':');
+      if (colon == std::string::npos) {
+        fail("header line " + std::to_string(lineno) + " is not '# key: value'");
+      }
+      auto trim = [](std::string s) {
+        const auto a = s.find_first_not_of(" \t");
+        const auto b = s.find_last_not_of(" \t\r");
+        return (a == std::string::npos) ? std::string() : s.substr(a, b - a + 1);
+      };
+      const std::string key = trim(line.substr(1, colon - 1));
+      const std::string val = trim(line.substr(colon + 1));
+      if (key.empty() || val.empty()) {
+        fail("header line " + std::to_string(lineno) + " has an empty key or value");
+      }
+      if (c.header.count(key)) {
+        fail("header key " + key + " repeated");
+      }
+      c.header[key] = val;
+      pos           = nl + 1;
+    }
+    // --- data block: every remaining byte, verbatim
+    const std::string data = bytes.substr(pos);
+    if (data.empty()) {
+      fail("empty data block");
+    }
+    if (data.back() != '\n') {
+      fail("data block does not end with a newline");
+    }
+    for (const std::string& k : required_header_keys()) {
+      if (!c.header.count(k)) {
+        fail("missing required header key " + k);
+      }
+    }
+    c.data_sha256            = json_unescape(c.header.at("data_sha256"));
+    const std::string digest = Sha256::digest(data);
+    if (c.data_sha256 != digest) {
+      fail("data_sha256 mismatch: header " + c.data_sha256 + ", data " + digest);
+    }
+    // --- decode the required metadata
+    c.format = json_unescape(c.header.at("format"));
+    if (c.format != "bh-rate-table") {
+      fail("format is " + c.format + ", expected bh-rate-table");
+    }
+    c.format_revision = static_cast<long>(
+      json_to_number(c.header.at("format_revision"), "format_revision"));
+    if (c.format_revision != 1) {
+      fail("format_revision " + std::to_string(c.format_revision) +
+           " not supported");
+    }
+    c.producer      = json_unescape(c.header.at("producer"));
+    c.version       = json_unescape(c.header.at("version"));
+    c.status        = json_unescape(c.header.at("status"));
+    c.grid_variable = json_unescape(c.header.at("grid_variable"));
+    auto numkey     = [&c](const std::string& k) {
+      return json_to_number(c.header.at(k), k);
+    };
+    c.physical_mass_ratio               = numkey("physical_mass_ratio");
+    c.eps_prime_max                     = numkey("eps_prime_max");
+    c.gamma_envelope                    = numkey("gamma_envelope");
+    c.gamma_th                          = numkey("gamma_th");
+    c.gamma_min                         = numkey("gamma_min");
+    c.gamma_max                         = numkey("gamma_max");
+    c.y_min                             = numkey("y_min");
+    c.y_max                             = numkey("y_max");
+    c.lower_edge_fraction               = numkey("lower_edge_fraction");
+    c.endpoint_coalescing               = numkey("endpoint_coalescing");
+    c.first_decade_intervals_per_decade = static_cast<long>(
+      numkey("first_decade_intervals_per_decade"));
+    c.other_intervals_per_decade = static_cast<long>(
+      numkey("other_intervals_per_decade"));
+    c.I_peak                    = numkey("I_peak");
+    c.gamma_at_I_peak           = numkey("gamma_at_I_peak");
+    c.number_normalization      = numkey("number_normalization");
+    c.mean_photon_energy        = numkey("mean_photon_energy");
+    c.discarded_number_fraction = numkey("discarded_number_fraction");
+    c.discarded_energy_fraction = numkey("discarded_energy_fraction");
+    {
+      const double n1 = numkey("first_decade_node_count");
+      const double n2 = numkey("node_count");
+      if (n1 < 0.0 || n2 < 0.0 || n1 != std::floor(n1) || n2 != std::floor(n2)) {
+        fail("node counts must be non-negative integers");
+      }
+      c.first_decade_node_count = static_cast<std::size_t>(n1);
+      c.node_count              = static_cast<std::size_t>(n2);
+    }
+    if (c.header.at("gamma_p_max_input") != "null") {
+      numkey("gamma_p_max_input");
+    }
+    c.columns = json_string_array(c.header.at("columns"));
+    if (c.columns != canonical_columns()) {
+      fail("columns differ from the canonical list");
+    }
+    // --- parse the data bytes separately from the hash
+    std::size_t start = 0, row = 0;
+    while (start < data.size()) {
+      const auto        nl   = data.find('\n', start);
+      const std::string line = data.substr(start, nl - start);
+      ++row;
+      start = nl + 1;
+      std::istringstream  ss(line);
+      std::string         tok;
+      std::vector<double> vals;
+      while (ss >> tok) {
+        double v = 0.0;
+        if (!parse_number_strict(tok, v)) {
+          fail("data row " + std::to_string(row) + ": token '" + tok +
+               "' is not a finite number");
+        }
+        vals.push_back(v);
+      }
+      if (vals.size() != 7) {
+        fail("data row " + std::to_string(row) +
+             ": expected 7 columns, found " + std::to_string(vals.size()));
+      }
+      c.gamma.push_back(vals[0]);
+      c.beta.push_back(vals[1]);
+      c.y.push_back(vals[2]);
+      c.J.push_back(vals[3]);
+      c.I.push_back(vals[4]);
+      c.Dmean.push_back(vals[5]);
+      c.eps_mean.push_back(vals[6]);
+    }
+    // --- content validation
+    if (c.gamma.size() != c.node_count) {
+      fail("node_count " + std::to_string(c.node_count) + " differs from the " +
+           std::to_string(c.gamma.size()) + " data rows");
+    }
+    if (c.gamma.size() < 2) {
+      fail("fewer than two nodes");
+    }
+    for (std::size_t i = 0; i < c.gamma.size(); ++i) {
+      if (!(c.J[i] > 0.0) || !(c.I[i] > 0.0)) {
+        fail("J or I not strictly positive at row " + std::to_string(i + 1));
+      }
+      if (i > 0 && !(c.gamma[i] > c.gamma[i - 1])) {
+        fail("gamma_p not strictly increasing at row " + std::to_string(i + 1));
+      }
+    }
+    return c;
+  }
 
   inline TableFileContents read_table_file(const std::string& path) {
     std::ifstream in(path, std::ios::binary);
     if (!in) {
       throw std::runtime_error("read_table_file: cannot open " + path);
     }
-    TableFileContents c;
-    std::string       line, data;
-    while (std::getline(in, line)) {
-      if (line.empty()) {
-        continue;
-      }
-      if (line[0] == '#') {
-        const auto colon = line.find(':');
-        if (colon == std::string::npos) {
-          continue;
-        }
-        std::string key  = line.substr(1, colon - 1);
-        std::string val  = line.substr(colon + 1);
-        auto        trim = [](std::string& s) {
-          const auto a = s.find_first_not_of(" \t");
-          const auto b = s.find_last_not_of(" \t\r");
-          s = (a == std::string::npos) ? "" : s.substr(a, b - a + 1);
-        };
-        trim(key);
-        trim(val);
-        c.header[key] = val;
-        continue;
-      }
-      data += line;
-      data += "\n";
-      std::istringstream ss(line);
-      double             g, b, yy, J, I, D, e;
-      if (!(ss >> g >> b >> yy >> J >> I >> D >> e)) {
-        throw std::runtime_error("read_table_file: malformed data line");
-      }
-      c.gamma.push_back(g);
-      c.beta.push_back(b);
-      c.y.push_back(yy);
-      c.J.push_back(J);
-      c.I.push_back(I);
-      c.Dmean.push_back(D);
-      c.eps_mean.push_back(e);
-    }
-    c.sha256_data = Sha256::digest(data);
-    const auto it = c.header.find("sha256_data");
-    c.sha_ok      = (it != c.header.end()) &&
-               (it->second == "\"" + c.sha256_data + "\"");
-    return c;
+    std::ostringstream ss;
+    ss << in.rdbuf();
+    return parse_table_file(ss.str(), path);
   }
 
 } // namespace arch::bh

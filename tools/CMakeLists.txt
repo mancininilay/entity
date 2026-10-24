@@ -7,3 +7,7 @@
 
 add_executable(bh_tables_dump bh_tables_dump.cpp)
 target_include_directories(bh_tables_dump PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+# the tool uses only the standard library: drop the directory-wide link
+# dependencies (Kokkos, ADIOS2) inherited from the top-level link_libraries()
+set_property(TARGET bh_tables_dump PROPERTY LINK_LIBRARIES "")

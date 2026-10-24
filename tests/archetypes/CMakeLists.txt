@@ -29,3 +29,6 @@ gen_test(field_setter)
 gen_test(powerlaw)
 gen_test(pgen)
 gen_test(bh_physics)
+target_compile_definitions(
+  test-archetypes-bh_physics.xc
+  PRIVATE BH_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data/hadronic")
