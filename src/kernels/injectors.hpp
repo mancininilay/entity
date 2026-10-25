@@ -79,6 +79,51 @@ namespace kernel {
     }
   }
 
+  /**
+   * @brief [fork:hadronic/P9] Overload taking the real-payload view: writes the
+   *        particle as above and zeroes every real payload slot of the new
+   *        particle, so that a recycled slot can never carry (or duplicate) a
+   *        live particle's payload (e.g. the Bethe-Heitler debt). For a species
+   *        with no real payloads the view is unallocated with extent(1) = 0 and
+   *        the loop is a no-op. Added as a separate overload because the
+   *        trailing parameters of the original already have defaults.
+   */
+  template <Dimension D, Coord::type C, bool T>
+  Inline void InjectParticle(npart_t                     p,
+                             const array_t<int*>&        i1_arr,
+                             const array_t<int*>&        i2_arr,
+                             const array_t<int*>&        i3_arr,
+                             const array_t<prtldx_t*>&   dx1_arr,
+                             const array_t<prtldx_t*>&   dx2_arr,
+                             const array_t<prtldx_t*>&   dx3_arr,
+                             const array_t<real_t*>&     ux1_arr,
+                             const array_t<real_t*>&     ux2_arr,
+                             const array_t<real_t*>&     ux3_arr,
+                             const array_t<real_t*>&     phi_arr,
+                             const array_t<real_t*>&     weight_arr,
+                             const array_t<short*>&      tag_arr,
+                             const array_t<npart_t**>&   pld_i_arr,
+                             const array_t<real_t**>&    pld_r_arr,
+                             const tuple_t<int, D>&      xi_Cd,
+                             const tuple_t<prtldx_t, D>& dxi_Cd,
+                             const vec_t<Dim::_3D>&      v_Cd,
+                             real_t                      weight       = ONE,
+                             real_t                      phi          = ZERO,
+                             npart_t                     domain_idx   = 0u,
+                             npart_t                     species_cntr = 0u) {
+    InjectParticle<D, C, T>(p,
+                            i1_arr, i2_arr, i3_arr,
+                            dx1_arr, dx2_arr, dx3_arr,
+                            ux1_arr, ux2_arr, ux3_arr,
+                            phi_arr, weight_arr, tag_arr, pld_i_arr,
+                            xi_Cd, dxi_Cd, v_Cd,
+                            weight, phi, domain_idx, species_cntr);
+    const auto npld_r = pld_r_arr.extent(1);
+    for (std::size_t c = 0; c < npld_r; ++c) {
+      pld_r_arr(p, c) = ZERO;
+    }
+  }
+
   template <SimEngine::type S, MetricClass M, EnrgDistClass<M::Dim> ED1, EnrgDistClass<M::Dim> ED2>
   struct UniformInjector_kernel {
 
@@ -89,6 +134,7 @@ namespace kernel {
     array_t<real_t*>   weights_1;
     array_t<short*>    tags_1;
     array_t<npart_t**> pldis_1;
+    array_t<real_t**>  pldrs_1;
 
     array_t<int*>      i1s_2, i2s_2, i3s_2;
     array_t<prtldx_t*> dx1s_2, dx2s_2, dx3s_2;
@@ -97,6 +143,7 @@ namespace kernel {
     array_t<real_t*>   weights_2;
     array_t<short*>    tags_2;
     array_t<npart_t**> pldis_2;
+    array_t<real_t**>  pldrs_2;
 
     const npart_t          offset1, offset2;
     const npart_t          domain_idx, cntr1, cntr2;
@@ -131,6 +178,7 @@ namespace kernel {
       , weights_1 { species1.weight }
       , tags_1 { species1.tag }
       , pldis_1 { species1.pld_i }
+      , pldrs_1 { species1.pld_r }
       , i1s_2 { species2.i1 }
       , i2s_2 { species2.i2 }
       , i3s_2 { species2.i3 }
@@ -144,6 +192,7 @@ namespace kernel {
       , weights_2 { species2.weight }
       , tags_2 { species2.tag }
       , pldis_2 { species2.pld_i }
+      , pldrs_2 { species2.pld_r }
       , offset1 { species1.npart() }
       , offset2 { species2.npart() }
       , domain_idx { domain_idx }
@@ -254,7 +303,7 @@ namespace kernel {
           i1s_1, i2s_1, i3s_1,
           dx1s_1, dx2s_1, dx3s_1,
           ux1s_1, ux2s_1, ux3s_1,
-          phis_1, weights_1, tags_1, pldis_1,
+          phis_1, weights_1, tags_1, pldis_1, pldrs_1,
           xi_Cd, dxi_Cd, v1, weight, ZERO);
       } else {
         InjectParticle<M::Dim, M::CoordType, true>(
@@ -262,7 +311,7 @@ namespace kernel {
           i1s_1, i2s_1, i3s_1,
           dx1s_1, dx2s_1, dx3s_1,
           ux1s_1, ux2s_1, ux3s_1,
-          phis_1, weights_1, tags_1, pldis_1,
+          phis_1, weights_1, tags_1, pldis_1, pldrs_1,
           xi_Cd, dxi_Cd, v1, weight, ZERO, 
           domain_idx, cntr1 + p);
       }
@@ -272,7 +321,7 @@ namespace kernel {
           i1s_2, i2s_2, i3s_2,
           dx1s_2, dx2s_2, dx3s_2,
           ux1s_2, ux2s_2, ux3s_2,
-          phis_2, weights_2, tags_2, pldis_2,
+          phis_2, weights_2, tags_2, pldis_2, pldrs_2,
           xi_Cd, dxi_Cd, v2, weight, ZERO);
       } else {
         InjectParticle<M::Dim, M::CoordType, true>(
@@ -280,7 +329,7 @@ namespace kernel {
           i1s_2, i2s_2, i3s_2,
           dx1s_2, dx2s_2, dx3s_2,
           ux1s_2, ux2s_2, ux3s_2,
-          phis_2, weights_2, tags_2, pldis_2,
+          phis_2, weights_2, tags_2, pldis_2, pldrs_2,
           xi_Cd, dxi_Cd, v2, weight, ZERO, 
           domain_idx, cntr2 + p);
       }
@@ -311,6 +360,7 @@ namespace kernel {
     array_t<real_t*>   weights;
     array_t<short*>    tags;
     array_t<npart_t**> pldis;
+    array_t<real_t**>  pldrs;
 
     const bool    use_tracking;
     const npart_t offset, cntr, domain_idx;
@@ -339,6 +389,7 @@ namespace kernel {
       , weights { species.weight }
       , tags { species.tag }
       , pldis { species.pld_i }
+      , pldrs { species.pld_r }
       , use_tracking { species.use_tracking() }
       , offset { species.npart() }
       , cntr { species.counter() }
@@ -502,7 +553,7 @@ namespace kernel {
             i1s, i2s, i3s,
             dx1s, dx2s, dx3s,
             ux1s, ux2s, ux3s,
-            phis, weights, tags, pldis,
+            phis, weights, tags, pldis, pldrs,
             xi_Cd, dxi_Cd, u_Cd, weight, phi);
         } else {
           InjectParticle<M::Dim, M::CoordType, true>(
@@ -510,7 +561,7 @@ namespace kernel {
             i1s, i2s, i3s,
             dx1s, dx2s, dx3s,
             ux1s, ux2s, ux3s,
-            phis, weights, tags, pldis,
+            phis, weights, tags, pldis, pldrs,
             xi_Cd, dxi_Cd, u_Cd, weight, phi,
             domain_idx, cntr + index);
         }
@@ -535,6 +586,7 @@ namespace kernel {
     array_t<real_t*>   weights_1;
     array_t<short*>    tags_1;
     array_t<npart_t**> pldis_1;
+    array_t<real_t**>  pldrs_1;
 
     array_t<int*>      i1s_2, i2s_2, i3s_2;
     array_t<prtldx_t*> dx1s_2, dx2s_2, dx3s_2;
@@ -543,6 +595,7 @@ namespace kernel {
     array_t<real_t*>   weights_2;
     array_t<short*>    tags_2;
     array_t<npart_t**> pldis_2;
+    array_t<real_t**>  pldrs_2;
 
     array_t<npart_t> idx { "idx" };
 
@@ -580,6 +633,7 @@ namespace kernel {
       , weights_1 { species1.weight }
       , tags_1 { species1.tag }
       , pldis_1 { species1.pld_i }
+      , pldrs_1 { species1.pld_r }
       , i1s_2 { species2.i1 }
       , i2s_2 { species2.i2 }
       , i3s_2 { species2.i3 }
@@ -593,6 +647,7 @@ namespace kernel {
       , weights_2 { species2.weight }
       , tags_2 { species2.tag }
       , pldis_2 { species2.pld_i }
+      , pldrs_2 { species2.pld_r }
       , offset1 { species1.npart() }
       , offset2 { species2.npart() }
       , domain_idx { domain_idx }
@@ -643,14 +698,14 @@ namespace kernel {
                                                     i1s_1, i2s_1, i3s_1,
                                                     dx1s_1, dx2s_1, dx3s_1,
                                                     ux1s_1, ux2s_1, ux3s_1,
-                                                    phis_1, weights_1, tags_1, pldis_1,
+                                                    phis_1, weights_1, tags_1, pldis_1, pldrs_1,
                                                     xi_Cd, dxi_Cd, v_Cd, weight, ZERO);
       } else {
         InjectParticle<M::Dim, M::CoordType, true>(index + offset1,
                                                    i1s_1, i2s_1, i3s_1,
                                                    dx1s_1, dx2s_1, dx3s_1,
                                                    ux1s_1, ux2s_1, ux3s_1,
-                                                   phis_1, weights_1, tags_1, pldis_1,
+                                                   phis_1, weights_1, tags_1, pldis_1, pldrs_1,
                                                    xi_Cd, dxi_Cd, v_Cd, weight, ZERO,
                                                    domain_idx, index + cntr1);
       }
@@ -668,14 +723,14 @@ namespace kernel {
                                                     i1s_2, i2s_2, i3s_2,
                                                     dx1s_2, dx2s_2, dx3s_2,
                                                     ux1s_2, ux2s_2, ux3s_2,
-                                                    phis_2, weights_2, tags_2, pldis_2,
+                                                    phis_2, weights_2, tags_2, pldis_2, pldrs_2,
                                                     xi_Cd, dxi_Cd, v_Cd, weight, ZERO);
       } else {
         InjectParticle<M::Dim, M::CoordType, true>(index + offset2,
                                                    i1s_2, i2s_2, i3s_2,
                                                    dx1s_2, dx2s_2, dx3s_2,
                                                    ux1s_2, ux2s_2, ux3s_2,
-                                                   phis_2, weights_2, tags_2, pldis_2,
+                                                   phis_2, weights_2, tags_2, pldis_2, pldrs_2,
                                                    xi_Cd, dxi_Cd, v_Cd, weight, ZERO,
                                                    domain_idx, index + cntr2);
       }

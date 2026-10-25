@@ -41,6 +41,8 @@ gen_test(ext_force)
 gen_test(reduced_stats)
 gen_test(custom_emission)
 gen_test(custom_prtl_update)
+# [fork:hadronic/P9] every real payload slot of an injected particle is zero (T10b, kernel level)
+gen_test(injectors_payloads)
 # Bethe-Heitler loss-only kernel (P2 step 2): one ctest entry per pre-registered
 # group so that each verdict is visible; the executable runs every group when
 # called without arguments
