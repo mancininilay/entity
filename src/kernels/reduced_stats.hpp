@@ -455,8 +455,11 @@ namespace kernel {
                       static_cast<real_t>(particles.dx3(p));
         }
         dV = metric.sqrt_det_h(x_Code);
+        // [fork:hadronic/P5] with weights the mass (Rho) or the signed charge
+        // (Charge) factor multiplies the weight instead of being dropped
+        const real_t wgt = use_weights ? particles.weight(p) : ONE;
         if constexpr (P == StatsID::N or P == StatsID::Rho or P == StatsID::Charge) {
-          buff += dV * (use_weights ? particles.weight(p) : contrib);
+          buff += dV * wgt * contrib;
         } else {
           // for stress-energy tensor
           real_t          energy { ZERO };
@@ -520,17 +523,20 @@ namespace kernel {
             }
             metric.template transform<Idx::U, Idx::PU>(x_Code, u_Cntrv, u_Phys);
           }
-          // compute the corresponding moment
-          real_t coeff = ONE;
+          // compute the corresponding moment: T^{ab} = sum w p^a p^b / E with
+          // p^0 = E = m gamma (|u| for photons) and p^i = m u^i (u^i for photons)
+          // [fork:hadronic/P5]: the mass factor of p^i and the weight were missing
+          const real_t pmass = (mass == ZERO) ? ONE : mass;
+          real_t       coeff = ONE;
 #pragma unroll
           for (const auto& c : { c1, c2 }) {
             if (c == 0) {
               coeff *= energy;
             } else {
-              coeff *= u_Phys[c - 1];
+              coeff *= pmass * u_Phys[c - 1];
             }
           }
-          buff += dV * coeff / energy;
+          buff += dV * wgt * coeff / energy;
         }
       }
     }
