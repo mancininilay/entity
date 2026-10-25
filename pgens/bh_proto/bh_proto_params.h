@@ -21,16 +21,16 @@
  *   gamma_p_max                 float > 1 or the string "auto" (default auto)
  *   eta_u                       float >= 0 (default 1e-4)
  *   pending_floor_ulp           float >= 0 (default 100)
- *   f_max                       float in (0, 1] (default 0.1)
+ *   f_max                       float in (0, 1] (default 0.01; decision of 2026-10-25)
  *   max_substeps                int >= 1 (default 64)
  *   allow_unsafe_application    bool (default false); required true when eta_u = 0 or pending_floor_ulp = 0
- *   payload_pending / payload_debt / payload_debt_k0   int >= 0, distinct (default 0, 1, 2)
+ *   payload_pending / payload_debt / payload_debt_k0   int in [0, 65534], distinct (default 0, 1, 2)
  *   ions.K                      non-empty array of float > 0 (kinetic energies, m_e c^2), required
- *   ions.per_K                  int >= 1, required
+ *   ions.per_K                  int >= 1 with per_K * ions.K.size() <= INT_MAX, required
  *   ions.direction              "+x" | "isotropic", required
  *   ions.weight                 float > 0 (default 1)
  *   fields.B, fields.E          arrays of three floats (default zero)
- *   ledger.every                int >= 1 (default 1)
+ *   ledger.every                int in [1, INT_MAX] (default 1)
  *   table_dump                  bool (default true): write the table file next to the run output
  *
  * @namespaces:
@@ -45,7 +45,9 @@
 #include <toml11/toml.hpp>
 
 #include <array>
+#include <climits>
 #include <cmath>
+#include <limits>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -63,7 +65,7 @@ namespace user::bhproto {
     double             gamma_p_max { 0.0 }; // 0 = auto
     double             eta_u { 1.0e-4 };
     double             pending_floor_ulp { 100.0 };
-    double             f_max { 0.1 };
+    double             f_max { 0.01 };
     int                max_substeps { 64 };
     bool               allow_unsafe_application { false };
     int                payload_pending { 0 };
@@ -227,6 +229,40 @@ namespace user::bhproto {
       return as_int(*v, key);
     }
 
+    /**
+     * @brief Integer key validated against [lo, hi] on the 64-bit value, before
+     *        any narrowing (R1): the destination type's range is the caller's
+     *        `hi`, and the value is returned as the destination type only after
+     *        the check
+     */
+    inline auto get_int_in(const toml::value& root,
+                           const std::string& key,
+                           long long          lo,
+                           long long          hi,
+                           bool               required,
+                           long long          def = 0) -> int {
+      const auto* v = find_path(root, key);
+      long long   n;
+      if (v == nullptr) {
+        if (required) {
+          fail(key, "is required (integer) and was not given");
+        }
+        n = def;
+      } else {
+        n = as_int(*v, key);
+      }
+      if (n < lo || n > hi) {
+        fail(key,
+             "= " + std::to_string(n) + " must lie in [" + std::to_string(lo) + ", " +
+               std::to_string(hi) + "]");
+      }
+      static_assert(sizeof(int) >= 4, "int narrower than 32 bits");
+      if (hi > static_cast<long long>(std::numeric_limits<int>::max())) {
+        fail(key, "internal: destination range exceeds int");
+      }
+      return static_cast<int>(n);
+    }
+
     inline auto get_string(const toml::value& root, const std::string& key)
       -> std::string {
       const auto* v = find_path(root, key);
@@ -351,13 +387,12 @@ namespace user::bhproto {
              "= " + fmt_double(s.ions_K[i]) + " must be > 0");
       }
     }
-    {
-      const auto n = get_int(setup, "ions.per_K");
-      if (n < 1 || n > 100000000LL) {
-        fail("ions.per_K", "= " + std::to_string(n) + " must be >= 1");
-      }
-      s.ions_per_K = static_cast<int>(n);
-    }
+    // ions.per_K times ions.K.size() must fit the particle index type (npart_t,
+    // 32-bit unsigned): bound per_K by INT_MAX / ions.K.size() before any cast
+    s.ions_per_K = get_int_in(setup, "ions.per_K", 1,
+                              static_cast<long long>(std::numeric_limits<int>::max()) /
+                                static_cast<long long>(s.ions_K.size()),
+                              true);
     s.ions_direction = get_string(setup, "ions.direction");
     if (s.ions_direction != "+x" && s.ions_direction != "isotropic") {
       fail("ions.direction",
@@ -369,13 +404,7 @@ namespace user::bhproto {
     }
     s.B = get_vec3_or_zero(setup, "fields.B");
     s.E = get_vec3_or_zero(setup, "fields.E");
-    {
-      const auto n = get_int_or(setup, "ledger.every", 1);
-      if (n < 1) {
-        fail("ledger.every", "= " + std::to_string(n) + " must be >= 1");
-      }
-      s.ledger_every = static_cast<int>(n);
-    }
+    s.ledger_every = get_int_in(setup, "ledger.every", 1, std::numeric_limits<int>::max(), false, 1);
     s.table_dump = get_bool_or(setup, "table_dump", true);
 
     // the ion species of the problem (ions are injected into them; the stage
@@ -494,17 +523,11 @@ namespace user::bhproto {
     if (!(s.pending_floor_ulp >= 0.0)) {
       fail("pending_floor_ulp", "= " + fmt_double(s.pending_floor_ulp) + " must be >= 0");
     }
-    s.f_max = get_number_or(setup, "f_max", 0.1);
+    s.f_max = get_number_or(setup, "f_max", 0.01);
     if (!(s.f_max > 0.0 && s.f_max <= 1.0)) {
       fail("f_max", "= " + fmt_double(s.f_max) + " must lie in (0, 1]");
     }
-    {
-      const auto n = get_int_or(setup, "max_substeps", 64);
-      if (n < 1 || n > 1000000LL) {
-        fail("max_substeps", "= " + std::to_string(n) + " must be >= 1");
-      }
-      s.max_substeps = static_cast<int>(n);
-    }
+    s.max_substeps = get_int_in(setup, "max_substeps", 1, 1000000LL, false, 64);
     s.allow_unsafe_application = get_bool_or(setup, "allow_unsafe_application", false);
     if ((s.eta_u == 0.0 || s.pending_floor_ulp == 0.0) && !s.allow_unsafe_application) {
       fail("allow_unsafe_application",
@@ -512,26 +535,20 @@ namespace user::bhproto {
            "(the precision-safe application is switched off; T5b only)");
     }
 
-    // payload indices
+    // payload indices: the kernel addresses the slot as unsigned short and the
+    // species slot count is an unsigned short, so a slot index must lie in
+    // [0, USHRT_MAX - 1] (the count max(index) + 1 then fits the type without
+    // overflow); validated on the 64-bit value before the distinctness check
+    // and before any cast (R1)
     {
-      const auto p = get_int_or(setup, "payload_pending", 0);
-      const auto d = get_int_or(setup, "payload_debt", 1);
-      const auto k = get_int_or(setup, "payload_debt_k0", 2);
-      if (p < 0) {
-        fail("payload_pending", "= " + std::to_string(p) + " must be >= 0");
-      }
-      if (d < 0) {
-        fail("payload_debt", "= " + std::to_string(d) + " must be >= 0");
-      }
-      if (k < 0) {
-        fail("payload_debt_k0", "= " + std::to_string(k) + " must be >= 0");
-      }
-      if (p == d || p == k || d == k) {
+      const long long slot_max = static_cast<long long>(USHRT_MAX) - 1;
+      s.payload_pending = get_int_in(setup, "payload_pending", 0, slot_max, false, 0);
+      s.payload_debt    = get_int_in(setup, "payload_debt", 0, slot_max, false, 1);
+      s.payload_debt_k0 = get_int_in(setup, "payload_debt_k0", 0, slot_max, false, 2);
+      if (s.payload_pending == s.payload_debt || s.payload_pending == s.payload_debt_k0 ||
+          s.payload_debt == s.payload_debt_k0) {
         fail("payload_pending", "payload_debt and payload_debt_k0 must be three distinct slots");
       }
-      s.payload_pending = static_cast<int>(p);
-      s.payload_debt    = static_cast<int>(d);
-      s.payload_debt_k0 = static_cast<int>(k);
     }
     return s;
   }

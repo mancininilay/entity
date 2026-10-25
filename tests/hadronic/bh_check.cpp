@@ -24,12 +24,13 @@
  *         prints K_single/K_double - 1 at the last block (the design-off
  *         demonstration table; no verdict)
  *
- *   t7a   --run F --ref F --tol T --pitch_tol P
+ *   t7a   --run F --ref F --tol T --pitch_tol P [--eta_u E --floor_ulp F --mu_d M --real float|double]
  *         K(t) of ion 0 in the B != 0 run vs the B = 0 run at every block
- *         (relative, <= T) and the pitch cosine constant to P over the run
+ *         (relative, <= T), the pitch cosine constant to P over the run, and
+ *         with --eta_u the stored-K envelope |delta| <= eta_u K + pending_floor
  *
  *   t7b   --ions F --eps0 E --mu_r MR --mu_d MD --K0 K --E Ex --omegaB0 W
- *         --tau0 T --skindepth0 S --tol TOL
+ *         --tau0 T --skindepth0 S [--tol TOL] [--eta_u E --floor_ulp F --real float|double]
  *         RK4 of dK/dt = omegaB0 E beta_d(K) - (tau0/skindepth0) I(Gamma_p(K))
  *         against K(t) of ion 0 at every block; prints the max relative error
  *         and the end-time error "end_error <v>"; with --tol the max is a verdict
@@ -180,8 +181,8 @@ namespace {
       while (ss >> v) {
         r.cols.push_back(v);
       }
-      if (r.cols.size() != 14) {
-        throw std::runtime_error(path + ": expected 14 columns, got " + std::to_string(r.cols.size()));
+      if (r.cols.size() != 15) {
+        throw std::runtime_error(path + ": expected 15 columns, got " + std::to_string(r.cols.size()));
       }
       rows.push_back(r);
     }
@@ -247,6 +248,35 @@ namespace {
     return K;
   }
 
+  /**
+   * @brief ulp of |u| in the precision of the run that wrote the file
+   */
+  double ulp_of(double u, bool run_is_double) {
+    if (run_is_double) {
+      return std::nextafter(u, std::numeric_limits<double>::infinity()) - u;
+    }
+    const float uf = static_cast<float>(u);
+    return static_cast<double>(std::nextafter(uf, std::numeric_limits<float>::infinity())) - static_cast<double>(uf);
+  }
+
+  /**
+   * @brief stored-K envelope (decision (a)): |delta| <= eta_u K + pending_floor
+   *        for every ion at every block
+   */
+  void envelope_check(const std::string& name, const std::vector<Block>& blocks, double mu_d, double eta_u,
+                      double floor_ulp, bool run_is_double) {
+    double worst = 0.0;
+    for (const auto& b : blocks) {
+      for (const auto& r : b.rows) {
+        const double gd    = std::sqrt(1.0 + r.u * r.u);
+        const double floor = floor_ulp * ulp_of(r.u, run_is_double) * mu_d * r.u / gd;
+        worst              = std::max(worst, std::abs(r.delta) / (eta_u * r.K + floor));
+      }
+    }
+    verdict(worst <= 1.0, "envelope [" + name + "]: max |K_stored - K_eff| / (eta_u K + pending_floor), all ions, all blocks",
+            worst, 1.0);
+  }
+
   /* ---- subcommands ------------------------------------------------------------- */
   int cmd_tau0(const Args& a) {
     const Rates  R(num(a, "eps0"), num(a, "mu_r"));
@@ -278,7 +308,7 @@ namespace {
     const auto S = read_ions(str(a, "single"));
     const auto Dd = read_ions(str(a, "double"));
     if (S.size() != Dd.size()) {
-      std::printf("[DIAG] block counts differ: single %zu, double %zu (comparing the last)\n", S.size(), Dd.size());
+      std::printf("(diag) block counts differ: single %zu, double %zu (comparing the last)\n", S.size(), Dd.size());
     }
     const auto& ls = S.back().rows.at(0);
     const auto& ld = Dd.back().rows.at(0);
@@ -293,7 +323,7 @@ namespace {
         max_all = std::max(max_all, std::abs(S[b].rows.at(0).K / Dd[b].rows.at(0).K - 1.0));
       }
     }
-    std::printf("[DIAG] t5b: last block step %ld: K_single %.17g K_double %.17g K_single/K_double - 1 = %+.6e, "
+    std::printf("(diag) t5b: last block step %ld: K_single %.17g K_double %.17g K_single/K_double - 1 = %+.6e, "
                 "K_eff ratio - 1 = %+.6e, double-build drop %.6e, realised/expected loss %.6f, max over blocks %.6e\n",
                 S.back().step, ls.K, ld.K, rel, rel_eff, expected_drop, realised, max_all);
     std::printf("T5B_ROW %+.6e %+.6e %.6f\n", rel, rel_eff, realised);
@@ -325,11 +355,16 @@ namespace {
         pitch_max   = std::max(pitch_max, r.pitch);
       }
     }
-    std::printf("[DIAG] t7a: %zu blocks, final K(B) %.17g K(0) %.17g, max |K_B/K_0 - 1| %.6e (K_eff %.6e), pitch range [%.6e, %.6e]\n",
+    std::printf("(diag) t7a: %zu blocks, final K(B) %.17g K(0) %.17g, max |K_B/K_0 - 1| %.6e (K_eff %.6e), pitch range [%.6e, %.6e]\n",
                 run.size(), run.back().rows[0].K, ref.back().rows[0].K, max_rel, max_rel_eff, pitch_min, pitch_max);
     verdict(max_rel <= tol, "T7a: K(t) with B vs B = 0 at every output time (all ions), relative", max_rel, tol);
     verdict(pitch_max - pitch_min <= ptol, "T7a: pitch cosine u.B/(|u||B|) constant over the run (max - min)",
             pitch_max - pitch_min, ptol);
+    if (a.count("eta_u")) {
+      const bool dbl = a.count("real") && str(a, "real") == "double";
+      envelope_check("T7a B run", run, num(a, "mu_d"), num(a, "eta_u"), num(a, "floor_ulp"), dbl);
+      envelope_check("T7a B = 0 run", ref, num(a, "mu_d"), num(a, "eta_u"), num(a, "floor_ulp"), dbl);
+    }
     return 0;
   }
 
@@ -375,16 +410,28 @@ namespace {
       end_rel      = rel;
       end_rel_half = relh;
     }
-    std::printf("[DIAG] t7b: %zu blocks, final K_sim %.17g, max relative error vs RK4 (t = (n+1) dt) %.6e, "
+    std::printf("(diag) t7b: %zu blocks, final K_sim %.17g, max relative error vs RK4 (t = (n+1) dt) %.6e, "
                 "end %.6e; with the half-step convention (t = (n+1/2) dt): max %.6e, end %.6e\n",
                 blocks.size(), blocks.back().rows[0].K, max_rel, end_rel, max_rel_half, end_rel_half);
-    std::printf("[DIAG] t7b: K_eff = K - delta vs the interpolated-table RK4: max %.6e, end %.6e; K_eff vs exact RK4 at the "
+    std::printf("(diag) t7b: K_eff = K - delta vs the interpolated-table RK4: max %.6e, end %.6e; K_eff vs exact RK4 at the "
                 "end %.6e (the lag and the interpolation contributions removed / kept)\n",
                 max_eff_tab, end_eff_tab, end_eff_exact);
     std::printf("T7B_END %.17g %.17g %.17g\n", end_rel, end_rel_half, end_eff_tab);
     if (a.count("tol")) {
       const double tol = num(a, "tol");
       verdict(max_rel <= tol, "T7b: K(t) vs RK4 of (field work - loss) at every output time (finest dt)", max_rel, tol);
+    }
+    if (a.count("eta_u")) {
+      const bool   dbl   = a.count("real") && str(a, "real") == "double";
+      const double eta_u = num(a, "eta_u"), floor_ulp = num(a, "floor_ulp");
+      envelope_check("T7b run", blocks, mu_d, eta_u, floor_ulp, dbl);
+      // the ratio eta_u K / pending_floor at the end of the run (must exceed 1 in the registered range)
+      const auto&  r  = blocks.back().rows.at(0);
+      const double gd = std::sqrt(1.0 + r.u * r.u);
+      const double fl = floor_ulp * ulp_of(r.u, dbl) * mu_d * r.u / gd;
+      std::printf("(diag) t7b: eta_u K / pending_floor at the end = %.3f (eta_u %.3g, K %.6g, floor %.4g)\n",
+                  eta_u * r.K / fl, eta_u, r.K, fl);
+      std::printf("T7B_FLOOR_RATIO %.17g\n", eta_u * r.K / fl);
     }
     return 0;
   }
@@ -417,7 +464,7 @@ namespace {
   int cmd_order(const Args& a) {
     const double e1 = num(a, "e1"), e2 = num(a, "e2"), e4 = num(a, "e4");
     const double o1 = std::log2(e1 / e2), o2 = std::log2(e2 / e4);
-    std::printf("[DIAG] orders: log2(e1/e2) = %.4f, log2(e2/e4) = %.4f (errors %.6e %.6e %.6e)\n", o1, o2, e1, e2, e4);
+    std::printf("(diag) orders: log2(e1/e2) = %.4f, log2(e2/e4) = %.4f (errors %.6e %.6e %.6e)\n", o1, o2, e1, e2, e4);
     verdict(std::abs(o1 - 1.0) <= 0.3 && std::abs(o2 - 1.0) <= 0.3,
             "dt-convergence order within 1.0 +- 0.3 for both ratios (value: first ratio)", o1, 0.3);
     return 0;
@@ -432,13 +479,13 @@ namespace {
       same = (la[i] == lb[i]) && (la[i] == lc[i]);
     }
     for (const auto& l : la) {
-      std::printf("[DIAG] run a: %s\n", l.c_str());
+      std::printf("(diag) run a: %s\n", l.c_str());
     }
     for (const auto& l : lb) {
-      std::printf("[DIAG] run b: %s\n", l.c_str());
+      std::printf("(diag) run b: %s\n", l.c_str());
     }
     for (const auto& l : lc) {
-      std::printf("[DIAG] run c: %s\n", l.c_str());
+      std::printf("(diag) run c: %s\n", l.c_str());
     }
     verdict(same, "T8: identical checksum lines (every ion array, the six field arrays) across the three runs",
             static_cast<double>(la.size()), 0.0);
@@ -446,7 +493,7 @@ namespace {
       const auto rows = read_ledger(str(a, which));
       double     maxabs = 0.0;
       for (const auto& r : rows) {
-        for (std::size_t c = 2; c < 13; ++c) { // all but step, time, sum_wK
+        for (std::size_t c = 2; c + 1 < r.cols.size(); ++c) { // all but step, time, sum_wK
           maxabs = std::max(maxabs, std::abs(r.cols[c]));
         }
       }
@@ -464,7 +511,7 @@ namespace {
     for (const auto& l : lines) {
       if (l.find("bh_proto") != std::string::npos || l.find("Error") != std::string::npos) {
         named = true;
-        std::printf("[DIAG] %s\n", l.substr(0, 300).c_str());
+        std::printf("(diag) %s\n", l.substr(0, 300).c_str());
       }
     }
     verdict(named, "rejection: the error message names " + key, static_cast<double>(lines.size()), 0.0);

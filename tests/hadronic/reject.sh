@@ -18,7 +18,7 @@ for name in reject_tau0 reject_fmax reject_bool reject_unsafe reject_type reject
   fi
 done
 # species-level and particles-level refusals (messages name the input key)
-for pair in "reject_payloads:n_payloads_real" "reject_weights:use_weights"; do
+for pair in "reject_payloads:n_payloads_real" "reject_weights:use_weights" "reject_gca:GCA"; do
   name="${pair%%:*}"; key="${pair##*:}"
   run_entity "$EXE" "$INP/$name.toml" "$WD/$name"
   rc=$?

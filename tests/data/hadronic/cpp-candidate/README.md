@@ -1,11 +1,16 @@
 # C++ candidate tables for the Bethe-Heitler rates step (P2 step 1)
 
-These five files are **candidates for the independent comparison** of contract
-section 5 item 8 (`bhref` versus the C++ startup tables, same bath, same
-grid). They are **not fixtures**: no test in this repository reads them, and
-nothing is validated against them. The frozen fixtures of the specification
-(II.5, "frozen bhref output") will be added only once the comparison has been
-performed and the step-1 checkpoint has passed.
+These five files were the **candidates for the independent comparison** of
+contract section 5 item 8 (`bhref` versus the C++ startup tables, same bath,
+same grid) at the step-1 checkpoint. They are **not fixtures**: no test in this
+repository reads them, and nothing is validated against them.
+
+Status 2026-10-25 (step 2, round 2): the frozen reference tables (`bhref`
+0.1.0) are in `tests/data/hadronic/bhref-0.1.0/`, and the registered item 8 is
+now the ctest `ARCHETYPES::bh_fixtures` (`tests/archetypes/bh_fixtures.cpp`),
+which evaluates the C++ rates at every reference node and applies the contract
+tolerances with the masks and the peak taken from the reference files. This
+directory is kept as the record of the step-1 candidates.
 
 Produced by `tools/bh_tables_dump` (built by the fork's CMake) from the source
 at the commit recorded in each file's `# version:` header line; the physics is

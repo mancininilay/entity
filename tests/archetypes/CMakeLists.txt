@@ -32,3 +32,7 @@ gen_test(bh_physics)
 target_compile_definitions(
   test-archetypes-bh_physics.xc
   PRIVATE BH_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data/hadronic")
+gen_test(bh_fixtures)
+target_compile_definitions(
+  test-archetypes-bh_fixtures.xc
+  PRIVATE BH_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data/hadronic")

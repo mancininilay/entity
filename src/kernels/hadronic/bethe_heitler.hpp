@@ -105,6 +105,7 @@ namespace kernel::hadronic {
     unsigned long long n_dropped { 0 };
     unsigned long long n_substeps { 0 };
     unsigned long long n_bounded { 0 };
+    unsigned long long n_capped_loss { 0 }; // steps on which the f_max K cap changed the applied loss
     unsigned long long n_closing { 0 };
     unsigned long long n_capped { 0 };
     unsigned long long n_above_table { 0 };
@@ -139,6 +140,7 @@ namespace kernel::hadronic {
       n_dropped           += o.n_dropped;
       n_substeps          += o.n_substeps;
       n_bounded           += o.n_bounded;
+      n_capped_loss       += o.n_capped_loss;
       n_closing           += o.n_closing;
       n_capped            += o.n_capped;
       n_above_table       += o.n_above_table;
@@ -166,6 +168,14 @@ namespace kernel::hadronic {
    * @brief ulp of a real_t value: nextafter(x, +inf) - x (x >= 0)
    */
   Inline auto ulp_real(real_t x) -> double {
+    if (!math::isfinite(x)) {
+      x = std::numeric_limits<real_t>::max();
+    }
+    if (x == std::numeric_limits<real_t>::max()) {
+      // the spacing just below the largest finite value
+      const real_t down = math::nextafter(x, static_cast<real_t>(0));
+      return static_cast<double>(x) - static_cast<double>(down);
+    }
     const real_t up = math::nextafter(x, std::numeric_limits<real_t>::infinity());
     return static_cast<double>(up) - static_cast<double>(x);
   }
@@ -247,14 +257,19 @@ namespace kernel::hadronic {
       const double coeff = prm.tau0_over_skindepth0 * g_x;
       double       dK    = coeff * tables.I(Gp) * prm.dt;
       const double K_floor = prm.mu_r * (tables.gamma_min - 1.0);
-      if (dK > prm.f_max * K && K > 0.0) {
+      // a request that is not finite (overflowing coefficient) or exceeds
+      // f_max K is sub-cycled; the substep count is compared in double before
+      // any conversion (R2: no undefined double-to-int conversion)
+      const bool finite_request = math::isfinite(dK);
+      if (K > 0.0 && (!finite_request || dK > prm.f_max * K)) {
         // sub-cycle: RK2 (midpoint) on dK/dt = -coeff I(Gamma_p(K))
-        const double n_req = math::ceil(dK / (prm.f_max * K));
-        int          n     = static_cast<int>(n_req);
-        bool         bounded = false;
-        if (n_req > static_cast<double>(prm.max_substeps) || n > prm.max_substeps) {
-          n       = prm.max_substeps;
-          bounded = true;
+        const double n_req = finite_request ? math::ceil(dK / (prm.f_max * K))
+                                            : std::numeric_limits<double>::infinity();
+        int  n       = prm.max_substeps;
+        bool bounded = true;
+        if (finite_request && n_req <= static_cast<double>(prm.max_substeps)) {
+          n       = static_cast<int>(n_req);
+          bounded = false;
         }
         if (n < 1) {
           n = 1;
@@ -274,10 +289,17 @@ namespace kernel::hadronic {
           }
         }
         dK = K - Kc;
+        if (!math::isfinite(dK)) {
+          dK = K - K_floor; // the integrator clamps at the floor; never NaN
+        }
         if (bounded) {
-          // safe fallback (III.7): the loss bound is clamped to f_max K
+          // explicit clamp reading (decision 2026-10-25 (c), III.7): the loss
+          // of max_substeps RK2 substeps is capped at f_max K; n_bounded counts
+          // the exhaustion, n_capped_loss the steps on which the cap changed
+          // the applied value
           if (dK > prm.f_max * K) {
             dK = prm.f_max * K;
+            L.n_capped_loss += 1;
           }
           L.n_bounded += 1;
         }
@@ -286,8 +308,13 @@ namespace kernel::hadronic {
       delta += dK;
       L.n_processed += 1;
 
-      // step 2: precision-safe application
-      const real_t ur = math::sqrt(u1r * u1r + u2r * u2r + u3r * u3r);
+      // step 2: precision-safe application. The ulp of the stored momentum
+      // norm is taken from the double norm u rounded to real_t (R4: a real_t
+      // sum of squares overflows for |u| ~ 1e20); a norm that is not
+      // representable in real_t takes the ulp of the largest finite real_t
+      const real_t ur = math::isfinite(static_cast<real_t>(u))
+                          ? static_cast<real_t>(u)
+                          : std::numeric_limits<real_t>::max();
       const double pending_floor = prm.pending_floor_ulp * ulp_real(ur) * mu_d *
                                    u / gd;
       const double delta_th = (pending_floor > prm.eta_u * K) ? pending_floor

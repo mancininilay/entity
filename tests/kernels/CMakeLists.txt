@@ -47,7 +47,7 @@ gen_test(custom_prtl_update)
 add_executable(test-kernels-bh_loss.xc bh_loss.cpp)
 add_dependencies(test-kernels-bh_loss.xc ntt_kernels ntt_metrics ntt_framework)
 target_link_libraries(test-kernels-bh_loss.xc PRIVATE ntt_kernels ntt_metrics ntt_framework)
-foreach(grp tables t9 tags above subcycling t6 t5 t5b)
+foreach(grp tables overflow huge t9 tags above subcycling t6 t5 t5b)
   add_test(NAME "KERNELS::bh_loss_${grp}" COMMAND test-kernels-bh_loss.xc ${grp})
 endforeach()
 

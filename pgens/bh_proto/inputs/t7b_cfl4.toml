@@ -1,4 +1,4 @@
-# bh_proto input: T7b, uniform E = 11/32 = 0.34375 x-hat parallel to u (the Boris half-kick (q/m) omegaB0 E dt/2 is then an exact multiple of ulp(u) = 2^-10 for u in [8192, 16384) at CFL 0.5, 0.25, 0.125: 88, 44, 22 ulps; E = 0.34 gives 21.76 ulps at CFL 0.125, rounded to 22 every step, a +1.1% bias of the field work in single precision), B = 0, mu_d = 1, Gamma_p = 6, CFL = 0.125 (dt = 0.125), outputs every 50 time units
+# bh_proto input: T7b (re-registered 2026-10-25: eta_u = 2.5e-5 scales with dt), uniform E = 11/32 = 0.34375 x-hat parallel to u (the Boris half-kick (q/m) omegaB0 E dt/2 is then an exact multiple of ulp(u) = 2^-10 for u in [8192, 16384) at CFL 0.5, 0.25, 0.125: 88, 44, 22 ulps; E = 0.34 gives 21.76 ulps at CFL 0.125, rounded to 22 every step, a +1.1% bias of the field work in single precision), B = 0, mu_d = 1, Gamma_p = 6, CFL = 0.125 (dt = 0.125), outputs every 50 time units
 [simulation]
   name    = "bh_t7b_4"
   engine  = "srpic"
@@ -46,9 +46,9 @@
   physical_mass_ratio = 1836.15
   photon_field.type   = "mono"
   photon_field.eps0   = 0.5
-  eta_u               = 1e-4
+  eta_u               = 2.5e-5
   pending_floor_ulp   = 100
-  f_max               = 0.1
+  f_max               = 0.01
   max_substeps        = 64
   ions.K              = [9180.75]
   ions.per_K          = 4

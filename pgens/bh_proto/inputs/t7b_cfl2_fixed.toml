@@ -1,0 +1,76 @@
+# bh_proto input: T7b diagnostic (eta_u fixed at 1e-4), uniform E = 11/32 = 0.34375 x-hat parallel to u (the Boris half-kick (q/m) omegaB0 E dt/2 is then an exact multiple of ulp(u) = 2^-10 for u in [8192, 16384) at CFL 0.5, 0.25, 0.125: 88, 44, 22 ulps; E = 0.34 gives 21.76 ulps at CFL 0.125, rounded to 22 every step, a +1.1% bias of the field work in single precision), B = 0, mu_d = 1, Gamma_p = 6, CFL = 0.25 (dt = 0.25), outputs every 50 time units
+[simulation]
+  name    = "bh_t7b_2_fixed"
+  engine  = "srpic"
+  runtime = 5000.0
+
+[grid]
+  resolution = [16]
+  extent     = [[0.0, 16.0]]
+  [grid.metric]
+    metric = "minkowski"
+  [grid.boundaries]
+    fields    = [["PERIODIC"]]
+    particles = [["PERIODIC"]]
+
+[scales]
+  larmor0    = 1.0
+  skindepth0 = 1.0
+
+[algorithms]
+  [algorithms.timestep]
+    CFL = 0.25
+  [algorithms.fieldsolver]
+    enable = false
+  [algorithms.deposit]
+    enable = false
+
+[particles]
+  ppc0        = 1.0
+  use_weights = true
+  [[particles.species]]
+    label                    = "ion"
+    mass                     = 1.0
+    charge                   = 1.0
+    maxnpart                 = 1e3
+    pusher                   = "Boris"
+    n_payloads_real          = 3
+    deposit                  = false
+    clear_interval           = 0
+    spatial_sorting_interval = 0
+
+[setup]
+  hadronic.enabled    = true
+  hadronic.species    = [1]
+  tau0                = 0.208288
+  physical_mass_ratio = 1836.15
+  photon_field.type   = "mono"
+  photon_field.eps0   = 0.5
+  eta_u               = 1e-4
+  pending_floor_ulp   = 100
+  f_max               = 0.01
+  max_substeps        = 64
+  ions.K              = [9180.75]
+  ions.per_K          = 4
+  ions.direction      = "+x"
+  ions.weight         = 1.0
+  fields.B            = [0.0, 0.0, 0.0]
+  fields.E            = [0.34375, 0.0, 0.0]
+  ledger.every        = 200
+
+[output]
+  interval = 100000000
+  [output.fields]
+    enable = false
+  [output.particles]
+    enable = false
+  [output.spectra]
+    enable = false
+  [output.stats]
+    enable = false
+
+[checkpoint]
+  interval = 100000000
+
+[diagnostics]
+  interval = 100000000

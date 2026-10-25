@@ -48,7 +48,7 @@
   photon_field.eps0   = 0.5
   eta_u               = 1e-4
   pending_floor_ulp   = 100
-  f_max               = 0.1
+  f_max               = 0.01
   max_substeps        = 64
   ions.K              = [9180.75]
   ions.per_K          = 4

@@ -445,6 +445,12 @@ namespace user {
                                    "spatial_sorting_interval = 0 (array order; "
                                    "prototype limitation)", idx),
                        HERE);
+        raise::ErrorIf((sp->pusher() & ParticlePusher::GCA) != 0,
+                       fmt::format("bh_proto: hadronic species %d uses pusher '%s': a GCA "
+                                   "pusher is not supported on a hadronic species (spec "
+                                   "III.7, P11)", idx,
+                                   ParticlePusher::to_string(sp->pusher()).c_str()),
+                       HERE);
         if (sp->deposit()) {
           std::printf("bh_proto: warning: species %d deposits current; the uniform "
                       "fields of the validation boxes are exact only with deposit = "
@@ -480,9 +486,9 @@ namespace user {
       } else {
         std::printf("bh_proto: hadronic.enabled = false: no tables, no stage\n");
       }
-      std::printf("bh_proto: dt = %.17g, skindepth0 = %.17g, omegaB0 = %.17g, "
+      std::printf("bh_proto: real_t = %s, dt = %.17g, skindepth0 = %.17g, omegaB0 = %.17g, "
                   "max_steps = %u, stage %s\n",
-                  dt, skindepth0, omegaB0, (unsigned)max_steps,
+                  sizeof(real_t) == 4 ? "float" : "double", dt, skindepth0, omegaB0, (unsigned)max_steps,
                   stage_active ? "active" : (setup.enabled ? "not launched (tau0 = 0)"
                                                            : "disabled"));
       std::fflush(stdout);
@@ -717,9 +723,11 @@ namespace user {
                "E_lost_nopairs [w m_e c^2, cumulative] | pending_discarded [w m_e c^2, "
                "cumulative] | pending_outstanding [w m_e c^2, snapshot] | P_drag_x [w m_e c, "
                "cumulative] | P_drag_y [w m_e c, cumulative] | P_drag_z [w m_e c, cumulative] "
-               "| n_substeps [1, cumulative] | n_bounded [1, cumulative] | n_above_table [1, "
-               "cumulative] | n_processed [1, cumulative] | sum_wK [w m_e c^2, snapshot: sum "
-               "over alive ions of w K in double from the stored u]\n";
+               "| n_substeps [1, cumulative] | n_bounded [1, cumulative: steps on which the "
+               "substep count was exhausted] | n_capped_loss [1, cumulative: steps on which the "
+               "f_max K cap changed the applied loss] | n_above_table [1, cumulative] | "
+               "n_processed [1, cumulative] | sum_wK [w m_e c^2, snapshot: sum over alive ions "
+               "of w K in double from the stored u]\n";
         H.file_started = true;
       }
       // the array snapshot is recomputed from the stored arrays (independent of the kernel)
@@ -728,8 +736,8 @@ namespace user {
       out << std::setprecision(17) << step << " " << t << " " << C.E_drag << " "
           << C.E_lost_nopairs << " " << C.pending_discarded << " " << C.pending_outstanding
           << " " << C.P_drag[0] << " " << C.P_drag[1] << " " << C.P_drag[2] << " "
-          << C.n_substeps << " " << C.n_bounded << " " << C.n_above_table << " "
-          << C.n_processed << " " << swk << "\n";
+          << C.n_substeps << " " << C.n_bounded << " " << C.n_capped_loss << " " << C.n_above_table
+          << " " << C.n_processed << " " << swk << "\n";
     }
 
     void write_ions(const Particles<D, M::CoordType>& sp, timestep_t step, double t) {
@@ -821,11 +829,12 @@ namespace user {
                     C.E_drag != 0.0 ? ((wK_init - wK_final) - C.E_drag) / C.E_drag : 0.0);
         std::printf("bh_proto: ledger species %d : E_drag %.17g E_lost_nopairs %.17g "
                     "pending_discarded %.17g pending_outstanding %.17g P_drag %.17g %.17g %.17g "
-                    "n_substeps %llu n_bounded %llu n_above_table %llu n_processed %llu "
-                    "n_applied %llu\n",
+                    "n_substeps %llu n_bounded %llu n_capped_loss %llu n_above_table %llu "
+                    "n_processed %llu n_applied %llu\n",
                     (int)sp.index(), C.E_drag, C.E_lost_nopairs, C.pending_discarded,
                     C.pending_outstanding, C.P_drag[0], C.P_drag[1], C.P_drag[2],
-                    C.n_substeps, C.n_bounded, C.n_above_table, C.n_processed, C.n_applied);
+                    C.n_substeps, C.n_bounded, C.n_capped_loss, C.n_above_table, C.n_processed,
+                    C.n_applied);
       }
       std::printf("bh_proto: checksum fields : %s\n",
                   bhproto::hex(bhproto::checksum_fields<D>(domain.fields.em)).c_str());

@@ -14,11 +14,13 @@
  *   - "relative error" = |K_sim - K_ref| / K_ref with K_sim from the stored u
  *     (double from the real_t components); K_eff = K_sim - delta (the stored
  *     energy minus the pending request) is reported alongside
- *   - the dt-convergence order is reported for both K_sim and K_eff, against
- *     the exact-rate reference and against the interpolated-table reference;
- *     the pre-registered verdict uses K_sim against the exact-rate reference
- *     (the brief's definition); the other three isolate the pending lag and the
- *     interpolation contribution
+ *   - re-registered 2026-10-25 (decision (a)): the dt-convergence order is
+ *     judged on K_eff against the interpolated-table RK4 with eta_u scaled as
+ *     dt (1e-4 at the base dt, halved with dt), pass 1.0 +- 0.3, with the ratio
+ *     eta_u K / pending_floor printed at every dt; the round-1 fixed-eta_u
+ *     stored-K orders are printed as (diag); T6 is judged on K_eff (<= 1e-6);
+ *     every run checks the stored-K envelope |K - K_eff| <= eta_u K +
+ *     pending_floor at every output time; f_max defaults to 0.01
  *   - the ulp ratio of T5b is dK / dK_ulp with dK_ulp = ulp(|u|) mu_d u /
  *     gamma_d (the energy resolution of the stored momentum; equal to
  *     dK/ulp(u) for mu_d = 1, u >> 1)
@@ -83,7 +85,7 @@ namespace {
   }
 
   void diag(const std::string& s) {
-    std::printf("[DIAG] %s\n", s.c_str());
+    std::printf("(diag) %s\n", s.c_str());
   }
 
   constexpr double MU_R = 1836.15;
@@ -307,16 +309,50 @@ namespace {
     prm.mu_r                 = MU_R;
     prm.eta_u                = 1.0e-4;
     prm.pending_floor_ulp    = 100.0;
-    prm.f_max                = 0.1;
+    prm.f_max                = 0.01;
     prm.max_substeps         = 64;
     prm.dt                   = dt;
     return prm;
   }
 
+  /**
+   * @brief single-precision ulp of x, whatever the build (the T5b ratio is
+   *        defined on the float resolution, R6)
+   */
+  double ulp_float_of(double x) {
+    const float xf = static_cast<float>(x);
+    return static_cast<double>(std::nextafter(xf, std::numeric_limits<float>::infinity())) -
+           static_cast<double>(xf);
+  }
+
+  /**
+   * @brief the kernel's pending floor at K (build precision)
+   */
+  double pending_floor_of(double K, double mu_d, double floor_ulp) {
+    const double u  = Ions::u_of_K(K, mu_d);
+    const double gd = std::sqrt(1.0 + u * u);
+    return floor_ulp * kh::ulp_real(static_cast<real_t>(u)) * mu_d * u / gd;
+  }
+
+  /**
+   * @brief stored-K envelope (decision (a)): |K_stored - K_eff| = |delta| <=
+   *        eta_u K + pending_floor at every output time
+   */
+  void envelope_check(const std::string& name, const std::vector<double>& Ks,
+                      const std::vector<double>& deltas, double mu_d, double eta_u, double floor_ulp) {
+    double worst = 0.0;
+    for (std::size_t i = 0; i < Ks.size(); ++i) {
+      const double bound = eta_u * Ks[i] + pending_floor_of(Ks[i], mu_d, floor_ulp);
+      worst              = std::max(worst, std::abs(deltas[i]) / bound);
+    }
+    verdict(worst <= 1.0, "envelope [" + name + "]: max |K_stored - K_eff| / (eta_u K + pending_floor) over the output times",
+            worst, 1.0);
+  }
+
   double dK_ulp_of(double K, double mu_d) {
     const double u  = Ions::u_of_K(K, mu_d);
     const double gd = std::sqrt(1.0 + u * u);
-    return kh::ulp_real(static_cast<real_t>(u)) * mu_d * u / gd;
+    return ulp_float_of(u) * mu_d * u / gd; // single-precision ulp whatever the build (R6)
   }
 
   /**
@@ -517,7 +553,7 @@ namespace {
   /* T5 cooling curve and dt convergence                                        */
   /* ------------------------------------------------------------------------ */
   struct CurveResult {
-    std::vector<double> times, K6, K3, Keff6, Keff3;
+    std::vector<double> times, K6, K3, Keff6, Keff3, d6, d3;
     HostLedger          H;
     double              sum_wK_init { 0.0 };
     int                 n_steps { 0 };
@@ -550,6 +586,8 @@ namespace {
         R.K3.push_back(K[n_each]);
         R.Keff6.push_back(K[0] - d[0]);
         R.Keff3.push_back(K[n_each] - d[n_each]);
+        R.d6.push_back(d[0]);
+        R.d3.push_back(d[n_each]);
       }
     }
     R.n_steps = n_steps;
@@ -628,6 +666,8 @@ namespace {
       verdict(rel <= 1.0e-9, "T11-lite closure [T5 base]: |sum w (K_init - K_final) - E_drag| / E_drag",
               rel, 1.0e-9);
     }
+    envelope_check("T5 base, Gamma_p = 6 group", R.K6, R.d6, mu_d, 1.0e-4, 100.0);
+    envelope_check("T5 base, Gamma_p = 3 group", R.K3, R.d3, mu_d, 1.0e-4, 100.0);
 
     // dt convergence: same end time, dt, dt/2, dt/4; error at the end time
     std::printf("---- T5 dt-convergence (end-time error, three resolutions) ----\n");
@@ -640,6 +680,7 @@ namespace {
       double dt, eK6_exact, eK3_exact, eKeff6_exact, eKeff3_exact, eK6_tab, eKeff6_tab, eK3_tab, eKeff3_tab;
     };
     std::vector<Row> rows, rows_scaled;
+    std::vector<double> floor_ratio6, floor_ratio3;
     for (int r = 0; r < 3; ++r) {
       const int    f    = 1 << r;
       const double dtr  = dt / f;
@@ -652,8 +693,13 @@ namespace {
                            std::abs(Rr.Keff6.back() / tab6_end - 1.0),
                            std::abs(Rr.K3.back() / tab3_end - 1.0),
                            std::abs(Rr.Keff3.back() / tab3_end - 1.0) });
-      // diagnostic: eta_u scaled with dt (the application lag is then O(dt) too)
-      const auto Rs = run_curve(T, mu_d, coeff, dtr, n_steps * f, n_steps * f, 1.0e-4 / f);
+      // registered (decision (a)): eta_u scaled with dt, 1e-4 at the base dt
+      const double eta_r = 1.0e-4 / f;
+      const auto   Rs    = run_curve(T, mu_d, coeff, dtr, n_steps * f, n_steps * f, eta_r);
+      floor_ratio6.push_back(eta_r * Rs.K6.back() / pending_floor_of(Rs.K6.back(), mu_d, 100.0));
+      floor_ratio3.push_back(eta_r * Rs.K3.back() / pending_floor_of(Rs.K3.back(), mu_d, 100.0));
+      envelope_check("T5 conv eta_u scaled, dt/" + std::to_string(f) + ", Gamma_p = 6 group", Rs.K6, Rs.d6, mu_d, eta_r, 100.0);
+      envelope_check("T5 conv eta_u scaled, dt/" + std::to_string(f) + ", Gamma_p = 3 group", Rs.K3, Rs.d3, mu_d, eta_r, 100.0);
       rows_scaled.push_back(Row { dtr, std::abs(Rs.K6.back() / ref6_end - 1.0),
                                   std::abs(Rs.K3.back() / ref3_end - 1.0),
                                   std::abs(Rs.Keff6.back() / ref6_end - 1.0),
@@ -665,17 +711,16 @@ namespace {
     }
     auto order = [](double a, double b) { return std::log2(a / b); };
     for (const auto& r : rows) {
-      std::printf("[DIAG] T5 conv: dt = %.6e | K6 exact %.3e Keff6 exact %.3e K6 table %.3e Keff6 table %.3e "
+      std::printf("(diag) T5 conv: dt = %.6e | K6 exact %.3e Keff6 exact %.3e K6 table %.3e Keff6 table %.3e "
                   "| K3 exact %.3e Keff3 exact %.3e K3 table %.3e Keff3 table %.3e\n",
                   r.dt, r.eK6_exact, r.eKeff6_exact, r.eK6_tab, r.eKeff6_tab, r.eK3_exact, r.eKeff3_exact,
                   r.eK3_tab, r.eKeff3_tab);
     }
     const double o1 = order(rows[0].eK6_exact, rows[1].eK6_exact);
     const double o2 = order(rows[1].eK6_exact, rows[2].eK6_exact);
-    verdict(std::abs(o1 - 1.0) <= 0.3 && std::abs(o2 - 1.0) <= 0.3,
-            "T5: dt-convergence order of the end-time error (K_sim vs exact RK4, Gamma_p = 6 group; "
-            "two ratios dt/dt2 and dt2/dt4, both within 1.0 +- 0.3); value = first ratio",
-            o1, 0.3);
+    diag("T5 conv (round-1 registration, fixed eta_u, kept as history): order of K_sim vs exact RK4, Gamma_p = 6 "
+         "group: " + std::to_string(o1) + ", " + std::to_string(o2) + " (round-1 criterion 1.0 +- 0.3: " +
+         ((std::abs(o1 - 1.0) <= 0.3 && std::abs(o2 - 1.0) <= 0.3) ? "would pass" : "would fail") + ")");
     diag("T5 conv orders (6): K exact " + std::to_string(o1) + ", " + std::to_string(o2) +
          "; Keff exact " + std::to_string(order(rows[0].eKeff6_exact, rows[1].eKeff6_exact)) + ", " +
          std::to_string(order(rows[1].eKeff6_exact, rows[2].eKeff6_exact)) + "; K table " +
@@ -688,7 +733,7 @@ namespace {
          std::to_string(order(rows[0].eKeff3_tab, rows[1].eKeff3_tab)) + ", " +
          std::to_string(order(rows[1].eKeff3_tab, rows[2].eKeff3_tab)));
     for (const auto& r : rows_scaled) {
-      std::printf("[DIAG] T5 conv (eta_u scaled with dt): dt = %.6e | K6 exact %.3e Keff6 exact %.3e "
+      std::printf("(diag) T5 conv (eta_u scaled with dt): dt = %.6e | K6 exact %.3e Keff6 exact %.3e "
                   "K6 table %.3e Keff6 table %.3e | K3 exact %.3e Keff3 table %.3e\n",
                   r.dt, r.eK6_exact, r.eKeff6_exact, r.eK6_tab, r.eKeff6_tab, r.eK3_exact, r.eKeff3_tab);
     }
@@ -697,6 +742,28 @@ namespace {
          std::to_string(order(rows_scaled[1].eK6_exact, rows_scaled[2].eK6_exact)) + "; Keff table " +
          std::to_string(order(rows_scaled[0].eKeff6_tab, rows_scaled[1].eKeff6_tab)) + ", " +
          std::to_string(order(rows_scaled[1].eKeff6_tab, rows_scaled[2].eKeff6_tab)));
+    for (int r = 0; r < 3; ++r) {
+      std::printf("(diag) T5 conv eta_u scaled: dt/%d: eta_u K / pending_floor at the end = %.3f (6), %.3f (3)\n",
+                  1 << r, floor_ratio6[r], floor_ratio3[r]);
+    }
+    {
+      const double s1 = order(rows_scaled[0].eKeff6_tab, rows_scaled[1].eKeff6_tab);
+      const double s2 = order(rows_scaled[1].eKeff6_tab, rows_scaled[2].eKeff6_tab);
+      const double t1 = order(rows_scaled[0].eKeff3_tab, rows_scaled[1].eKeff3_tab);
+      const double t2 = order(rows_scaled[1].eKeff3_tab, rows_scaled[2].eKeff3_tab);
+      const bool   floor_ok = *std::min_element(floor_ratio6.begin(), floor_ratio6.end()) > 1.0 &&
+                            *std::min_element(floor_ratio3.begin(), floor_ratio3.end()) > 1.0;
+      verdict(floor_ok, "T5 (re-registered): eta_u K above the pending floor at every dt used (min ratio)",
+              std::min(*std::min_element(floor_ratio6.begin(), floor_ratio6.end()),
+                       *std::min_element(floor_ratio3.begin(), floor_ratio3.end())), 1.0);
+      verdict(std::abs(s1 - 1.0) <= 0.3 && std::abs(s2 - 1.0) <= 0.3,
+              "T5 (re-registered): dt-convergence order of K_eff vs the interpolated-table RK4 with eta_u "
+              "scaled as dt, Gamma_p = 6 group (both ratios within 1.0 +- 0.3); value = first ratio", s1, 0.3);
+      verdict(std::abs(t1 - 1.0) <= 0.3 && std::abs(t2 - 1.0) <= 0.3,
+              "T5 (re-registered): same for the Gamma_p = 3 group; value = first ratio", t1, 0.3);
+      diag("T5 (re-registered) orders: (6) " + std::to_string(s1) + ", " + std::to_string(s2) + "; (3) " +
+           std::to_string(t1) + ", " + std::to_string(t2));
+    }
   }
 
   /* ------------------------------------------------------------------------ */
@@ -704,7 +771,7 @@ namespace {
   /* ------------------------------------------------------------------------ */
   void test_ulp_scan_T5b(const Tables& T) {
     std::printf("---- T5b single-build part (dK/dK_ulp scan at Gamma_p = 3, design on / off) ----\n");
-    std::printf("[DIAG] real_t = %s; ratio = dK / dK_ulp, dK_ulp = ulp(|u|) mu_d u / gamma_d\n",
+    std::printf("(diag) real_t = %s; ratio = dK / dK_ulp, dK_ulp = ulp(|u|) mu_d u / gamma_d\n",
                 sizeof(real_t) == 4 ? "float" : "double");
     const double ratios[] = { 0.3, 1.0, 3.0, 10.0, 100.0 };
     const double dt       = 1.0;
@@ -750,7 +817,7 @@ namespace {
           const double rel      = std::abs(K_sim / K_ref - 1.0);
           const double rel_eff  = std::abs((K_sim - d) / K_ref - 1.0);
           const double realised = (K0 - K_sim) / (K0 - K_ref);
-          std::printf("[DIAG] T5b mu_d = %.6g ratio %.3g (achieved %.4g) design %s: steps %d%s, K_sim/K_ref - 1 = %+.3e, "
+          std::printf("(diag) T5b mu_d = %.6g ratio %.3g (achieved %.4g) design %s: steps %d%s, K_sim/K_ref - 1 = %+.3e, "
                       "K_eff/K_ref - 1 = %+.3e, realised/expected loss = %.4f, applications %llu\n",
                       mu_d, ratio, achieved, design_on ? "on " : "off", n_steps_capped,
                       n_steps_capped < n_steps ? " (capped)" : "", K_sim / K_ref - 1.0,
@@ -812,35 +879,43 @@ namespace {
            ", Gamma_p = " + std::to_string(1.0 + K[m].back() / MU_R) + ", applications " +
            std::to_string(H.C.n_applied));
       closure_check("T6 mu_d " + std::to_string(mus[m]), sum0, ions, H);
+      {
+        std::vector<double> dl(K[m].size());
+        for (std::size_t i = 0; i < dl.size(); ++i) {
+          dl[i] = K[m][i] - Keff[m][i];
+        }
+        envelope_check("T6 mu_d " + std::to_string(mus[m]), K[m], dl, mus[m], 1.0e-4, 100.0);
+      }
     }
     const double e01 = max_rel(K[0], K[1]), e02 = max_rel(K[0], K[2]), e12 = max_rel(K[1], K[2]);
-    verdict(std::max({ e01, e02, e12 }) <= 1.0e-5,
-            "T6: pairwise max relative difference of K(t) over mu_d in {1, 25, 1836.15} (stored K)",
-            std::max({ e01, e02, e12 }), 1.0e-5);
-    diag("T6: pairwise (stored K): 1-25 " + std::to_string(e01) + ", 1-1836 " + std::to_string(e02) +
-         ", 25-1836 " + std::to_string(e12) + "; with K_eff: " + std::to_string(max_rel(Keff[0], Keff[1])) +
-         ", " + std::to_string(max_rel(Keff[0], Keff[2])) + ", " + std::to_string(max_rel(Keff[1], Keff[2])));
+    const double f01 = max_rel(Keff[0], Keff[1]), f02 = max_rel(Keff[0], Keff[2]), f12 = max_rel(Keff[1], Keff[2]);
+    verdict(std::max({ f01, f02, f12 }) <= 1.0e-6,
+            "T6 (re-registered): pairwise max relative difference of K_eff(t) over mu_d in {1, 25, 1836.15}",
+            std::max({ f01, f02, f12 }), 1.0e-6);
+    std::printf("(diag) T6 (round-1 registration, stored K, kept as history): pairwise 1-25 %.3e, 1-1836 %.3e, "
+                "25-1836 %.3e (round-1 criterion 1e-5: %s); K_eff pairwise %.3e, %.3e, %.3e\n",
+                e01, e02, e12, std::max({ e01, e02, e12 }) <= 1.0e-5 ? "would pass" : "would fail", f01, f02, f12);
   }
 
   /* ------------------------------------------------------------------------ */
   /* sub-cycling and above-table                                                */
   /* ------------------------------------------------------------------------ */
   void test_subcycling(const Tables& T) {
-    std::printf("---- sub-cycling (dK = 0.3 K per step at Gamma_p = 6, f_max = 0.1) ----\n");
+    std::printf("---- sub-cycling (dK = 0.3 K per step at Gamma_p = 6, f_max = 0.01 (default); f_max = 0.1 as diag) ----\n");
     const double mu_d  = MU_R;
     const double K0    = MU_R * 5.0;
     const double I6    = bh::interpolate_loss_host(T.host, 6.0);
     const double dt    = 1.0;
     const double coeff = 0.3 * K0 / (I6 * dt);
     auto exact = [&](double K) { return -coeff * exact_rate_K(T, MU_R, K); };
-    for (const int max_sub : { 64, 2, -1 }) { // -1: diagnostic with f_max = 0.01
+    for (const int max_sub : { 64, 2, -1 }) { // -1: round-1 diagnostic with f_max = 0.1
       Ions ions(2, mu_d);
       ions.set(0, K0);
       ions.set(1, K0, 0.0, 1.0, 0.0);
-      auto prm         = default_params(coeff, dt);
+      auto prm         = default_params(coeff, dt); // f_max = 0.01 (decision (b))
       prm.max_substeps = max_sub > 0 ? max_sub : 64;
       if (max_sub < 0) {
-        prm.f_max = 0.01;
+        prm.f_max = 0.1;
       }
       HostLedger          H;
       const double        sum0 = ions.sum_wK();
@@ -855,18 +930,22 @@ namespace {
       const double e   = max_rel(Ks, ref);
       if (max_sub == 64) {
         verdict(H.C.n_substeps > 0, "sub-cycling: n_substeps > 0", static_cast<double>(H.C.n_substeps), 0.0);
-        verdict(H.C.n_bounded == 0, "sub-cycling: n_bounded = 0 with max_substeps = 64",
-                static_cast<double>(H.C.n_bounded), 0.0);
-        verdict(e <= 1.0e-2, "sub-cycling: max relative error of K(t) vs exact RK4 over 60 steps", e, 1.0e-2);
+        verdict(H.C.n_bounded == 0 && H.C.n_capped_loss == 0,
+                "sub-cycling: n_bounded = 0 and n_capped_loss = 0 with max_substeps = 64",
+                static_cast<double>(H.C.n_bounded + H.C.n_capped_loss), 0.0);
+        verdict(e <= 1.0e-2, "sub-cycling (f_max = 0.01): max relative error of K(t) vs exact RK4 over 60 steps", e, 1.0e-2);
         diag("sub-cycling: first-step K " + std::to_string(Ks[0]) + " ref " + std::to_string(ref[0]) +
              " (Gamma_p " + std::to_string(1.0 + Ks[0] / MU_R) + "), final K " + std::to_string(Ks.back()) +
              " ref " + std::to_string(ref.back()) + ", n_substeps " + std::to_string(H.C.n_substeps));
       } else if (max_sub < 0) {
-        diag("sub-cycling diagnostic with f_max = 0.01 (every step with dK/K > 0.01 sub-cycled): max relative "
-             "error vs exact RK4 " + std::to_string(e) + ", n_substeps " + std::to_string(H.C.n_substeps));
+        diag("sub-cycling (round-1 registration, f_max = 0.1, kept as history): max relative error vs exact RK4 " +
+             std::to_string(e) + " (round-1 criterion 1e-2: " + (e <= 1.0e-2 ? "would pass" : "would fail") +
+             "), n_substeps " + std::to_string(H.C.n_substeps));
       } else {
         verdict(H.C.n_bounded > 0, "sub-cycling: n_bounded > 0 with max_substeps = 2",
                 static_cast<double>(H.C.n_bounded), 0.0);
+        verdict(H.C.n_capped_loss > 0, "sub-cycling: n_capped_loss > 0 with max_substeps = 2 (decision (c))",
+                static_cast<double>(H.C.n_capped_loss), 0.0);
         verdict(std::isfinite(Ks.back()) && Ks.back() > 0.0 && Ks.back() < K0,
                 "sub-cycling: the run continues with max_substeps = 2 (finite, decreasing K)", Ks.back(), 0.0);
         diag("sub-cycling (max_substeps = 2): max relative error vs exact RK4 " + std::to_string(e) +
@@ -874,6 +953,70 @@ namespace {
       }
       closure_check("sub-cycling max_substeps " + std::to_string(max_sub), sum0, ions, H);
     }
+  }
+
+  /**
+   * @brief R2 regression: substep requests beyond int range and non-finite
+   *        requests are capped without any undefined conversion
+   */
+  void test_overflow_requests(const Tables& T) {
+    std::printf("---- R2: overflowing and non-finite loss requests ----\n");
+    const double mu_d = MU_R;
+    const double K0   = MU_R * 5.0;
+    struct Case {
+      const char* name;
+      double      coeff, dt;
+    };
+    for (const Case c : { Case { "coefficient 1e20 (3.6e17 substeps requested)", 1.0e20, 1.0 },
+                          Case { "non-finite request (coefficient 1e308, dt 1e10)", 1.0e308, 1.0e10 } }) {
+      Ions ions(1, mu_d);
+      ions.set(0, K0);
+      auto prm = default_params(c.coeff, c.dt);
+      const double K_init = ions.K()[0];
+      const auto   L      = launch(ions, T, prm);
+      const double K_fin  = ions.K()[0];
+      const double d      = ions.delta()[0];
+      const bool   finite = std::isfinite(K_fin) && std::isfinite(d) && std::isfinite(L.E_drag);
+      verdict(finite && L.n_bounded == 1 && L.n_capped_loss == 1 && L.n_substeps == 64,
+              std::string("R2 [") + c.name + "]: finite result, n_bounded = 1, n_capped_loss = 1, n_substeps = 64",
+              static_cast<double>(L.n_substeps), 64.0);
+      const double applied = (K_init - K_fin) / K_init;
+      verdict(std::abs(applied / prm.f_max - 1.0) <= 1.0e-4,
+              std::string("R2 [") + c.name + "]: the applied loss is the cap f_max K (relative to f_max)",
+              applied, prm.f_max);
+      diag(std::string("R2 [") + c.name + "]: K " + std::to_string(K_init) + " -> " + std::to_string(K_fin) +
+           ", delta " + std::to_string(d) + ", E_drag " + std::to_string(L.E_drag));
+    }
+  }
+
+  /**
+   * @brief R4 regression: the ulp floor is finite for |u| ~ 1e20 (a real_t
+   *        sum of squares would overflow) and no application happens before
+   *        the floor is reached
+   */
+  void test_huge_momentum(const Tables& T) {
+    std::printf("---- R4: ulp floor at |u| = 1e20 ----\n");
+    const double mu_d = 1.0;
+    Ions ions(1, mu_d);
+    ions.set(0, 1.0e20);
+    auto prm              = default_params(1.0e10, 1.0);
+    prm.eta_u             = 1.0e-12;
+    prm.pending_floor_ulp = 100.0;
+    HostLedger H;
+    for (int s = 0; s < 10; ++s) {
+      H.add(launch(ions, T, prm));
+    }
+    const double d   = ions.delta()[0];
+    const double K   = ions.K()[0];
+    const double flo = pending_floor_of(K, mu_d, 100.0);
+    verdict(H.C.n_applied == 0 && std::isfinite(d) && d > 0.0,
+            "R4: no application before the floor is reached (10 steps, request 1e10 I_edge per step)",
+            static_cast<double>(H.C.n_applied), 0.0);
+    verdict(std::isfinite(flo) && flo > prm.eta_u * K && d < flo,
+            "R4: the floor is finite, above eta_u K, and above the accumulated request", flo, d);
+    diag("R4: K = " + std::to_string(K) + ", delta after 10 steps = " + std::to_string(d) + ", pending floor = " +
+         std::to_string(flo) + ", eta_u K = " + std::to_string(prm.eta_u * K) + ", n_above_table " +
+         std::to_string(H.C.n_above_table));
   }
 
   void test_above_table(const Tables& T) {
@@ -971,8 +1114,22 @@ auto main(int argc, char* argv[]) -> int {
     auto want = [&groups](const char* g) {
       return groups.empty() || std::find(groups.begin(), groups.end(), std::string(g)) != groups.end();
     };
+    {
+      // R7: the logarithmic slope of I in K at Gamma_p = 3 (centred difference)
+      const double K3 = MU_R * 2.0, h = 1.0e-4;
+      const double lp = std::log(T.rates->at_gamma(1.0 + K3 * (1.0 + h) / MU_R).I);
+      const double lm = std::log(T.rates->at_gamma(1.0 + K3 * (1.0 - h) / MU_R).I);
+      std::printf("(diag) d ln I / d ln K at Gamma_p = 3: %.4f; I(0.99 K)/I(K) - 1 = %+.4f\n",
+                  (lp - lm) / (2.0 * h), T.rates->at_gamma(1.0 + 0.99 * K3 / MU_R).I / T.rates->at_gamma(3.0).I - 1.0);
+    }
     if (want("tables")) {
       test_device_tables(T);
+    }
+    if (want("overflow")) {
+      test_overflow_requests(T);
+    }
+    if (want("huge")) {
+      test_huge_momentum(T);
     }
     if (want("t9")) {
       test_threshold(T);

@@ -27,7 +27,7 @@ photon_field.type = "mono"
 photon_field.eps0 = 0.5
 eta_u = 1e-4
 pending_floor_ulp = 100
-f_max = 0.1
+f_max = 0.01
 max_substeps = 64
 ions.K = [9180.75, 3672.3]
 ions.per_K = 2
@@ -108,7 +108,7 @@ int main() {
       const auto s = user::bhproto::parse_setup(parse_toml(VALID));
       const bool ok = s.enabled && s.species.size() == 1 && s.species[0] == 1 && s.tau0 == 1.0 &&
                       s.mu_r == 1836.15 && s.bath.type == "mono" && s.bath.eps0 == 0.5 && s.eta_u == 1e-4 &&
-                      s.pending_floor_ulp == 100.0 && s.f_max == 0.1 && s.max_substeps == 64 &&
+                      s.pending_floor_ulp == 100.0 && s.f_max == 0.01 && s.max_substeps == 64 &&
                       s.ions_K.size() == 2 && s.ions_K[0] == 9180.75 && s.ions_per_K == 2 &&
                       s.ions_direction == "+x" && s.ions_weight == 1.0 && s.ledger_every == 5 &&
                       s.payload_pending == 0 && s.payload_debt == 1 && s.payload_debt_k0 == 2 &&
@@ -124,7 +124,7 @@ int main() {
         t = drop_line(t, k);
       }
       const auto s  = user::bhproto::parse_setup(parse_toml(t));
-      const bool ok = s.eta_u == 1e-4 && s.pending_floor_ulp == 100.0 && s.f_max == 0.1 && s.max_substeps == 64 &&
+      const bool ok = s.eta_u == 1e-4 && s.pending_floor_ulp == 100.0 && s.f_max == 0.01 && s.max_substeps == 64 &&
                       s.ions_weight == 1.0 && s.B[0] == 0.0 && s.B[2] == 0.0 && s.ledger_every == 1 && s.table_dump;
       std::printf("%s: optional keys take the documented defaults\n", ok ? "PASS" : "FAIL");
       ok ? ++n_pass : ++n_fail;
@@ -224,6 +224,29 @@ int main() {
     expect_reject("gamma_p_max bad string", replace_line(VALID, "gamma_p_max", "gamma_p_max = \"max\""), "gamma_p_max");
     expect_reject("payload slots not distinct", replace_line(VALID, "payload_debt", "payload_debt = 0"),
                   "payload_pending");
+    // R1 regressions: 64-bit values validated before any narrowing
+    expect_reject("payload_pending = 4294967295 (would narrow to -1 / 65535)",
+                  VALID + std::string("payload_pending = 4294967295\n"), "payload_pending");
+    expect_reject("payload_pending = 4294967296 with payload_debt = 0 (would collapse to slot 0)",
+                  VALID + std::string("payload_pending = 4294967296\npayload_debt = 0\n"), "payload_pending");
+    expect_reject("ledger.every = 4294967296 (would narrow to 0)",
+                  replace_line(VALID, "ledger.every", "ledger.every = 4294967296"), "ledger.every");
+    expect_reject("ledger.every = 2147483648 (INT_MAX + 1)",
+                  replace_line(VALID, "ledger.every", "ledger.every = 2147483648"), "ledger.every");
+    expect_reject("payload slot 65535 (count would overflow unsigned short)",
+                  VALID + std::string("payload_debt_k0 = 65535\n"), "payload_debt_k0");
+    expect_reject("ions.per_K = 2147483648", replace_line(VALID, "ions.per_K", "ions.per_K = 2147483648"), "ions.per_K");
+    expect_reject("ions.per_K x ions.K.size() > INT_MAX", replace_line(VALID, "ions.per_K", "ions.per_K = 1073741824"),
+                  "ions.per_K");
+    expect_reject("max_substeps = 4294967296", replace_line(VALID, "max_substeps", "max_substeps = 4294967296"),
+                  "max_substeps");
+    {
+      const auto s = user::bhproto::parse_setup(parse_toml(
+        replace_line(VALID + std::string("payload_debt_k0 = 65534\n"), "ledger.every", "ledger.every = 2147483647")));
+      const bool ok = s.payload_debt_k0 == 65534 && s.ledger_every == 2147483647;
+      std::printf("%s: the largest admissible slot (65534) and ledger.every = INT_MAX are accepted\n", ok ? "PASS" : "FAIL");
+      ok ? ++n_pass : ++n_fail;
+    }
     expect_reject("unknown key", VALID + std::string("tau = 1.0\n"), "tau");
     expect_reject("unknown nested key", VALID + std::string("hadronic.enable = true\n"), "hadronic.enable");
     expect_reject("tau0 missing when enabled", drop_line(VALID, "tau0"), "tau0");

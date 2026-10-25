@@ -48,7 +48,7 @@
   photon_field.eps0   = 0.5
   eta_u               = ETA_U
   pending_floor_ulp   = FLOOR
-  f_max               = 0.1
+  f_max               = 0.01
   max_substeps        = 64
   allow_unsafe_application = ALLOW
   ions.K              = [3672.3]
