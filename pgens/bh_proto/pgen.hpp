@@ -1106,8 +1106,8 @@ namespace user {
       Kokkos::deep_copy(ht, sp.tag);
       kernel::hadronic::dd acc;
       for (npart_t p = 0; p < sp.npart(); ++p) {
-        if (ht(p) == ParticleTag::dead) {
-          continue;
+        if (ht(p) != ParticleTag::alive) {
+          continue; // dead remnants (absorbed or sent) and send-tagged copies are not counted
         }
         acc.add_prod(static_cast<double>(hw(p)),
                      kernel::hadronic::kinetic_energy(mu_d, static_cast<double>(h1(p)),
@@ -1133,8 +1133,8 @@ namespace user {
       Kokkos::deep_copy(ht, sp.tag);
       Kokkos::deep_copy(hp, sp.pld_r);
       for (npart_t p = 0; p < sp.npart(); ++p) {
-        if (ht(p) == ParticleTag::dead) {
-          continue;
+        if (ht(p) != ParticleTag::alive) {
+          continue; // alive only (C-MPI-1): a transported copy's remnant is never counted
         }
         acc.add_prod(static_cast<double>(hw(p)), static_cast<double>(hp(p, slot)));
       }
@@ -1836,7 +1836,11 @@ namespace user {
         auto u1m = mirror(spm.ux1), u2m = mirror(spm.ux2), u3m = mirror(spm.ux3);
         auto u1p = mirror(spp.ux1), u2p = mirror(spp.ux2), u3p = mirror(spp.ux3);
         auto pm = mirror(spm.pld_r), pp = mirror(spp.pld_r);
+        auto tm = mirror(spm.tag), tp = mirror(spp.tag);
         for (npart_t k = 0; k < n; ++k) {
+          if (tm(k) != ParticleTag::alive || tp(k) != ParticleTag::alive) {
+            continue; // C-MPI-1: only alive leptons (a sent lepton's remnant is dead with zero payloads)
+          }
           if (!(pm(k, 0) > ZERO) || !(pp(k, 0) > ZERO)) {
             continue; // background particle slot
           }
