@@ -198,8 +198,9 @@ namespace {
       while (ss >> v) {
         r.cols.push_back(v);
       }
-      if (r.cols.size() != 15) {
-        throw std::runtime_error(path + ": expected 15 columns, got " + std::to_string(r.cols.size()));
+      // step 2 wrote 15 columns; step 3 writes 41 (sum_wK is column 37, 0-based)
+      if (r.cols.size() != 15 && r.cols.size() != 41) {
+        throw std::runtime_error(path + ": expected 15 or 41 columns, got " + std::to_string(r.cols.size()));
       }
       rows.push_back(r);
     }
@@ -510,7 +511,11 @@ namespace {
       const auto rows = read_ledger(str(a, which));
       double     maxabs = 0.0;
       for (const auto& r : rows) {
-        for (std::size_t c = 2; c + 1 < r.cols.size(); ++c) { // all but step, time, sum_wK
+        const std::size_t sum_wK_col = (r.cols.size() == 41) ? 37 : r.cols.size() - 1;
+        for (std::size_t c = 2; c < r.cols.size(); ++c) { // all but step, time, sum_wK
+          if (c == sum_wK_col) {
+            continue;
+          }
           maxabs = std::max(maxabs, std::abs(r.cols[c]));
         }
       }

@@ -1164,6 +1164,8 @@ namespace user {
             spp.set_counter(spp.counter() + n_injected);
             spm.set_unsorted();
             spp.set_unsorted();
+            pair_npart_minus = spm.npart(); // snapshots for the ledger row
+            pair_npart_plus  = spp.npart();
             raise::ErrorIf(static_cast<unsigned long long>(n_injected) != L.n_spawned,
                            fmt::format("bh_proto: internal: n_injected %u != n_spawned %llu",
                                        (unsigned)n_injected, L.n_spawned),
