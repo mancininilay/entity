@@ -253,9 +253,18 @@ order-independent checksums ignore.
 
 {{SUITES}}
 
-### 0.8 UBSan diagnostic (R2)
+### 0.8 UBSan and bounds-check diagnostics (R2, P8)
 
 {{UBSAN}}
+
+Bounds-check build D rebuilt from the round-2 HEAD (fact, `logs/bounds-*`,
+not registered in ctest): `test-kernels-bh_pairs.xc t12 t10b texp r1 r2 r3`
+49 passed, 0 failed, exit 0, no bounds error (the R1 unequal-slot runs and
+the R2 cap runs included); engine inputs `t12_capacity_warn.toml` (n_spawned
+60 at the full capacity, exit 0), `t13_gauss.toml` (686 pairs, exit 0),
+`r2_pairweight_tiny.toml` (25600 pairs at the cap every step, exit 0) and
+`texp_absorb.toml` at the production placement (82 pairs, E_exported_host =
+E_exported = 249.3964991569519, exit 0): no bounds error in any run.
 
 ### 0.9 T13 replicate distribution (fact, honest reporting)
 
