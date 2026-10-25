@@ -568,8 +568,10 @@ tau0 and mu_r when enabled, a table bath without a file.
 | tag classes | pass |
 | rejections (49 parser checks incl. 5 positive cases, 8 end to end; round 2: 58 + 9) | pass |
 
-ctest in build A: see section 9 for the final counts (the stock 53 tests
-unchanged and passing).
+ctest in build A: see section 9 for the round-1 counts (the stock 53 tests
+unchanged and passing). Round 2: the four round-1 failures are re-registered
+or re-run at the new default and pass (section 10); both suites complete with
+no failure (10.3).
 
 ## 5. The T5b design-off table
 
@@ -756,9 +758,31 @@ Round-1 criteria kept as history, printed with the `(diag)` label (facts, unchan
 
 ### 10.3 Suites
 
-Single build (A): FINAL_SINGLE_PLACEHOLDER
+Single build (A): 70 tests, 70 passed, 134 s wall with `ctest -j1`
+on an otherwise idle machine (`t5b_cross_build` 88 s). The 53 stock tests are
+unchanged and pass; the 17 new entries are `KERNELS::bh_loss_{tables, overflow,
+huge, t9, tags, above, subcycling, t6, t5, t5b}`, `ARCHETYPES::bh_fixtures`,
+`HADRONIC::{bh_proto_params, reject, t7a_fields_B, t7b_fields_E,
+t5b_cross_build, t8_bit_identity}`. Running the kernel unit executable with
+every group: 101 checks passed, 0 failed, 6 expected failures (the T5b
+design-off runs).
 
-Double build (B, `-D TESTS=ON`): DOUBLE_PLACEHOLDER
+Double build (B, `-D TESTS=ON`): 70 tests, 68 passed, 2 skipped
+(`t5b_cross_build` and `t8_bit_identity`, no second build given to the double
+tree; not counted as validations), 0 failed, 42.6 s wall. The suite completes
+(R6): `bh_loss_t5b` takes 16.9 s. Diagnostic values from the double build
+(facts): T5 re-registered orders 1.000003, 0.999991 (Gamma_p = 6) and 1.000122,
+1.000038 (Gamma_p = 3), with eta_u K / pending_floor of order 1e9 (the double
+ulp floor is 9e-11 at K ~ 8e3); T5 accuracy 8.562e-5 and 9.326e-5; T6 K_eff
+pairwise 1.8e-16 (the stored K agrees to 5.7e-16 too, since the application
+quantum is reached on the same step in every run at double resolution); T7a
+K(B) vs K(0) 4.4e-15; T7b accuracy 2.131e-5, re-registered orders 1.0001,
+1.0000 (end errors 4.399e-5, 2.199e-5, 1.100e-5), stored-K orders in the same
+runs -0.59, 0.90 and in the fixed-eta_u runs 0.42, -1.52 (the lag floor,
+reported only); sub-cycling at f_max = 0.01: 2.017e-3; R4 probe: floor 1.6e6,
+applications from the first step as registered. The round-1 history lines
+print "would pass" for T6 on the stored K in the double build and "would fail"
+for the T5 fixed-eta_u order (-1.47, 2.01) and for f_max = 0.1 (2.34e-2).
 
 ### 10.4 Sanitizer diagnostic (build D, `-fsanitize=undefined -fno-sanitize-recover=undefined`)
 
