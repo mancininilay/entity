@@ -43,11 +43,17 @@
  *   E_drag + debt_initial = (E_pairs - E_absorbed) + E_round + debt_outstanding
  *   + E_exported + E_lost_nopairs holds to the accumulator's round-off.
  *   poisson: no debt; per step n ~ Poisson(R dt / pair_weight) events (R =
- *   coeff J(Gamma_p) g), capped at max_events_per_step (n_capped_events),
- *   w_pair = pair_weight w, the unweighted law; E_lost_nopairs accumulates
- *   the signed imbalance w dK_applied - sum_events w_pair D (expectation zero),
- *   so that the same identity holds by construction (convention).
+ *   coeff J(Gamma_p) g) from an exact sampler compared with the cap before any
+ *   integer conversion, capped at max_events_per_step (n_capped_events),
+ *   w_pair = pair_weight w, the unweighted law; E_stochastic accumulates the
+ *   signed imbalance w dK_applied - sum_events w_pair D (expectation zero;
+ *   decision (c)), so that the identity
+ *   E_drag + debt_initial = (E_pairs - E_absorbed) + E_round + E_stochastic
+ *   + debt_outstanding + E_exported + E_lost_nopairs holds for every source.
  *   none: loss only, E_lost_nopairs = E_drag.
+ *   K0 (spec v3.3): set when r goes from 0 to positive, kept until r returns
+ *   to 0; the K0 trigger pays the whole debt and has precedence over the
+ *   regular trigger.
  *
  * The functor is used with `Kokkos::parallel_reduce` and the `LossLedger`
  * value type (a struct of double-double accumulators, doubles and 64-bit
@@ -237,7 +243,6 @@ namespace kernel::hadronic {
     npart_t          domain_idx { 0 };
     bool             tracking_m { false };
     bool             tracking_p { false };
-    unsigned short   npld_r { 0 }; // real payload slots of the pair species (>= 3)
     array_t<npart_t> spawn_counter;
     bool             valid { false };
   };
@@ -254,7 +259,8 @@ namespace kernel::hadronic {
     dd E_absorbed;
     dd E_exported;
     dd E_round;
-    dd E_lost_nopairs;
+    dd E_stochastic;   // poisson: E_drag - sum_events W D (signed, expectation zero); 0 otherwise
+    dd E_lost_nopairs; // none: the applied loss (no pairs); 0 otherwise
     dd pending_discarded;
     double P_drag[3] { 0.0, 0.0, 0.0 };
     double P_pairs[3] { 0.0, 0.0, 0.0 };
@@ -274,6 +280,7 @@ namespace kernel::hadronic {
     unsigned long long n_bounded { 0 };
     unsigned long long n_capped_loss { 0 };   // steps on which the f_max K cap changed the applied loss
     unsigned long long n_closing { 0 };       // closing packets (below the table edge)
+    unsigned long long n_closing_at_rest { 0 }; // closing packets of ions at u = 0 (emitted along +x)
     unsigned long long n_capped { 0 };        // budget: packet loops stopped by max_events_per_step with r >= r_th
     unsigned long long n_capped_events { 0 }; // poisson: steps on which the event count exceeded the cap
     unsigned long long n_above_table { 0 };
@@ -295,6 +302,7 @@ namespace kernel::hadronic {
       E_absorbed        += o.E_absorbed;
       E_exported        += o.E_exported;
       E_round           += o.E_round;
+      E_stochastic      += o.E_stochastic;
       E_lost_nopairs    += o.E_lost_nopairs;
       pending_discarded += o.pending_discarded;
       for (int d = 0; d < 3; ++d) {
@@ -313,6 +321,7 @@ namespace kernel::hadronic {
       n_bounded           += o.n_bounded;
       n_capped_loss       += o.n_capped_loss;
       n_closing           += o.n_closing;
+      n_closing_at_rest   += o.n_closing_at_rest;
       n_capped            += o.n_capped;
       n_capped_events     += o.n_capped_events;
       n_above_table       += o.n_above_table;
@@ -360,6 +369,73 @@ namespace kernel::hadronic {
     }
     const real_t up = math::nextafter(x, std::numeric_limits<real_t>::infinity());
     return static_cast<double>(up) - static_cast<double>(x);
+  }
+
+
+  /**
+   * @brief Exact Poisson deviate with mean lambda, capped: returns k in [0, kmax]
+   *        or kmax + 1 meaning "the draw exceeds kmax" (the caller counts it and
+   *        clamps). The comparison with the cap is made before any conversion
+   *        to int, so no draw is ever converted when it does not fit (R2).
+   *        lambda < 10: inversion by sequential search with the cap inside the
+   *        loop (at most kmax + 1 terms). lambda >= 10: transformed rejection
+   *        with squeeze, PTRS (Hoermann 1993, "The transformed rejection method
+   *        for generating Poisson random variables"), exact. A non-finite or
+   *        huge lambda (> 1e9) is reported as exceeding the cap without a
+   *        draw. Every random number drawn is counted in n_rng.
+   */
+  Inline auto poisson_sample(random_generator_t& gen, double lambda, int kmax,
+                             unsigned long long& n_rng) -> int {
+    if (!math::isfinite(lambda) || lambda > 1.0e9) {
+      return kmax + 1; // non-finite (a NaN included) or huge: exceeds the cap, no draw
+    }
+    if (!(lambda > 0.0)) {
+      return 0;
+    }
+    if (lambda < 10.0) {
+      const double u = gen.drand();
+      n_rng += 1;
+      double p = math::exp(-lambda), cum = p;
+      int    k = 0;
+      while (u > cum) {
+        if (k >= kmax || k > 100000) {
+          return kmax + 1;
+        }
+        ++k;
+        p   *= lambda / static_cast<double>(k);
+        cum += p;
+      }
+      return k;
+    }
+    const double slam     = math::sqrt(lambda);
+    const double loglam   = math::log(lambda);
+    const double b        = 0.931 + 2.53 * slam;
+    const double a        = -0.059 + 0.02483 * b;
+    const double invalpha = 1.1239 + 1.1328 / (b - 3.4);
+    const double vr       = 0.9277 - 3.6224 / (b - 2.0);
+    for (int it = 0; it < 10000; ++it) {
+      const double U  = gen.drand() - 0.5;
+      const double V  = gen.drand();
+      n_rng          += 2;
+      const double us = 0.5 - math::abs(U);
+      const double kd = math::floor((2.0 * a / us + b) * U + lambda + 0.43);
+      bool         accept = false;
+      if (us >= 0.07 && V <= vr) {
+        accept = true;
+      } else if (kd < 0.0 || (us < 0.013 && V > us)) {
+        accept = false;
+      } else if (math::log(V) + math::log(invalpha) - math::log(a / (us * us) + b) <=
+                 -lambda + kd * loglam - math::lgamma(kd + 1.0)) {
+        accept = true;
+      }
+      if (accept) {
+        if (kd > static_cast<double>(kmax)) {
+          return kmax + 1; // compared in double: never converted
+        }
+        return static_cast<int>(kd);
+      }
+    }
+    return kmax + 1; // rejection loop exhausted (probability negligible): treated as exceeding
   }
 
   /**
@@ -498,8 +574,11 @@ namespace kernel::hadronic {
         dst.dx3_prev(idx) = dxi[2];
       }
       dst.tag(idx) = tag; // the parent's tag (alive or send-tagged)
-      // every real payload slot written
-      for (unsigned short c = 0; c < pairs.npld_r; ++c) {
+      // every real payload slot of THIS destination written (R1: the two species may
+      // declare different slot counts; each is zeroed from its own extent), then the
+      // three defined slots
+      const auto npld = dst.pld_r.extent(1);
+      for (std::size_t c = 0; c < npld; ++c) {
         dst.pld_r(idx, c) = ZERO;
       }
       dst.pld_r(idx, 0) = static_cast<real_t>(prm.time);
@@ -585,37 +664,6 @@ namespace kernel::hadronic {
       return true;
     }
 
-    /**
-     * @brief Poisson deviate with mean lambda (Knuth for lambda <= 30, normal
-     *        approximation above), drawing from the hadronic pool; every draw
-     *        counted in n_rng
-     */
-    Inline auto poisson_draw(double lambda, LossLedger& L) const -> int {
-      auto gen = pool.get_state();
-      int  n   = 0;
-      if (lambda <= 30.0) {
-        const double Lim = math::exp(-lambda);
-        double       prod = 1.0;
-        int          k    = 0;
-        do {
-          ++k;
-          prod *= gen.drand();
-          L.n_rng += 1;
-        } while (prod > Lim && k < 10000);
-        n = k - 1;
-      } else {
-        // Box-Muller normal approximation (rounded, clamped at 0)
-        const double u1 = gen.drand(), u2 = gen.drand();
-        L.n_rng        += 2;
-        const double z  = math::sqrt(-2.0 * math::log(u1 > 1e-300 ? u1 : 1e-300)) *
-                         math::cos(2.0 * 3.14159265358979323846 * u2);
-        const double x = lambda + math::sqrt(lambda) * z;
-        n              = x > 0.0 ? static_cast<int>(x + 0.5) : 0;
-      }
-      pool.free_state(gen);
-      return n;
-    }
-
     Inline void operator()(prtlidx_t p, LossLedger& L) const {
       const short  tag   = prtls.tag(p);
       const double w     = static_cast<double>(prtls.weight(p));
@@ -667,13 +715,21 @@ namespace kernel::hadronic {
           L.pending_discarded.add_prod(w, delta);
           prtls.pld_r(p, prm.pld_pending) = ZERO;
         }
-        if (budget && r_in > 0.0 && u > 0.0) {
+        if (budget && r_in > 0.0) {
           double Dv, eps, g_m, g_p;
           outcome_law(tables.gamma_min, Dv, eps, g_m, g_p);
           const double w_pair = w * r_in / Dv;
           dd           intended;
           intended.add_prod(w, r_in);
-          if (spawn_pair(p, L, w_pair, intended, u1 / u, u2 / u, u3 / u, Gp, eps, g_m, g_p, tag)) {
+          // R4: an ion stopped exactly at u = 0 has no direction; the newborn pair is
+          // emitted along +x (convention) so that the debt does not wait indefinitely
+          const double c1 = u > 0.0 ? u1 / u : 1.0;
+          const double c2 = u > 0.0 ? u2 / u : 0.0;
+          const double c3 = u > 0.0 ? u3 / u : 0.0;
+          if (u == 0.0) {
+            L.n_closing_at_rest += 1;
+          }
+          if (spawn_pair(p, L, w_pair, intended, c1, c2, c3, Gp, eps, g_m, g_p, tag)) {
             r = dd {};
             K0 = 0.0;
             L.n_closing += 1;
@@ -817,7 +873,7 @@ namespace kernel::hadronic {
           }
           r.add(dK_applied);
         } else if (poisson) {
-          L.E_lost_nopairs.add_prod(w, dK_applied);
+          L.E_stochastic.add_prod(w, dK_applied);
         } else {
           L.E_lost_nopairs.add_prod(w, dK_applied);
         }
@@ -873,13 +929,15 @@ namespace kernel::hadronic {
                 }
                 break;
               }
+              // R3 / decision (b): an active K0 trigger has precedence and pays the
+              // whole debt; otherwise the regular trigger pays r_th
               double r_packet;
               bool   via_k0 = false;
-              if (rv >= r_th) {
-                r_packet = (rv < r_th) ? rv : r_th;
-              } else if (k0_trigger) {
+              if (k0_trigger) {
                 r_packet = rv;
                 via_k0   = true;
+              } else if (rv >= r_th) {
+                r_packet = r_th;
               } else {
                 break;
               }
@@ -891,9 +949,8 @@ namespace kernel::hadronic {
               }
               r.add(-r_packet);
               if (via_k0) {
-                L.n_k0_trigger += 1;
+                L.n_k0_trigger += 1; // r is now 0: the loop ends and K0 is reset below
               }
-              k0_trigger = false;
               ++n_pk;
             }
           }
@@ -905,7 +962,7 @@ namespace kernel::hadronic {
         }
         const real_t r_s = static_cast<real_t>(rv);
         if (r_s == ZERO) {
-          K0 = 0.0;
+          K0 = 0.0; // K0 is reset only when the debt returns to 0 (never after a partial payment)
         }
         dd rounding = r;
         rounding.add(-static_cast<double>(r_s));
@@ -916,11 +973,13 @@ namespace kernel::hadronic {
       } else if (poisson) {
         if (dK > 0.0 && un > 0.0 && prm.pair_weight > 0.0) {
           const double R      = coeff * tables.J(Gp_cur) * g_x;
-          const double lambda = R * prm.dt / prm.pair_weight;
-          if (lambda > 0.0) {
-            int n = poisson_draw(lambda, L);
+          const double lambda = R * prm.dt / prm.pair_weight; // double; non-finite or huge -> exceeds the cap
+          if (lambda > 0.0 || !math::isfinite(lambda)) {
+            auto gen = pool.get_state();
+            int  n   = poisson_sample(gen, lambda, prm.max_events_per_step, L.n_rng);
+            pool.free_state(gen);
             if (n > prm.max_events_per_step) {
-              n = prm.max_events_per_step;
+              n = prm.max_events_per_step; // the draw exceeded the cap: clamped and counted (on_max_events)
               L.n_capped_events += 1;
             }
             if (n > 0) {
@@ -934,7 +993,7 @@ namespace kernel::hadronic {
                   break;
                 }
                 // the drag not matched by this pair (signed, expectation zero)
-                L.E_lost_nopairs.sub(intended);
+                L.E_stochastic.sub(intended);
               }
             }
           }

@@ -18,6 +18,9 @@
  *     r_th = min(r_th_factor <D>, f_r K); with r_th_factor = 10, f_r = 0.02 the
  *     first term binds at Gamma_p = 6 (83.6 against 183.6)
  *   - "exact" means to double round-off: 1e-12 relative to E_drag
+ *   - K0 semantics (spec v3.3, decision (b)): K0 is set when r goes from 0 to
+ *     positive and kept until r returns to 0; an active K0 trigger pays the
+ *     whole debt and has precedence over the regular trigger
  *   - T10 packet count: the kernel's debt mechanism is replayed on the host
  *     from the per-step stored ion energies (the same thresholds, the same
  *     real_t rounding of the stored debt and K0, the same K0 trigger); the
@@ -253,15 +256,18 @@ namespace {
     npart_t          maxn { 0 };
     npart_t          npart_m { 0 }, npart_p { 0 };
     npart_t          counter_m { 0 }, counter_p { 0 };
-    unsigned short   npld { 3 };
+    unsigned short   npld_m { 3 }, npld_p { 3 };
     array_t<npart_t> spawn_counter { "spawn_counter" };
 
-    explicit Pairs(npart_t maxn_, unsigned short npld_ = 3) : maxn { maxn_ }, npld { npld_ } {
-      alloc(minus, "m");
-      alloc(plus, "p");
+    explicit Pairs(npart_t maxn_, unsigned short npld_minus = 3, unsigned short npld_plus = 0)
+      : maxn { maxn_ }
+      , npld_m { npld_minus }
+      , npld_p { npld_plus == 0 ? npld_minus : npld_plus } {
+      alloc(minus, "m", npld_m);
+      alloc(plus, "p", npld_p);
     }
 
-    void alloc(ParticleArrays& a, const std::string& s) {
+    void alloc(ParticleArrays& a, const std::string& s, unsigned short npld) {
       a.i1       = array_t<int*> { s + "i1", maxn };
       a.i2       = array_t<int*> { s + "i2", maxn };
       a.i3       = array_t<int*> { s + "i3", maxn };
@@ -302,7 +308,6 @@ namespace {
       t.domain_idx = 0;
       t.tracking_m = false;
       t.tracking_p = false;
-      t.npld_r     = npld;
       Kokkos::deep_copy(spawn_counter, static_cast<npart_t>(0));
       t.spawn_counter = spawn_counter;
       t.valid         = true;
@@ -392,6 +397,7 @@ namespace {
       r.sub(C.E_pairs);
       r.add(C.E_absorbed);
       r.sub(C.E_round);
+      r.sub(C.E_stochastic);
       r.sub(C.debt_outstanding);
       r.sub(C.E_exported);
       r.sub(C.E_lost_nopairs);
@@ -479,6 +485,7 @@ namespace {
     }
     rhs.sub(H.C.E_exported);
     rhs.sub(H.C.E_lost_nopairs);
+    rhs.sub(H.C.E_stochastic);
     rhs.add(H.debt_initial);
     kh::dd res = rhs;
     res.sub(lhs);
@@ -560,19 +567,19 @@ namespace {
             }
             break;
           }
+          // spec v3.3 (R3): an active K0 trigger has precedence and pays the whole debt
           double r_packet;
           bool   via = false;
-          if (rv >= r_th) {
-            r_packet = r_th;
-          } else if (k0_trigger) {
+          if (k0_trigger) {
             r_packet = rv;
             via      = true;
+          } else if (rv >= r_th) {
+            r_packet = r_th;
           } else {
             break;
           }
           R.packets.push_back({ static_cast<double>(n) * DT, r_packet, Gp, Dm, w * r_packet / Dm, via });
           r.add(-r_packet);
-          k0_trigger = false;
           ++n_pk;
         }
       }
@@ -726,6 +733,8 @@ namespace {
             static_cast<double>(H.C.n_spawned));
     verdict(H.C.n_rng == 0, "T10: the hadronic RNG counter is unchanged (budget + delta draws nothing)",
             static_cast<double>(H.C.n_rng), 0.0);
+    verdict(H.C.E_stochastic.value() == 0.0 && H.C.E_lost_nopairs.value() == 0.0,
+            "T10: E_stochastic = E_lost_nopairs = 0 for the budget source", H.C.E_stochastic.value(), 0.0);
     verdict(H.C.n_dropped == 0 && H.C.n_capped == 0, "T10: no drops and no capping at max_events_per_step = 8",
             static_cast<double>(H.C.n_dropped + H.C.n_capped), 0.0);
     // (3) closure of this run (T11 on the budget run)
@@ -740,122 +749,187 @@ namespace {
   }
 
   /**
-   * @brief T11 (iv): the momentum residual needs the physical ion mass (mu_d =
-   *        mu_r) so that the ion's beta is beta_p; with mu_d = 1 the ion is
-   *        ultra-relativistic and P_drag = E_drag. Before the run: the III.1
-   *        prediction sum w D (1/beta_p - 1) treats the leptons as massless
-   *        (p_e = E_e); with the delta spectrum at Gamma_p = 6 each lepton has
-   *        gamma_e = (<D> + eps)/2 = 4.43 and the rest-mass deficit of the pair
-   *        momentum, 2 (gamma_e - sqrt(gamma_e^2 - 1)) = 0.23 per interaction,
-   *        exceeds D (1/beta_p - 1) = 0.12; the registered 1% criterion is
-   *        therefore expected to fail by a factor of about 3 (labelled before
-   *        the run). The kinematic prediction including the rest mass,
-   *        sum w [D/beta_p(spawn) - (2 sqrt(gamma_e^2 - 1) - eps)], is reported
-   *        as a diagnostic (the drag of a packet is accrued at earlier, higher
-   *        beta_p, so it is an approximation at the per-cent level of the
-   *        residual).
+   * @brief T11 (iv), re-registered (R7, decision (a)): the momentum residual of
+   *        the paid packets from the finite-loss history. For every ion the drag
+   *        momentum of each applied loss, p_d(K_before) - p_d(K_after) along the
+   *        ion direction, is partitioned FIFO into the paid packets (in spawn
+   *        order) and the outstanding debt; the paid residual
+   *        R_hist = P_drag,paid - (P_pairs - P_absorbed) is compared with the
+   *        amended III.1 prediction R = sum_j W_j [D_j (1/beta_d,j - 1) +
+   *        2 (gamma_e,j - sqrt(gamma_e,j^2 - 1))], beta_d the numerical ion's
+   *        velocity at the spawn state, W_j the stored pair weight: 1%. The
+   *        massless formula sum W D (1/beta_d - 1) is kept as a failed
+   *        diagnostic row (history). Runs: mu_d = mu_r (registered) and mu_d = 1
+   *        (diag, beta_d = 1 - 6e-9: the residual is the rest-mass term alone);
+   *        low-energy diagnostic at Gamma_p = 2.5 (1.5 is below this bath's
+   *        threshold).
    */
-  void test_T11_momentum(const Tables& T) {
-    std::printf("\n=== T11 (iv) momentum: 8 ions with the physical mass (mu_d = mu_r) at Gamma_p = 6, dK/K = 1e-4 "
-                "per step, 2000 steps ===\n");
-    double D6, e6;
-    bh::interpolate_outcome_host(T.host, 6.0, D6, e6);
+  struct MomentumRun {
+    double R_hist, R_formula, R_massless, P_paid, P_out, P_pairs, P_abs, E_drag;
+    unsigned long long n_packets;
+  };
+
+  MomentumRun momentum_run(const Tables& T, double mu_d, double Gp0, int nsteps, random_number_pool_t& pool,
+                           HostLedger& H, Ions& ions, Pairs& pairs, std::vector<double>& K_init) {
+    const npart_t N   = static_cast<npart_t>(ions.n);
+    auto          prm = params(coeff_for(T, Gp0, 1.0e-4), BUDGET);
+    std::vector<std::vector<double>> Khist(N);
     {
-      const double beta = std::sqrt(1.0 - 1.0 / 36.0);
-      const double ge   = 0.5 * (D6 + e6);
-      const double pe   = std::sqrt((ge - 1.0) * (ge + 1.0));
-      std::printf("(diag) before the run at Gamma_p = 6: D (1/beta_p - 1) = %.6f, lepton rest-mass deficit "
-                  "2 (gamma_e - p_e) = %.6f (gamma_e = %.4f), expected ratio measured/III.1 = %.3f: the 1%% "
-                  "criterion against the III.1 prediction is expected to fail\n",
-                  D6 * (1.0 / beta - 1.0), 2.0 * (ge - pe), ge, (D6 * (1.0 / beta - 1.0) + 2.0 * (ge - pe)) /
-                                                                   (D6 * (1.0 / beta - 1.0)));
+      const auto K0s = ions.K();
+      for (npart_t p = 0; p < N; ++p) {
+        Khist[p].push_back(K0s[p]);
+      }
     }
-    const npart_t N = 8;
-    Ions          ions(N, MU_R);
-    for (npart_t p = 0; p < N; ++p) {
-      ions.set(p, K_of_gamma(6.0), 1.0 + 0.5 * (p % 3));
-    }
-    ions.zero_payloads();
-    Pairs                pairs(200000);
-    random_number_pool_t pool(50u);
-    auto                 prm = params(coeff_for(T, 6.0, 1.0e-4), BUDGET);
-    HostLedger           H;
-    const auto           K_init = ions.K();
-    for (int n = 0; n < 2000; ++n) {
+    K_init = ions.K();
+    for (int n = 0; n < nsteps; ++n) {
       H.add(launch(ions, pairs, T, prm, pool, static_cast<double>(n + 1) * DT));
-    }
-    const auto rows = pairs.rows();
-    double     pred_31 = 0.0, pred_kin = 0.0;
-    for (const auto& r : rows) {
-      if (!(r.birth_m > 0.0)) {
-        continue;
-      }
-      const double Gp   = r.gp_m;
-      const double beta = std::sqrt(1.0 - 1.0 / (Gp * Gp));
-      double       Dm, eps;
-      bh::interpolate_outcome_host(T.host, Gp, Dm, eps);
-      const double ge = 0.5 * (Dm + eps);
-      const double pe = std::sqrt((ge - 1.0) * (ge + 1.0));
-      pred_31        += r.wm * Dm * (1.0 / beta - 1.0);
-      // the stored lepton momenta and the stored weight: the exact kinematic residual uses
-      // the drag of this packet r_packet = w_pair D / w through w_pair D = w_s Dm
-      pred_kin       += r.wm * (Dm / beta - (2.0 * pe - eps));
-    }
-    const double res = H.C.P_drag[0] - (H.C.P_pairs[0] - H.C.P_absorbed[0]);
-    verdict(std::abs(res - pred_31) <= 0.01 * std::abs(pred_31),
-            "T11 (iv): P_drag - (P_pairs - P_absorbed) vs the III.1 prediction sum w D (1/beta_p - 1), "
-            "|measured - predicted| / predicted",
-            std::abs(res - pred_31) / std::abs(pred_31), 0.01, true);
-    // the drag momentum of the outstanding debt is in P_drag but not yet in the pairs: subtract it
-    double debt_mom = 0.0;
-    {
-      const auto rr = ions.payload(1);
-      const auto w  = ions.w();
-      const auto Kf = ions.K();
+      const auto Ks = ions.K();
       for (npart_t p = 0; p < N; ++p) {
-        const double Gp   = 1.0 + Kf[p] / MU_R;
-        const double beta = std::sqrt(1.0 - 1.0 / (Gp * Gp));
-        debt_mom         += w[p] * rr[p] / beta;
+        Khist[p].push_back(Ks[p]);
       }
     }
-    const double res_paid = res - debt_mom;
-    // not a verdict: the drag momentum of a packet is accrued over earlier steps at a higher beta_p
-    // than the spawn state, so "D/beta_p at spawn" is an approximation at the 1e-2 level of the residual
-    std::printf("(diag) T11 (iv): P_drag(paid) - (P_pairs - P_absorbed) vs the kinematic prediction with the lepton rest "
-                "mass sum w [D/beta_p(spawn) - (2 sqrt(gamma_e^2 - 1) - eps)]: relative difference %.3e (the paid "
-                "drag momentum was accrued at the earlier, higher beta_p of each ion; the exact residual is the ledger's)\n",
-                std::abs(res_paid - pred_kin) / std::abs(pred_kin));
-    diag("T11 (iv): measured P_drag - (P_pairs - P_absorbed) = " + std::to_string(res) + ", of which the outstanding "
-         "debt's drag momentum " + std::to_string(debt_mom) + "; III.1 prediction " + std::to_string(pred_31) +
-         ", kinematic prediction " + std::to_string(pred_kin) + "; ratio measured(paid)/III.1 = " +
-         std::to_string(res_paid / pred_31) + "; P_drag " + std::to_string(H.C.P_drag[0]) + ", P_pairs " +
-         std::to_string(H.C.P_pairs[0]) + ", P_absorbed " + std::to_string(H.C.P_absorbed[0]) + ", E_drag " +
-         std::to_string(H.C.E_drag.value()));
-    const auto A = array_identity(ions, K_init, pairs, H);
-    check_identity("T11 (physical mass run)", H, A);
-    // diagnostic at Gamma_p = 1.5 is below the table edge of this bath (Gamma_th = 2.125): the brief's
-    // low-energy diagnostic is taken at Gamma_p = 2.5 instead
+    const auto  ws   = ions.w();
+    const auto  rows = pairs.rows();
+    MomentumRun M {};
+    for (npart_t p = 0; p < N; ++p) {
+      // the loss history of this ion: (dK_n, dp_n) along +x (unweighted)
+      std::vector<std::pair<double, double>> inc;
+      for (std::size_t n = 1; n < Khist[p].size(); ++n) {
+        const double dK = Khist[p][n - 1] - Khist[p][n];
+        if (dK > 0.0) {
+          const double ub = Ions::u_of_K(Khist[p][n - 1], mu_d), ua = Ions::u_of_K(Khist[p][n], mu_d);
+          inc.emplace_back(dK, mu_d * (ub - ua));
+        }
+      }
+      // the packets of this ion in spawn order (from the kernel replay; T10 shows the kernel matches it)
+      const auto           R = replay_ion(T, Khist[p], ws[p], prm);
+      std::vector<PairRow> mine;
+      for (const auto& r : rows) {
+        if (r.i1m == static_cast<int>(p)) {
+          mine.push_back(r);
+        }
+      }
+      std::sort(mine.begin(), mine.end(), [](const PairRow& a, const PairRow& b) {
+        return a.birth_m < b.birth_m || (a.birth_m == b.birth_m && a.wm < b.wm);
+      });
+      auto pk = R.packets;
+      std::sort(pk.begin(), pk.end(), [](const Packet& a, const Packet& b) {
+        return a.time < b.time || (a.time == b.time && a.w_pair < b.w_pair);
+      });
+      if (pk.size() != mine.size()) {
+        throw std::runtime_error("momentum run: replay and kernel disagree on the packet count");
+      }
+      // FIFO partition of the (unweighted) loss history into the paid packets
+      std::size_t ni   = 0;
+      double      left = inc.empty() ? 0.0 : inc[0].first;
+      for (std::size_t j = 0; j < pk.size(); ++j) {
+        double need = pk[j].r_packet;
+        while (need > 1e-12 && ni < inc.size()) {
+          const double take = std::min(need, left);
+          M.P_paid         += ws[p] * inc[ni].second * (take / inc[ni].first);
+          need             -= take;
+          left             -= take;
+          if (left <= 1e-12 * inc[ni].first) {
+            ++ni;
+            left = ni < inc.size() ? inc[ni].first : 0.0;
+          }
+        }
+        // the formula per packet: W = the stored pair weight, D and beta_d at the spawn state
+        const double W    = mine[j].wm;
+        const double Gp   = pk[j].Gp;
+        const double Ksp  = MU_R * (Gp - 1.0);
+        const double usp  = Ions::u_of_K(Ksp, mu_d);
+        const double beta = usp / std::sqrt(1.0 + usp * usp);
+        double       Dm, eps;
+        bh::interpolate_outcome_host(T.host, Gp, Dm, eps);
+        const double ge  = 0.5 * (Dm + eps);
+        const double pe  = std::sqrt((ge - 1.0) * (ge + 1.0));
+        M.R_formula     += W * (Dm * (1.0 / beta - 1.0) + 2.0 * (ge - pe));
+        M.R_massless    += W * Dm * (1.0 / beta - 1.0);
+        M.n_packets     += 1;
+      }
+      // whatever is left in the history is the outstanding debt's momentum
+      if (ni < inc.size()) {
+        M.P_out += ws[p] * inc[ni].second * (left / inc[ni].first);
+        for (std::size_t m = ni + 1; m < inc.size(); ++m) {
+          M.P_out += ws[p] * inc[m].second;
+        }
+      }
+    }
+    M.P_pairs = H.C.P_pairs[0];
+    M.P_abs   = H.C.P_absorbed[0];
+    M.E_drag  = H.C.E_drag.value();
+    M.R_hist  = M.P_paid - (M.P_pairs - M.P_abs);
+    return M;
+  }
+
+  void test_T11_momentum(const Tables& T) {
+    std::printf("\n=== T11 (iv) momentum (re-registered, R7): 8 ions with the physical mass (mu_d = mu_r) at Gamma_p = 6, "
+                "dK/K = 1e-4 per step, 2000 steps; FIFO partition of the loss history ===\n");
     {
-      Ions ions2(N, MU_R);
+      const npart_t N = 8;
+      Ions          ions(N, MU_R);
       for (npart_t p = 0; p < N; ++p) {
-        ions2.set(p, K_of_gamma(2.5), 1.0);
+        ions.set(p, K_of_gamma(6.0), 1.0 + 0.5 * (p % 3));
       }
-      ions2.zero_payloads();
-      Pairs      pairs2(200000);
-      HostLedger H2;
-      auto       prm2 = params(coeff_for(T, 2.5, 1.0e-4), BUDGET, 10.0, 0.02);
-      for (int n = 0; n < 2000; ++n) {
-        H2.add(launch(ions2, pairs2, T, prm2, pool, static_cast<double>(n + 1) * DT));
+      ions.zero_payloads();
+      Pairs                pairs(200000);
+      random_number_pool_t pool(50u);
+      HostLedger           H;
+      std::vector<double>  K_init;
+      const auto M = momentum_run(T, MU_R, 6.0, 2000, pool, H, ions, pairs, K_init);
+      verdict(std::abs(M.R_hist - M.R_formula) <= 0.01 * std::abs(M.R_formula),
+              "T11 (iv) re-registered: paid momentum residual from the FIFO loss history vs the amended III.1 "
+              "prediction sum W [D (1/beta_d - 1) + 2 (gamma_e - p_e)], relative",
+              std::abs(M.R_hist - M.R_formula) / std::abs(M.R_formula), 0.01);
+      verdict(std::abs(M.P_paid + M.P_out - H.C.P_drag[0]) <= 1.0e-9 * H.C.P_drag[0],
+              "(impl) T11 (iv): the FIFO partition conserves the drag momentum (paid + outstanding = P_drag)",
+              std::abs(M.P_paid + M.P_out - H.C.P_drag[0]) / H.C.P_drag[0], 1.0e-9);
+      const double massless_rel = std::abs(M.R_hist - M.R_massless) / std::abs(M.R_massless);
+      std::printf("(diag, history row) T11 (iv) massless formula sum W D (1/beta_d - 1): |R_hist - R| / R = %.6e "
+                  "(would FAIL the 1%% criterion: the lepton rest mass is omitted)\n", massless_rel);
+      diag("T11 (iv): " + std::to_string(M.n_packets) + " packets (24 per ion), P_drag " + std::to_string(H.C.P_drag[0]) +
+           " = paid " + std::to_string(M.P_paid) + " + outstanding " + std::to_string(M.P_out) + "; P_pairs " +
+           std::to_string(M.P_pairs) + ", P_absorbed " + std::to_string(M.P_abs) + "; R_hist " + std::to_string(M.R_hist) +
+           ", R_formula " + std::to_string(M.R_formula) + ", R_massless " + std::to_string(M.R_massless));
+      const auto A = array_identity(ions, K_init, pairs, H);
+      check_identity("T11 (physical mass run)", H, A);
+    }
+    {
+      // diag: mu_d = 1 (beta_d = 1 to 6e-9: the residual is the rest-mass term alone)
+      const npart_t N = 8;
+      Ions          ions(N, 1.0);
+      for (npart_t p = 0; p < N; ++p) {
+        ions.set(p, K_of_gamma(6.0), 1.0);
       }
-      double D25, e25;
-      bh::interpolate_outcome_host(T.host, 2.5, D25, e25);
-      const double beta = std::sqrt(1.0 - 1.0 / 6.25);
-      const double res2 = H2.C.P_drag[0] - (H2.C.P_pairs[0] - H2.C.P_absorbed[0]);
-      diag("T11 (iv) low-energy diagnostic at Gamma_p = 2.5 (Gamma_p = 1.5 is below the threshold 2.125 of this "
-           "bath): D (1/beta_p - 1)/D = " + std::to_string(1.0 / beta - 1.0) + ", measured residual " +
-           std::to_string(res2) + " for E_drag " + std::to_string(H2.C.E_drag.value()) + " (" +
-           std::to_string(H2.C.n_spawned) + " packets), residual / E_drag = " +
-           std::to_string(res2 / H2.C.E_drag.value()));
+      ions.zero_payloads();
+      Pairs                pairs(200000);
+      random_number_pool_t pool(51u);
+      HostLedger           H;
+      std::vector<double>  K_init;
+      const auto M = momentum_run(T, 1.0, 6.0, 2000, pool, H, ions, pairs, K_init);
+      std::printf("(diag) T11 (iv) at mu_d = 1: R_hist %.6f vs amended prediction %.6f (relative %.3e), massless "
+                  "prediction %.6f\n",
+                  M.R_hist, M.R_formula, std::abs(M.R_hist - M.R_formula) / std::abs(M.R_formula), M.R_massless);
+    }
+    {
+      // low-energy diagnostic at Gamma_p = 2.5
+      const npart_t N = 8;
+      Ions          ions(N, MU_R);
+      for (npart_t p = 0; p < N; ++p) {
+        ions.set(p, K_of_gamma(2.5), 1.0);
+      }
+      ions.zero_payloads();
+      Pairs                pairs(200000);
+      random_number_pool_t pool(52u);
+      HostLedger           H;
+      std::vector<double>  K_init;
+      const auto M = momentum_run(T, MU_R, 2.5, 2000, pool, H, ions, pairs, K_init);
+      std::printf("(diag) T11 (iv) low-energy diagnostic at Gamma_p = 2.5 (1.5 is below the threshold 2.125 of this bath): "
+                  "R_hist %.6f vs amended prediction %.6f (relative %.3e), massless %.6f; D (1/beta_p - 1)/D = %.4f, "
+                  "%llu packets, E_drag %.4f\n",
+                  M.R_hist, M.R_formula, std::abs(M.R_hist - M.R_formula) / std::abs(M.R_formula), M.R_massless,
+                  1.0 / std::sqrt(1.0 - 1.0 / 6.25) - 1.0, M.n_packets, M.E_drag);
     }
   }
 
@@ -877,6 +951,10 @@ namespace {
     const auto   K_init = ions.K();
     double       debt_prev = 0.0;
     bool         debt_grows = false;
+    std::vector<std::vector<double>> Khist(N);
+    for (npart_t p = 0; p < N; ++p) {
+      Khist[p].push_back(K_init[p]);
+    }
     // 30 steps: K drops by 45% (Gamma_p 6 -> 3.75), still inside the table (a 100-step run would
     // fall below the threshold after 74 steps)
     for (int n = 0; n < 30; ++n) {
@@ -886,15 +964,34 @@ namespace {
         debt_grows = true;
       }
       debt_prev = H.C.debt_outstanding.value();
+      const auto Ks = ions.K();
+      for (npart_t p = 0; p < N; ++p) {
+        Khist[p].push_back(Ks[p]);
+      }
     }
-    diag("T10 capped: n_spawned " + std::to_string(H.C.n_spawned) + ", n_capped " + std::to_string(H.C.n_capped) +
-         ", debt_outstanding " + std::to_string(H.C.debt_outstanding.value()) + ", E_drag " +
-         std::to_string(H.C.E_drag.value()));
+    // the replay with the cap: packets per ion and the capped steps
+    unsigned long long replay_packets = 0, replay_capped = 0, replay_k0 = 0;
+    const auto         ws = ions.w();
+    for (npart_t p = 0; p < N; ++p) {
+      const auto R = replay_ion(T, Khist[p], ws[p], prm);
+      replay_packets += R.packets.size();
+      replay_capped  += R.n_capped;
+      for (const auto& q : R.packets) {
+        replay_k0 += q.via_k0 ? 1 : 0;
+      }
+    }
+    diag("T10 capped: n_spawned " + std::to_string(H.C.n_spawned) + " (replay " + std::to_string(replay_packets) +
+         "), n_capped " + std::to_string(H.C.n_capped) + " (replay " + std::to_string(replay_capped) + "), K0 flushes " +
+         std::to_string(H.C.n_k0_trigger) + " (replay " + std::to_string(replay_k0) + "), debt_outstanding " +
+         std::to_string(H.C.debt_outstanding.value()) + ", E_drag " + std::to_string(H.C.E_drag.value()));
     verdict(H.C.n_capped > 0, "T10 capped: n_capped > 0 with max_events_per_step = 1", static_cast<double>(H.C.n_capped), 1.0);
-    verdict(H.C.n_spawned == 30 * N, "T10 capped: exactly one packet per ion per step (30 steps)",
-            static_cast<double>(H.C.n_spawned), static_cast<double>(30 * N));
-    verdict(debt_grows && H.C.debt_outstanding.value() > 0.0, "T10 capped: the debt is carried over (grows)",
-            H.C.debt_outstanding.value(), 0.0);
+    verdict(H.C.n_spawned == replay_packets && H.C.n_capped == replay_capped && H.C.n_k0_trigger == replay_k0,
+            "T10 capped: packets, capped steps and K0 flushes equal the replay with the cap (K0 precedence, spec v3.3)",
+            static_cast<double>(H.C.n_spawned), static_cast<double>(replay_packets));
+    verdict(H.C.n_spawned <= 30 * N, "T10 capped: at most one packet per ion per step", static_cast<double>(H.C.n_spawned),
+            static_cast<double>(30 * N));
+    verdict(debt_grows, "T10 capped: the debt is carried over between steps (grows before a K0 flush)",
+            debt_grows ? 1.0 : 0.0, 1.0);
     const auto A = array_identity(ions, K_init, pairs, H);
     check_identity("T11 (capped budget)", H, A);
   }
@@ -1047,9 +1144,11 @@ namespace {
               "pairs per unit ion energy (poisson): sum w_pair / E_drag vs 1/<D>, |difference| / sigma",
               std::abs(ratio - expect) / sigma, 4.0);
       check_identity("T11 (poisson)", H, A);
+      verdict(H.C.E_lost_nopairs.value() == 0.0 && H.C.E_stochastic.value() != 0.0,
+              "poisson: E_lost_nopairs = 0, the imbalance is in E_stochastic (decision (c))", H.C.E_lost_nopairs.value(), 0.0);
       diag("T11 poisson: E_drag " + std::to_string(H.C.E_drag.value()) + ", E_pairs - E_absorbed " +
-           std::to_string(H.C.E_pairs.value() - H.C.E_absorbed.value()) + ", E_lost_nopairs (signed imbalance) " +
-           std::to_string(H.C.E_lost_nopairs.value()) + ", E_round " + std::to_string(H.C.E_round.value()));
+           std::to_string(H.C.E_pairs.value() - H.C.E_absorbed.value()) + ", E_stochastic (signed imbalance) " +
+           std::to_string(H.C.E_stochastic.value()) + ", E_round " + std::to_string(H.C.E_round.value()));
     }
     // determinism: a different seed differs; the same seed is reported (bit identity is registered on the
     // Serial backend at the engine level; the OpenMP pool assigns generator states by scheduling)
@@ -1115,8 +1214,9 @@ namespace {
   /* pairs per unit ion energy (budget)                                         */
   /* ------------------------------------------------------------------------ */
   void test_pairs_per_energy(const Tables& T) {
-    std::printf("\n=== pairs per unit ion energy (budget): 16 ions at Gamma_p = 6, dK/K = 1e-6 per step, 1000 steps "
-                "(Gamma_p changes by 0.1%%), r_th_factor = 2e-4 so that the outstanding debt is < 2e-4 of E_drag ===\n");
+    std::printf("\n=== pairs per unit ion energy (budget, re-registered, decision (c)): sum_j Q_j / <D>_j over the paid "
+                "packets against the stored pair weights; the physical ratio against 1/<D> within the stated budget "
+                "(unpaid fraction + variation of <D>) ===\n");
     auto run = [&](double frac, int nsteps, double r_th_factor, bool registered) {
       const npart_t N = 16;
       Ions          ions(N, 1.0);
@@ -1128,49 +1228,77 @@ namespace {
       random_number_pool_t pool(46u);
       auto                 prm = params(coeff_for(T, 6.0, frac), BUDGET, r_th_factor);
       HostLedger           H;
-      const auto           K_init = ions.K();
+      std::vector<std::vector<double>> Khist(N);
+      {
+        const auto K0s = ions.K();
+        for (npart_t p = 0; p < N; ++p) {
+          Khist[p].push_back(K0s[p]);
+        }
+      }
+      const auto K_init = ions.K();
       for (int n = 0; n < nsteps; ++n) {
         H.add(launch(ions, pairs, T, prm, pool, static_cast<double>(n + 1) * DT));
+        const auto Ks = ions.K();
+        for (npart_t p = 0; p < N; ++p) {
+          Khist[p].push_back(Ks[p]);
+        }
       }
-      const auto K_fin = ions.K();
-      double     Gp_mid = 0.0;
+      // sum_j Q_j / <D>_j over the paid packets (Q_j = w r_packet,j, <D>_j at the spawn state) from the replay
+      const auto         ws = ions.w();
+      kh::dd             sumQD;
+      double             Dmin_inv = std::numeric_limits<double>::infinity(), Dmax_inv = 0.0;
+      unsigned long long n_pk = 0;
       for (npart_t p = 0; p < N; ++p) {
-        Gp_mid += 1.0 + 0.5 * (K_init[p] + K_fin[p]) / MU_R;
+        const auto R = replay_ion(T, Khist[p], ws[p], prm);
+        for (const auto& q : R.packets) {
+          sumQD.add_prod(ws[p] * q.r_packet, 1.0 / q.D);
+          Dmin_inv = std::min(Dmin_inv, 1.0 / q.D);
+          Dmax_inv = std::max(Dmax_inv, 1.0 / q.D);
+          ++n_pk;
+        }
       }
-      Gp_mid /= N;
-      double Dm, eps;
-      bh::interpolate_outcome_host(T.host, Gp_mid, Dm, eps);
-      const auto   A      = array_identity(ions, K_init, pairs, H);
-      const double paid   = H.C.E_drag.value() - H.C.debt_outstanding.value();
-      const double expect = 1.0 / Dm;
-      const double r_lit  = A.sum_wpair / H.C.E_drag.value();
-      const double r_paid = A.sum_wpair / paid;
-      const std::string cfg = "dK/K = " + std::to_string(frac) + ", " + std::to_string(nsteps) + " steps, r_th_factor = " +
-                              std::to_string(r_th_factor);
-      diag("pairs per energy (" + cfg + "): K changed by " + std::to_string(100.0 * (K_init[0] - K_fin[0]) / K_init[0]) +
-           "%, Gamma_p mid " + std::to_string(Gp_mid) + ", <D> " + std::to_string(Dm) + ", sum w_pair " +
-           std::to_string(A.sum_wpair) + ", E_drag " + std::to_string(H.C.E_drag.value()) + ", debt_outstanding " +
-           std::to_string(H.C.debt_outstanding.value()) + " (" +
-           std::to_string(H.C.debt_outstanding.value() / H.C.E_drag.value()) + " of E_drag), packets " +
-           std::to_string(H.C.n_spawned) + ", sum w_pair / E_drag = " + std::to_string(r_lit) +
-           ", sum w_pair / (E_drag - debt) = " + std::to_string(r_paid) + ", 1/<D> = " + std::to_string(expect));
+      const auto A      = array_identity(ions, K_init, pairs, H);
+      const auto K_fin  = ions.K();
+      double     Gp_ref = 0.0;
+      for (npart_t p = 0; p < N; ++p) {
+        Gp_ref += 1.0 + 0.5 * (K_init[p] + K_fin[p]) / MU_R;
+      }
+      Gp_ref /= N;
+      double Dref, eps;
+      bh::interpolate_outcome_host(T.host, Gp_ref, Dref, eps);
+      const double      inv_ref  = 1.0 / Dref;
+      const double      f_unpaid = H.C.debt_outstanding.value() / H.C.E_drag.value();
+      const double      delta_D  = std::max(std::abs(Dmax_inv / inv_ref - 1.0), std::abs(Dmin_inv / inv_ref - 1.0));
+      const double      budget   = f_unpaid + delta_D + 1.0e-6;
+      const double      r_lit    = A.sum_wpair / H.C.E_drag.value();
+      const std::string cfg      = "dK/K = " + std::to_string(frac) + ", " + std::to_string(nsteps) +
+                              " steps, r_th_factor = " + std::to_string(r_th_factor);
+      diag("pairs per energy (" + cfg + "): " + std::to_string(n_pk) + " packets, sum w_s = " + std::to_string(A.sum_wpair) +
+           ", sum_j Q_j / <D>_j = " + std::to_string(sumQD.value()) + ", E_drag " + std::to_string(H.C.E_drag.value()) +
+           ", unpaid fraction " + std::to_string(f_unpaid) + ", variation of 1/<D> over the packets " +
+           std::to_string(delta_D) + ", sum w_s / E_drag = " + std::to_string(r_lit) + ", 1/<D>(Gamma_p mid) = " +
+           std::to_string(inv_ref));
       if (registered) {
-        verdict(std::abs(r_lit - expect) <= 1.0e-3 * expect,
-                "pairs per unit ion energy (budget): sum w_pair / E_drag vs 1/<D>(Gamma_p mid), relative (" + cfg + ")",
-                std::abs(r_lit - expect) / expect, 1.0e-3);
-        verdict(std::abs(r_paid - expect) <= 1.0e-3 * expect,
-                "(impl) pairs per unit ion energy (budget): sum w_pair / (E_drag - debt_outstanding) vs 1/<D>, relative",
-                std::abs(r_paid - expect) / expect, 1.0e-3);
+        verdict(n_pk > 0 && std::abs(A.sum_wpair - sumQD.value()) <= 1.0e-6 * sumQD.value(),
+                "pairs per unit ion energy (re-registered): sum of the stored pair weights = sum_j Q_j / <D>_j over the "
+                "paid packets, relative (" + cfg + ")",
+                std::abs(A.sum_wpair - sumQD.value()) / sumQD.value(), 1.0e-6);
+        verdict(std::abs(r_lit - inv_ref) <= budget * inv_ref,
+                "pairs per unit ion energy (re-registered): sum w_s / E_drag vs 1/<D>(Gamma_p mid) within the stated budget "
+                "unpaid fraction + variation of <D> + 1e-6 = " + std::to_string(budget) + ", relative",
+                std::abs(r_lit - inv_ref) / inv_ref, budget);
         check_identity("T11 (pairs per energy run)", H, A);
       } else {
-        std::printf("(diag) pairs per energy (%s): |sum w_pair / E_drag - 1/<D>| / (1/<D>) = %.3e, "
-                    "|sum w_pair / (E_drag - debt) - 1/<D>| / (1/<D>) = %.3e (the first carries the outstanding debt, "
-                    "the second the drift of <D> between the spawn and the mid-run Gamma_p)\n",
-                    cfg.c_str(), std::abs(r_lit - expect) / expect, std::abs(r_paid - expect) / expect);
+        std::printf("(diag, history row) pairs per energy (%s): nominal shortcut |sum w_s / E_drag - 1/<D>| / (1/<D>) = %.3e "
+                    "(1e-3 would %s; the stated budget here is %.3e), sum w_s vs sum_j Q_j / <D>_j: %.3e\n",
+                    cfg.c_str(), std::abs(r_lit - inv_ref) / inv_ref,
+                    std::abs(r_lit - inv_ref) / inv_ref <= 1.0e-3 ? "pass" : "fail", budget,
+                    std::abs(A.sum_wpair - sumQD.value()) / sumQD.value());
       }
     };
-    run(1.0e-6, 1000, 2.0e-4, true);
-    run(1.0e-5, 1000, 10.0, false);
+    run(1.0e-5, 1000, 10.0, true);   // the brief's nominal configuration, re-registered with the budget
+    run(1.0e-6, 1000, 2.0e-4, true); // the round-1 configuration
+    run(1.0e-5, 1000, 10.0, false);  // history row: the nominal shortcut at 1e-3
   }
 
   /* ------------------------------------------------------------------------ */
@@ -1356,6 +1484,285 @@ namespace {
          std::to_string(H.C.debt_outstanding.value()) + ", n_spawned " + std::to_string(H.C.n_spawned));
   }
 
+
+  /* ------------------------------------------------------------------------ */
+  /* R1: unequal payload slot counts of the two pair species                    */
+  /* ------------------------------------------------------------------------ */
+  void test_R1_slots(const Tables& T) {
+    std::printf("\n=== R1: pair species with unequal real payload slot counts (5/7 and 7/5), NaN-filled, dirty recycled "
+                "tails, 300 steps ===\n");
+    for (int order = 0; order < 2; ++order) {
+      const unsigned short nm = order == 0 ? 5 : 7, np = order == 0 ? 7 : 5;
+      const npart_t        N  = 8;
+      Ions                 ions(N, 1.0);
+      for (npart_t p = 0; p < N; ++p) {
+        ions.set(p, K_of_gamma(6.0), 1.0);
+      }
+      ions.zero_payloads();
+      Pairs pairs(10000, nm, np);
+      pairs.fill_payloads_nan();
+      // dirty recycled tail: the first 50 slots of both species hold stale finite values in every slot,
+      // as a RemoveDead-compacted tail would (they are overwritten by the kernel-born leptons)
+      {
+        auto hm = mirror(pairs.minus.pld_r), hp = mirror(pairs.plus.pld_r);
+        for (npart_t k = 0; k < 50; ++k) {
+          for (unsigned short c = 0; c < nm; ++c) {
+            hm(k, c) = static_cast<real_t>(123.0 + k + c);
+          }
+          for (unsigned short c = 0; c < np; ++c) {
+            hp(k, c) = static_cast<real_t>(-77.0 - k - c);
+          }
+        }
+        Kokkos::deep_copy(pairs.minus.pld_r, hm);
+        Kokkos::deep_copy(pairs.plus.pld_r, hp);
+      }
+      random_number_pool_t pool(60u + order);
+      auto                 prm = params(coeff_for(T, 6.0, 1.0e-3), BUDGET);
+      HostLedger           H;
+      for (int n = 0; n < 300; ++n) {
+        H.add(launch(ions, pairs, T, prm, pool, static_cast<double>(n + 1) * DT));
+      }
+      auto pm = mirror(pairs.minus.pld_r), pp = mirror(pairs.plus.pld_r);
+      unsigned long long nan_live = 0, stale = 0, extra_nonzero = 0, defined_bad = 0;
+      for (npart_t k = 0; k < pairs.npart_m; ++k) {
+        for (unsigned short c = 0; c < nm; ++c) {
+          const double v = static_cast<double>(pm(k, c));
+          nan_live += std::isnan(v) ? 1 : 0;
+          if (c >= 3 && v != 0.0) {
+            ++extra_nonzero;
+          }
+          if (k < 50 && v == 123.0 + k + c) {
+            ++stale;
+          }
+        }
+        for (unsigned short c = 0; c < np; ++c) {
+          const double v = static_cast<double>(pp(k, c));
+          nan_live += std::isnan(v) ? 1 : 0;
+          if (c >= 3 && v != 0.0) {
+            ++extra_nonzero;
+          }
+          if (k < 50 && v == -77.0 - k - c) {
+            ++stale;
+          }
+        }
+        if (!(pm(k, 0) > ZERO) || pm(k, 0) != pp(k, 0) || pm(k, 1) != pp(k, 1) || pm(k, 2) != pp(k, 2)) {
+          ++defined_bad;
+        }
+      }
+      const std::string cfg = "slots " + std::to_string(nm) + "/" + std::to_string(np);
+      verdict(pairs.npart_m >= 50 && nan_live == 0,
+              "R1 (" + cfg + "): no live lepton carries a NaN payload (" + std::to_string(pairs.npart_m) + " pairs)",
+              static_cast<double>(nan_live), 0.0);
+      verdict(extra_nonzero == 0, "R1 (" + cfg + "): every slot beyond the three defined ones is zero on both species",
+              static_cast<double>(extra_nonzero), 0.0);
+      verdict(stale == 0, "R1 (" + cfg + "): no stale value of the dirty recycled tail survives on a live lepton",
+              static_cast<double>(stale), 0.0);
+      verdict(defined_bad == 0, "R1 (" + cfg + "): the three defined slots are written and identical on both leptons",
+              static_cast<double>(defined_bad), 0.0);
+    }
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* R2: the exact Poisson sampler                                              */
+  /* ------------------------------------------------------------------------ */
+  struct SamplerStats {
+    double             mean { 0.0 }, var { 0.0 }, frac_exceed { 0.0 };
+    int                max_k { 0 };
+    unsigned long long n_rng { 0 };
+  };
+
+  SamplerStats sample_poisson(double lambda, int kmax, int n, std::uint64_t seed) {
+    random_number_pool_t         pool(seed);
+    array_t<int*>                ks { "ks", static_cast<std::size_t>(n) };
+    array_t<unsigned long long*> cnt { "cnt", static_cast<std::size_t>(n) };
+    Kokkos::parallel_for(
+      "poisson_sample", n, Lambda(int i) {
+        auto               gen = pool.get_state();
+        unsigned long long c   = 0;
+        ks(i)                  = kh::poisson_sample(gen, lambda, kmax, c);
+        cnt(i)                 = c;
+        pool.free_state(gen);
+      });
+    Kokkos::fence();
+    auto hk = mirror(ks);
+    auto hc = mirror(cnt);
+    SamplerStats S {};
+    double       s1 = 0.0, s2 = 0.0;
+    int          nex = 0;
+    for (int i = 0; i < n; ++i) {
+      S.n_rng += hc(i);
+      S.max_k  = std::max(S.max_k, hk(i));
+      if (hk(i) > kmax) {
+        ++nex;
+        continue;
+      }
+      s1 += hk(i);
+      s2 += static_cast<double>(hk(i)) * hk(i);
+    }
+    const double nn = static_cast<double>(n - nex);
+    S.mean          = nn > 0 ? s1 / nn : 0.0;
+    S.var           = nn > 0 ? s2 / nn - S.mean * S.mean : 0.0;
+    S.frac_exceed   = static_cast<double>(nex) / n;
+    return S;
+  }
+
+  void test_R2_sampler() {
+    std::printf("\n=== R2: exact Poisson sampler (inversion below lambda = 10, PTRS above), 1e5 draws per lambda ===\n");
+    const int N    = 100000;
+    int       seed = 700;
+    for (const double lambda : { 0.2, 5.0, 50.0, 500.0 }) {
+      const auto   S     = sample_poisson(lambda, 100000000, N, static_cast<std::uint64_t>(seed++));
+      const double sigma = std::sqrt(lambda / N);
+      verdict(S.frac_exceed == 0.0 && std::abs(S.mean - lambda) <= 4.0 * sigma,
+              "R2: lambda = " + std::to_string(lambda) + ": mean within 4 sigma of lambda, |mean - lambda| / sigma",
+              std::abs(S.mean - lambda) / sigma, 4.0);
+      verdict(std::abs(S.var - lambda) <= 0.10 * lambda,
+              "R2: lambda = " + std::to_string(lambda) + ": variance within 10% of lambda, |var - lambda| / lambda",
+              std::abs(S.var - lambda) / lambda, 0.10);
+      diag("R2: lambda " + std::to_string(lambda) + ": mean " + std::to_string(S.mean) + ", var " + std::to_string(S.var) +
+           ", max k " + std::to_string(S.max_k) + ", random numbers per draw " +
+           std::to_string(static_cast<double>(S.n_rng) / N));
+    }
+    {
+      // the cap: lambda = 500 with kmax = 8: every draw is at most kmax + 1 (the "exceeds" value), counted
+      const auto S = sample_poisson(500.0, 8, N, 777u);
+      verdict(S.max_k <= 9 && S.frac_exceed > 0.999,
+              "R2: lambda = 500, cap 8: every draw <= cap + 1 and counted as exceeding (fraction exceeding)",
+              S.frac_exceed, 1.0);
+      // lambda = 5 with kmax = 8: the fraction exceeding equals P(X > 8 | 5) = 0.068094 within 4 sigma
+      const auto   S5 = sample_poisson(5.0, 8, N, 778u);
+      const double p = 0.06809363472184837, sig = std::sqrt(p * (1.0 - p) / N);
+      verdict(S5.max_k <= 9 && std::abs(S5.frac_exceed - p) <= 4.0 * sig,
+              "R2: lambda = 5, cap 8: fraction exceeding the cap = P(X > 8) within 4 sigma, |f - p| / sigma",
+              std::abs(S5.frac_exceed - p) / sig, 4.0);
+      diag("R2: lambda 5, cap 8: mean of the capped draws " + std::to_string(S5.mean) +
+           " (truncated Poisson), fraction exceeding " + std::to_string(S5.frac_exceed));
+      // non-finite and huge lambda: no draw, "exceeds"
+      const auto Sinf  = sample_poisson(std::numeric_limits<double>::infinity(), 8, 1000, 779u);
+      const auto Snan  = sample_poisson(std::numeric_limits<double>::quiet_NaN(), 8, 1000, 780u);
+      const auto Shuge = sample_poisson(1.1e19, 8, 1000, 781u);
+      verdict(Sinf.frac_exceed == 1.0 && Snan.frac_exceed == 1.0 && Shuge.frac_exceed == 1.0 && Sinf.n_rng == 0 &&
+                Snan.n_rng == 0 && Shuge.n_rng == 0,
+              "R2: lambda = inf, NaN, 1.1e19 (pair_weight = 1e-20): reported as exceeding the cap without a draw",
+              Sinf.frac_exceed + Snan.frac_exceed + Shuge.frac_exceed, 3.0);
+    }
+    {
+      // the kernel path: poisson source with pair_weight = 1e-20 (lambda ~ 1e19) runs, counts n_capped_events
+      // every ion-step and spawns the cap
+      const auto    T  = make_tables();
+      const npart_t N2 = 4;
+      Ions          ions(N2, 1.0);
+      for (npart_t p = 0; p < N2; ++p) {
+        ions.set(p, K_of_gamma(6.0), 1.0);
+      }
+      ions.zero_payloads();
+      Pairs                pairs(100000);
+      random_number_pool_t pool(782u);
+      auto                 prm = params(coeff_for(T, 6.0, 1.0e-4), POISSON);
+      prm.pair_weight          = 1.0e-20;
+      HostLedger H;
+      for (int n = 0; n < 10; ++n) {
+        H.add(launch(ions, pairs, T, prm, pool, static_cast<double>(n + 1) * DT));
+      }
+      verdict(H.C.n_capped_events == 40 && H.C.n_spawned == 40 * 8,
+              "R2: kernel with pair_weight = 1e-20: every ion-step exceeds the cap (counted) and spawns exactly the cap",
+              static_cast<double>(H.C.n_spawned), 320.0);
+      const auto A = array_identity(ions, ions.K(), pairs, H);
+      (void)A;
+      verdict(std::abs(H.residual()) <= 1.0e-12 * std::max(1.0, H.C.E_pairs.value()),
+              "R2: kernel with pair_weight = 1e-20: the ledger identity holds (E_stochastic carries the imbalance)",
+              std::abs(H.residual()), 1.0e-12);
+    }
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* R3: the K0 trigger has precedence and pays the whole debt; R4: ion at rest */
+  /* ------------------------------------------------------------------------ */
+  void test_R3_k0(const Tables& T) {
+    std::printf("\n=== R3: referee's state K0 = 10000, r = 100 (>= r_th = 83.6: both triggers hold), K = 9180.75, small loss "
+                "===\n");
+    Ions ions(1, 1.0);
+    ions.set(0, K_of_gamma(6.0), 1.0);
+    {
+      auto hp  = mirror(ions.arr.pld_r);
+      hp(0, 0) = ZERO;
+      hp(0, 1) = static_cast<real_t>(100.0);
+      hp(0, 2) = static_cast<real_t>(10000.0);
+      Kokkos::deep_copy(ions.arr.pld_r, hp);
+    }
+    Pairs                pairs(100);
+    random_number_pool_t pool(90u);
+    auto                 prm = params(coeff_for(T, 6.0, 1.0e-5), BUDGET); // dK = 0.09: no application this step
+    HostLedger           H;
+    const auto           L = launch(ions, pairs, T, prm, pool, DT);
+    H.add(L);
+    const auto r_after = ions.payload(1), k0_after = ions.payload(2);
+    verdict(r_after[0] == 0.0, "R3: the debt is paid in full (r = 0 exactly)", r_after[0], 0.0);
+    verdict(L.n_k0_trigger == 1 && L.n_spawned == 1, "R3: one K0 packet counted, one pair",
+            static_cast<double>(L.n_spawned), 1.0);
+    verdict(k0_after[0] == 0.0, "R3: K0 reset after the full payment", k0_after[0], 0.0);
+    {
+      const auto rows = pairs.rows();
+      double     Dm, eps;
+      bh::interpolate_outcome_host(T.host, 6.0, Dm, eps);
+      verdict(rows.size() == 1 && std::abs(rows[0].wm - 100.0 / Dm) <= 1.0e-6 * (100.0 / Dm),
+              "R3: w_pair = w r / <D> with r the whole debt (not r_th)", rows.empty() ? -1.0 : rows[0].wm, 100.0 / Dm);
+    }
+    // K0 kept after a partial payment: r = 150 (> r_th), K0 = K (no K0 trigger): the regular packet pays
+    // r_th, K0 unchanged
+    Ions ions2(1, 1.0);
+    ions2.set(0, K_of_gamma(6.0), 1.0);
+    const double K0v = static_cast<double>(static_cast<real_t>(K_of_gamma(6.0)));
+    {
+      auto hp  = mirror(ions2.arr.pld_r);
+      hp(0, 0) = ZERO;
+      hp(0, 1) = static_cast<real_t>(150.0);
+      hp(0, 2) = static_cast<real_t>(K0v);
+      Kokkos::deep_copy(ions2.arr.pld_r, hp);
+    }
+    Pairs      pairs2(100);
+    HostLedger H2;
+    const auto L2 = launch(ions2, pairs2, T, prm, pool, DT);
+    H2.add(L2);
+    const auto r2 = ions2.payload(1), k2 = ions2.payload(2);
+    double     Dm6, e6;
+    bh::interpolate_outcome_host(T.host, 6.0, Dm6, e6);
+    verdict(L2.n_k0_trigger == 0 && L2.n_spawned == 1 && r2[0] > 0.0 && std::abs(r2[0] - (150.0 - 10.0 * Dm6)) <= 1.0e-4,
+            "R3: without the K0 trigger the regular packet pays r_th and the remainder stays (r = 150 - r_th)", r2[0],
+            150.0 - 10.0 * Dm6);
+    verdict(k2[0] == K0v, "R3: K0 is kept after the partial payment", k2[0], K0v);
+
+    // R4: an ion at rest (u = 0) with debt pays a closing packet along +x
+    std::printf("\n=== R4: ion at rest (u = 0) with r = 10, w = 2 ===\n");
+    Ions ions3(1, 1.0);
+    ions3.set(0, 0.0, 2.0);
+    {
+      auto hp  = mirror(ions3.arr.pld_r);
+      hp(0, 0) = ZERO;
+      hp(0, 1) = static_cast<real_t>(10.0);
+      hp(0, 2) = static_cast<real_t>(5.0);
+      Kokkos::deep_copy(ions3.arr.pld_r, hp);
+    }
+    Pairs      pairs3(100);
+    HostLedger H3;
+    H3.debt_initial = kh::dd { 20.0 }; // w r before the step
+    const auto L3 = launch(ions3, pairs3, T, prm, pool, DT);
+    H3.add(L3);
+    const auto r3 = ions3.payload(1), k3 = ions3.payload(2);
+    const auto rows3 = pairs3.rows();
+    double     Dmin, emin;
+    bh::interpolate_outcome_host(T.host, T.host.gamma_min, Dmin, emin);
+    verdict(L3.n_closing == 1 && L3.n_closing_at_rest == 1 && L3.n_spawned == 1 && r3[0] == 0.0 && k3[0] == 0.0,
+            "R4: the debt of the ion at rest is cleared by one closing packet (n_closing_at_rest = 1, r = K0 = 0)", r3[0],
+            0.0);
+    verdict(rows3.size() == 1 && rows3[0].u1m > 0.0 && rows3[0].u2m == 0.0 && rows3[0].u3m == 0.0 &&
+              std::abs(rows3[0].wm - 20.0 / Dmin) <= 1.0e-6 * (20.0 / Dmin),
+            "R4: the pair is emitted along +x (convention) with w_pair = w r / <D>(Gamma_min)",
+            rows3.empty() ? -1.0 : rows3[0].wm, 20.0 / Dmin);
+    verdict(std::abs(H3.residual()) <= 1.0e-12 * 20.0, "R4: the identity with debt_initial = w r (residual / w r)",
+            std::abs(H3.residual()) / 20.0, 1.0e-12);
+  }
+
 } // namespace
 
 auto main(int argc, char* argv[]) -> int {
@@ -1406,7 +1813,16 @@ auto main(int argc, char* argv[]) -> int {
     if (want("texp")) {
       test_Texp(T);
     }
-    std::printf("bh_pairs summary: %d passed, %d failed, %d expected failures (T11 (iv) against the III.1 prediction)\n",
+    if (want("r1")) {
+      test_R1_slots(T);
+    }
+    if (want("r2")) {
+      test_R2_sampler();
+    }
+    if (want("r3")) {
+      test_R3_k0(T);
+    }
+    std::printf("bh_pairs summary: %d passed, %d failed, %d expected failures\n",
                 n_pass, n_fail, n_expected_fail);
     if (n_fail > 0 || n_pass == 0) {
       rc = 1;

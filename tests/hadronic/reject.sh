@@ -36,7 +36,7 @@ done
 # species-level and particles-level refusals (messages name the input key)
 for pair in "reject_payloads:n_payloads_real" "reject_weights:use_weights" "reject_gca:GCA" \
             "reject_pair_charge:charge" "reject_pair_mass:mass 1" "reject_pair_slots:n_payloads_real" \
-            "reject_tlatency:t_latency"; do
+            "reject_tlatency:t_latency" "reject_two_species:exactly one hadronic ion species"; do
   name="${pair%%:*}"; key="${pair##*:}"
   if [ ! -f "$INP/$name.toml" ]; then
     echo "FAIL: $name: input $INP/$name.toml not found"; n_fail=$((n_fail + 1)); continue

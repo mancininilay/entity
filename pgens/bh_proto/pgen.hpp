@@ -349,9 +349,9 @@ namespace user {
       }
 
       /**
-       * @brief The identity residual (II.2 step 6), in dd:
+       * @brief The identity residual (II.2 step 6, spec v3.3), in dd:
        *        E_drag + debt_initial - [(E_pairs - E_absorbed) + E_round +
-       *        debt_outstanding + E_exported + E_lost_nopairs]
+       *        E_stochastic + debt_outstanding + E_exported + E_lost_nopairs]
        */
       auto identity_residual() const -> double {
         kernel::hadronic::dd r;
@@ -361,6 +361,7 @@ namespace user {
         r.sub(C.E_pairs);
         r.add(C.E_absorbed);
         r.sub(C.E_round);
+        r.sub(C.E_stochastic);
         r.sub(C.debt_outstanding);
         r.sub(C.E_exported);
         r.sub(C.E_lost_nopairs);
@@ -439,7 +440,8 @@ namespace user {
     spidx_t                                    pair_minus { 0 }, pair_plus { 0 };
     npart_t                                    pair_maxnpart_m { 0 }, pair_maxnpart_p { 0 };
     bool                                       gauss_started { false };
-    std::vector<double>                        gauss_R0;                 // Gauss residual per node at the first write
+    std::vector<double>                        gauss_R0;                 // Gauss residual per node at the first sample
+    bool                                       gauss_first_birth_done { false };
     double                                     estimate_bare { 0.0 };     // expected pairs per species (no margins)
     double                                     estimate_sized { 0.0 };    // with c_layer and comm_headroom
 
@@ -518,6 +520,18 @@ namespace user {
       const int need_slots = std::max(setup.payload_pending,
                                       std::max(setup.payload_debt,
                                                setup.payload_debt_k0)) + 1;
+      // R5 / decision (d): the prototype runs exactly one hadronic ion species (one
+      // pair of lepton species, one ledger, one array closure)
+      if (setup.species.size() != 1) {
+        std::string listed;
+        for (const int idx : setup.species) {
+          listed += (listed.empty() ? "" : ", ") + std::to_string(idx);
+        }
+        raise::Error(fmt::format("bh_proto: setup.hadronic.species lists %zu species (%s); the prototype "
+                                 "accepts exactly one hadronic ion species per run (decision (d))",
+                                 setup.species.size(), listed.c_str()),
+                     HERE);
+      }
       for (const int idx : setup.species) {
         const ParticleSpecies* sp = find_species(idx);
         raise::ErrorIf(sp == nullptr,
@@ -1047,8 +1061,18 @@ namespace user {
       const double t_after = static_cast<double>(step + 1) * dt; // t^{n+1}
       const bool   last    = (step + 1 >= max_steps);
       const bool   row     = ((step + 1) % static_cast<timestep_t>(setup.ledger_every) == 0u) || last;
-      if (setup.test_gauss && step == start_step) {
-        write_gauss(domain, step, t_after, "before_births");
+      // R6: the "before / after the first births" samples bracket the launch that
+      // spawns the first pair: the pre-launch residual is computed every step until
+      // then and written only when the launch that follows it spawns
+      GaussSample before_first {};
+      bool        have_before = false;
+      if (setup.test_gauss && !gauss_first_birth_done) {
+        before_first = gauss_sample(domain);
+        have_before  = true;
+      }
+      unsigned long long spawned_before = 0;
+      for (const auto& kv : ledgers) {
+        spawned_before += kv.second.cumulative.n_spawned;
       }
       if (stage_active) {
         kernel::hadronic::HadronicParams prm;
@@ -1085,7 +1109,14 @@ namespace user {
           auto& H = ledgers[sp.index()];
           // T-exp: host-side sums over the ions tagged dead this step (absorbing
           // walls), taken before the launch and before the sort; the kernel's
-          // E_exported / pending_discarded must reproduce them exactly
+          // E_exported / pending_discarded must reproduce them exactly.
+          // R8 / decision (e): this harvest (and the kernel's dead-ion branch at the
+          // post-step placement) is valid for non-MPI builds only: under MPI the
+          // particle exchange of CommunicateParticles refills dead slots with
+          // received particles before this hook runs, and the output path may
+          // compact the arrays; in production the harvest happens at the production
+          // placement (after the deposit, before CommunicateParticles), where the
+          // absorbed ions are still in place
           if (any_absorbing) {
             auto hw = Kokkos::create_mirror_view(sp.weight);
             auto ht = Kokkos::create_mirror_view(sp.tag);
@@ -1138,7 +1169,6 @@ namespace user {
             targets.domain_idx = domain.index();
             targets.tracking_m = spm.use_tracking();
             targets.tracking_p = spp.use_tracking();
-            targets.npld_r     = std::min(spm.npld_r(), spp.npld_r());
             targets.spawn_counter = spawn_counters[sp.index()];
             Kokkos::deep_copy(targets.spawn_counter, static_cast<npart_t>(0));
             targets.valid = true;
@@ -1210,8 +1240,26 @@ namespace user {
           }
         }
       }
-      if (setup.test_gauss && stage_active && step == start_step) {
-        write_gauss(domain, step, t_after, "after_first_launch");
+      if (setup.test_gauss && !gauss_first_birth_done) {
+        unsigned long long spawned_after = 0;
+        for (const auto& kv : ledgers) {
+          spawned_after += kv.second.cumulative.n_spawned;
+        }
+        if (spawned_after > spawned_before) {
+          // the first births happened in this launch: write the bracketing samples
+          if (have_before) {
+            write_gauss_sample(before_first, step, t_after, "before_first_births");
+          }
+          const auto after = gauss_sample(domain);
+          write_gauss_sample(after, step, t_after, "after_first_births");
+          raise::ErrorIf(after.n_depositing <= before_first.n_depositing,
+                         "bh_proto: test.gauss: the depositing particle count did not increase at the first births",
+                         HERE);
+          std::printf("bh_proto: test.gauss: first births at step %u: depositing particles %llu -> %llu, "
+                      "max|R - R0| / max|c rho| %.6e -> %.6e\n",
+                      (unsigned)step, before_first.n_depositing, after.n_depositing, before_first.ratio, after.ratio);
+          gauss_first_birth_done = true;
+        }
       }
       if (row) {
         for (auto& sp : domain.species) {
@@ -1246,19 +1294,20 @@ namespace user {
         out << "# cumulative entries are summed over launches since the start of the segment; "
                "snapshots (debt_outstanding, pending_outstanding, sum_wK, npart) refer to the state "
                "after the step; energies in w m_e c^2, momenta in w m_e c; identity residual = "
-               "E_drag + debt_initial - [(E_pairs - E_absorbed) + E_round + debt_outstanding + "
-               "E_exported + E_lost_nopairs] (double-double on the host)\n";
+               "E_drag + debt_initial - [(E_pairs - E_absorbed) + E_round + E_stochastic + "
+               "debt_outstanding + E_exported + E_lost_nopairs] (double-double on the host)\n";
         out << "# time is the time after the step, (step + 1) dt (code units l/c)\n";
         out << "# columns: step [1] | time [l/c] | E_drag [cumulative] | E_pairs [cumulative: sum "
                "w_pair,stored (E- + E+) from the stored momenta] | E_absorbed [cumulative: sum "
                "w_pair,stored eps_stored] | E_exported [cumulative] | E_round [cumulative] | "
-               "E_lost_nopairs [cumulative] | pending_discarded [cumulative] | debt_initial "
+               "E_stochastic [cumulative: poisson, E_drag - sum W D, signed] | "
+               "E_lost_nopairs [cumulative: none] | pending_discarded [cumulative] | debt_initial "
                "[segment start] | P_drag_x | P_drag_y | P_drag_z | P_pairs_x | P_pairs_y | "
                "P_pairs_z | P_absorbed_x | P_absorbed_y | P_absorbed_z [cumulative] | "
                "debt_outstanding [snapshot] | pending_outstanding [snapshot] | residual [identity] "
                "| n_events | n_spawned | n_dropped | n_substeps | n_bounded | n_capped_loss | "
                "n_closing | n_capped | n_capped_events | n_above_table | n_latency | n_processed | "
-               "n_applied | n_rng | n_k0_trigger [1, cumulative] | sum_wK [snapshot: sum over alive "
+               "n_applied | n_rng | n_k0_trigger | n_closing_at_rest [1, cumulative] | sum_wK [snapshot: sum over alive "
                "ions of w K in double from the stored u] | B_budget [cumulative single-precision "
                "rounding budget of the transfers] | npart_minus | npart_plus [snapshots]\n";
         H.file_started = true;
@@ -1268,7 +1317,7 @@ namespace user {
       const auto&  C   = H.cumulative;
       out << std::setprecision(17) << step << " " << t << " " << C.E_drag.value() << " "
           << C.E_pairs.value() << " " << C.E_absorbed.value() << " " << C.E_exported.value() << " "
-          << C.E_round.value() << " " << C.E_lost_nopairs.value() << " "
+          << C.E_round.value() << " " << C.E_stochastic.value() << " " << C.E_lost_nopairs.value() << " "
           << C.pending_discarded.value() << " " << H.debt_initial.value() << " " << C.P_drag[0]
           << " " << C.P_drag[1] << " " << C.P_drag[2] << " " << C.P_pairs[0] << " " << C.P_pairs[1]
           << " " << C.P_pairs[2] << " " << C.P_absorbed[0] << " " << C.P_absorbed[1] << " "
@@ -1278,8 +1327,8 @@ namespace user {
           << " " << C.n_capped_loss << " " << C.n_closing << " " << C.n_capped << " "
           << C.n_capped_events << " " << C.n_above_table << " " << C.n_latency << " "
           << C.n_processed << " " << C.n_applied << " " << C.n_rng << " " << C.n_k0_trigger << " "
-          << swk << " " << C.B_budget.value() << " " << pair_npart_minus << " " << pair_npart_plus
-          << "\n";
+          << C.n_closing_at_rest << " " << swk << " " << C.B_budget.value() << " " << pair_npart_minus
+          << " " << pair_npart_plus << "\n";
     }
 
     npart_t pair_npart_minus { 0 }, pair_npart_plus { 0 };
@@ -1379,16 +1428,26 @@ namespace user {
     }
 
     /**
-     * @brief T13: the discrete Gauss residual R_i = (E_{i+1/2} - E_{i-1/2}) -
-     *        (q0 / (B0 V0)) rho_i in 1D with rho_i the first-order (CIC) node
-     *        charge of every depositing charged species (the shape of the
-     *        zigzag deposit), computed in double from the arrays; E in real_t
+     * @brief T13: one sample of the discrete Gauss residual (1D): R_i = (E_{i+1/2} -
+     *        E_{i-1/2}) - (q0 / (B0 V0)) rho_i with rho_i the first-order (CIC) node
+     *        charge of every depositing charged species (the shape of the zigzag
+     *        deposit), computed in double from the arrays; E in real_t; R0 is the
+     *        residual of the first sample (a randomly loaded background does not
+     *        satisfy Gauss's law; the deposit conserves R - R0)
      */
-    void write_gauss(Domain<S, M>& domain, timestep_t step, double t, const char* stage) {
+    struct GaussSample {
+      double             max_R { 0.0 }, max_dR { 0.0 }, max_rho { 0.0 }, max_E { 0.0 }, sum_R { 0.0 }, sum_rho { 0.0 };
+      double             max_abs_q { 0.0 }, ratio { 0.0 };
+      int                arg_R { -1 };
+      unsigned long long n_depositing { 0 };
+      npart_t            nm { 0 }, np { 0 };
+    };
+
+    GaussSample gauss_sample(Domain<S, M>& domain) {
+      GaussSample g;
       if constexpr (D == Dim::_1D) {
         const int n1 = static_cast<int>(domain.mesh.n_active(in::x1));
         std::vector<double> rho(n1, 0.0);
-        double              max_abs_q = 0.0;
         for (auto& sp : domain.species) {
           if (!sp.deposit() || sp.charge() == 0.0f || sp.pusher() == ParticlePusher::NONE ||
               sp.npart() == 0) {
@@ -1412,13 +1471,12 @@ namespace user {
             const double qw = q * static_cast<double>(w(p));
             rho[i]                  += qw * (1.0 - d);
             rho[(i + 1) % n1]       += qw * d;
-            max_abs_q                = std::max(max_abs_q, std::abs(qw));
+            g.max_abs_q              = std::max(g.max_abs_q, std::abs(qw));
+            g.n_depositing          += 1;
           }
         }
         auto em = Kokkos::create_mirror_view(domain.fields.em);
         Kokkos::deep_copy(em, domain.fields.em);
-        double max_R = 0.0, max_dR = 0.0, max_rho = 0.0, max_E = 0.0, sum_R = 0.0, sum_rho = 0.0;
-        int    arg_R = -1;
         const bool first = gauss_R0.empty();
         if (first) {
           gauss_R0.assign(n1, 0.0);
@@ -1429,44 +1487,48 @@ namespace user {
           const double div = Ep - Em;
           const double R   = div - gauss_coeff * rho[i];
           if (first) {
-            gauss_R0[i] = R; // the initial residual (a randomly loaded background does not satisfy Gauss's law)
+            gauss_R0[i] = R;
           }
-          if (std::abs(R) > max_R) {
-            max_R = std::abs(R);
-            arg_R = i;
+          if (std::abs(R) > g.max_R) {
+            g.max_R = std::abs(R);
+            g.arg_R = i;
           }
-          max_dR   = std::max(max_dR, std::abs(R - gauss_R0[i]));
-          max_rho  = std::max(max_rho, std::abs(gauss_coeff * rho[i]));
-          max_E    = std::max(max_E, std::abs(Ep));
-          sum_R   += R;
-          sum_rho += rho[i];
+          g.max_dR   = std::max(g.max_dR, std::abs(R - gauss_R0[i]));
+          g.max_rho  = std::max(g.max_rho, std::abs(gauss_coeff * rho[i]));
+          g.max_E    = std::max(g.max_E, std::abs(Ep));
+          g.sum_R   += R;
+          g.sum_rho += rho[i];
         }
-        std::ofstream out("hadronic_gauss.txt", gauss_started ? std::ios::app : std::ios::trunc);
-        if (!gauss_started) {
-          out << "# bh_proto Gauss residual (1D): R_i = (E_{i+1/2} - E_{i-1/2}) - (q0/(B0 V0)) rho_i, "
-                 "rho_i = CIC node charge of the depositing charged species (double from the arrays), "
-                 "E from the real_t field array; gauss_coeff = q0/(B0 V0) = "
-              << std::setprecision(17) << gauss_coeff << "\n";
-          out << "# columns: step | time | stage | max|R| | max|c rho| | max|E| | max|R - R0|/max|c rho| (R0 = the "
-                 "residual at the first row) | argmax i of |R| | sum_i R | sum_i rho | max|q w| (per particle) | "
-                 "npart e- | npart e+ | max|R - R0|\n";
-          gauss_started = true;
-        }
-        npart_t nm = 0, np = 0;
+        g.ratio = g.max_rho > 0.0 ? g.max_dR / g.max_rho : 0.0;
         if (pair_minus != 0) {
-          nm = domain.species[pair_minus - 1].npart();
-          np = domain.species[pair_plus - 1].npart();
+          g.nm = domain.species[pair_minus - 1].npart();
+          g.np = domain.species[pair_plus - 1].npart();
         }
-        out << std::setprecision(17) << step << " " << t << " " << stage << " " << max_R << " "
-            << max_rho << " " << max_E << " " << (max_rho > 0.0 ? max_dR / max_rho : 0.0) << " "
-            << arg_R << " " << sum_R << " " << sum_rho << " " << max_abs_q << " " << nm << " " << np << " "
-            << max_dR << "\n";
       } else {
         (void)domain;
-        (void)step;
-        (void)t;
-        (void)stage;
       }
+      return g;
+    }
+
+    void write_gauss_sample(const GaussSample& g, timestep_t step, double t, const char* stage) {
+      std::ofstream out("hadronic_gauss.txt", gauss_started ? std::ios::app : std::ios::trunc);
+      if (!gauss_started) {
+        out << "# bh_proto Gauss residual (1D): R_i = (E_{i+1/2} - E_{i-1/2}) - (q0/(B0 V0)) rho_i, "
+               "rho_i = CIC node charge of the depositing charged species (double from the arrays), "
+               "E from the real_t field array; gauss_coeff = q0/(B0 V0) = "
+            << std::setprecision(17) << gauss_coeff << "\n";
+        out << "# columns: step | time | stage | max|R| | max|c rho| | max|E| | max|R - R0|/max|c rho| (R0 = the "
+               "residual at the first sample) | argmax i of |R| | sum_i R | sum_i rho | max|q w| (per particle) | "
+               "npart e- | npart e+ | max|R - R0| | depositing particles\n";
+        gauss_started = true;
+      }
+      out << std::setprecision(17) << step << " " << t << " " << stage << " " << g.max_R << " " << g.max_rho
+          << " " << g.max_E << " " << g.ratio << " " << g.arg_R << " " << g.sum_R << " " << g.sum_rho << " "
+          << g.max_abs_q << " " << g.nm << " " << g.np << " " << g.max_dR << " " << g.n_depositing << "\n";
+    }
+
+    void write_gauss(Domain<S, M>& domain, timestep_t step, double t, const char* stage) {
+      write_gauss_sample(gauss_sample(domain), step, t, stage);
     }
 
     void finish(Domain<S, M>& domain) {
@@ -1560,12 +1622,13 @@ namespace user {
           rhs.sub(debt_final);
           rhs.sub(C.E_exported);
           rhs.sub(C.E_lost_nopairs);
+          rhs.sub(C.E_stochastic);
           rhs.add(H.debt_initial);
           kernel::hadronic::dd res = rhs;
           res.sub(pairs_net);
           std::printf("bh_proto: array identity species %d : sum_pairs w_s (E- + E+ - eps_s) = %.17g "
                       "(%llu kernel-born pairs, sum w_pair = %.17g, sum w_s E = %.17g, sum w_s eps = %.17g), "
-                      "rhs = sum w dK - sum w r - E_exported - E_lost_nopairs + debt_initial = %.17g, "
+                      "rhs = sum w dK - sum w r - E_exported - E_lost_nopairs - E_stochastic + debt_initial = %.17g, "
                       "residual = %.17g, E_round (ledger) = %.17g, residual - E_round = %.6e, "
                       "B_budget = %.17g, |residual|/B = %.6e\n",
                       (int)sp.index(), pairs_net.value(), n_pairs_born, pairs_w.value(), pairs_E.value(),
@@ -1574,23 +1637,23 @@ namespace user {
                       C.B_budget.value() > 0.0 ? std::abs(res.value()) / C.B_budget.value() : 0.0);
         }
         std::printf("bh_proto: ledger species %d : E_drag %.17g E_pairs %.17g E_absorbed %.17g "
-                    "E_exported %.17g E_round %.17g E_lost_nopairs %.17g pending_discarded %.17g "
+                    "E_exported %.17g E_round %.17g E_stochastic %.17g E_lost_nopairs %.17g pending_discarded %.17g "
                     "debt_initial %.17g debt_outstanding %.17g pending_outstanding %.17g residual %.6e "
                     "P_drag %.17g %.17g %.17g P_pairs %.17g %.17g %.17g P_absorbed %.17g %.17g %.17g "
                     "n_events %llu n_spawned %llu n_dropped %llu n_substeps %llu n_bounded %llu "
                     "n_capped_loss %llu n_closing %llu n_capped %llu n_capped_events %llu "
                     "n_above_table %llu n_latency %llu n_processed %llu n_applied %llu n_rng %llu "
-                    "n_k0_trigger %llu sum_wK %.17g B_budget %.17g npart_minus %u npart_plus %u "
+                    "n_k0_trigger %llu n_closing_at_rest %llu sum_wK %.17g B_budget %.17g npart_minus %u npart_plus %u "
                     "estimate_bare %.10g estimate_sized %.10g\n",
                     (int)sp.index(), C.E_drag.value(), C.E_pairs.value(), C.E_absorbed.value(),
-                    C.E_exported.value(), C.E_round.value(), C.E_lost_nopairs.value(),
+                    C.E_exported.value(), C.E_round.value(), C.E_stochastic.value(), C.E_lost_nopairs.value(),
                     C.pending_discarded.value(), H.debt_initial.value(), C.debt_outstanding.value(),
                     C.pending_outstanding.value(), H.identity_residual(), C.P_drag[0], C.P_drag[1],
                     C.P_drag[2], C.P_pairs[0], C.P_pairs[1], C.P_pairs[2], C.P_absorbed[0],
                     C.P_absorbed[1], C.P_absorbed[2], C.n_events, C.n_spawned, C.n_dropped,
                     C.n_substeps, C.n_bounded, C.n_capped_loss, C.n_closing, C.n_capped,
                     C.n_capped_events, C.n_above_table, C.n_latency, C.n_processed, C.n_applied,
-                    C.n_rng, C.n_k0_trigger, C.sum_wK, C.B_budget.value(), (unsigned)pair_npart_minus,
+                    C.n_rng, C.n_k0_trigger, C.n_closing_at_rest, C.sum_wK, C.B_budget.value(), (unsigned)pair_npart_minus,
                     (unsigned)pair_npart_plus, estimate_bare, estimate_sized);
         if (any_absorbing) {
           std::printf("bh_proto: exported species %d : E_exported_host %.17g E_exported %.17g difference %.6e "

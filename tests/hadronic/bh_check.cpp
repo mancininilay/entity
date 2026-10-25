@@ -199,9 +199,9 @@ namespace {
       while (ss >> v) {
         r.cols.push_back(v);
       }
-      // step 2 wrote 15 columns; step 3 writes 41 (sum_wK is column 37, 0-based)
-      if (r.cols.size() != 15 && r.cols.size() != 41) {
-        throw std::runtime_error(path + ": expected 15 or 41 columns, got " + std::to_string(r.cols.size()));
+      // step 2 wrote 15 columns; step 3 writes 43 (sum_wK is column 39, 0-based)
+      if (r.cols.size() != 15 && r.cols.size() != 43) {
+        throw std::runtime_error(path + ": expected 15 or 43 columns, got " + std::to_string(r.cols.size()));
       }
       rows.push_back(r);
     }
@@ -512,7 +512,7 @@ namespace {
       const auto rows = read_ledger(str(a, which));
       double     maxabs = 0.0;
       for (const auto& r : rows) {
-        const std::size_t sum_wK_col = (r.cols.size() == 41) ? 37 : r.cols.size() - 1;
+        const std::size_t sum_wK_col = (r.cols.size() == 43) ? 39 : r.cols.size() - 1;
         for (std::size_t c = 2; c < r.cols.size(); ++c) { // all but step, time, sum_wK
           if (c == sum_wK_col) {
             continue;
@@ -542,6 +542,8 @@ namespace {
   }
 
   /* ---- step 3: ledger file (last row) ------------------------------------- */
+  constexpr std::size_t LEDGER_COLS = 43; // round 2 ledger file
+
   struct LedgerLast {
     std::vector<double> c;
   };
@@ -566,18 +568,21 @@ namespace {
     while (ss >> v) {
       r.c.push_back(v);
     }
-    if (r.c.size() < 41) {
-      throw std::runtime_error("ledger row has " + std::to_string(r.c.size()) + " columns, expected 41");
+    if (r.c.size() != LEDGER_COLS) {
+      throw std::runtime_error("ledger row has " + std::to_string(r.c.size()) + " columns, expected " +
+                               std::to_string(LEDGER_COLS));
     }
     return r;
   }
 
   // column indices of the step-3 ledger file
+  // column indices of the step-3 ledger file (round 2: 43 columns; E_stochastic after E_round,
+  // n_closing_at_rest after n_k0_trigger)
   enum LedgerCol : int {
-    L_STEP = 0, L_TIME = 1, L_EDRAG = 2, L_EPAIRS = 3, L_EABS = 4, L_EEXP = 5, L_EROUND = 6, L_ELOST = 7,
-    L_PDISC = 8, L_DINIT = 9, L_DOUT = 19, L_POUT = 20, L_RES = 21, L_NEVENTS = 22, L_NSPAWNED = 23,
-    L_NDROPPED = 24, L_NCLOSING = 28, L_NCAPPED = 29, L_NCAPEV = 30, L_NRNG = 35, L_NK0 = 36, L_SUMWK = 37,
-    L_B = 38, L_NPM = 39, L_NPP = 40
+    L_STEP = 0, L_TIME = 1, L_EDRAG = 2, L_EPAIRS = 3, L_EABS = 4, L_EEXP = 5, L_EROUND = 6, L_ESTOCH = 7,
+    L_ELOST = 8, L_PDISC = 9, L_DINIT = 10, L_DOUT = 20, L_POUT = 21, L_RES = 22, L_NEVENTS = 23, L_NSPAWNED = 24,
+    L_NDROPPED = 25, L_NCLOSING = 29, L_NCAPPED = 30, L_NCAPEV = 31, L_NRNG = 36, L_NK0 = 37, L_NCLOSE0 = 38,
+    L_SUMWK = 39, L_B = 40, L_NPM = 41, L_NPP = 42
   };
 
   int cmd_ledger(const Args& a) {
@@ -586,11 +591,11 @@ namespace {
     const double E   = std::abs(r.c[L_EDRAG]);
     std::printf("LEDGER_ROW step %.0f n_events %.0f n_spawned %.0f n_dropped %.0f n_closing %.0f n_capped %.0f "
                 "n_capped_events %.0f n_rng %.0f npart_minus %.0f npart_plus %.0f E_drag %.17g E_pairs %.17g "
-                "E_absorbed %.17g E_exported %.17g E_round %.17g E_lost_nopairs %.17g debt_outstanding %.17g "
-                "residual %.6e B %.17g\n",
+                "E_absorbed %.17g E_exported %.17g E_round %.17g E_stochastic %.17g E_lost_nopairs %.17g "
+                "debt_outstanding %.17g residual %.6e B %.17g\n",
                 r.c[L_STEP], r.c[L_NEVENTS], r.c[L_NSPAWNED], r.c[L_NDROPPED], r.c[L_NCLOSING], r.c[L_NCAPPED],
                 r.c[L_NCAPEV], r.c[L_NRNG], r.c[L_NPM], r.c[L_NPP], r.c[L_EDRAG], r.c[L_EPAIRS], r.c[L_EABS],
-                r.c[L_EEXP], r.c[L_EROUND], r.c[L_ELOST], r.c[L_DOUT], r.c[L_RES], r.c[L_B]);
+                r.c[L_EEXP], r.c[L_EROUND], r.c[L_ESTOCH], r.c[L_ELOST], r.c[L_DOUT], r.c[L_RES], r.c[L_B]);
     verdict(std::abs(r.c[L_RES]) <= tol * E, "ledger identity residual / E_drag (last row)",
             E > 0.0 ? std::abs(r.c[L_RES]) / E : std::abs(r.c[L_RES]), tol);
     if (a.count("expect_dropped")) {
@@ -678,7 +683,7 @@ namespace {
     std::string stage;
     double      maxR, maxrho, maxE, ratio, sumR, sumrho, maxq, maxdR;
     int         argmax;
-    double      nm, np;
+    double      nm, np, ndep { 0.0 };
   };
 
   std::vector<GaussRow> read_gauss(const std::string& path) {
@@ -695,7 +700,7 @@ namespace {
       std::istringstream ss(line);
       GaussRow           r;
       ss >> r.step >> r.time >> r.stage >> r.maxR >> r.maxrho >> r.maxE >> r.ratio >> r.argmax >> r.sumR >> r.sumrho >>
-        r.maxq >> r.nm >> r.np >> r.maxdR;
+        r.maxq >> r.nm >> r.np >> r.maxdR >> r.ndep;
       rows.push_back(r);
     }
     return rows;
@@ -760,12 +765,26 @@ namespace {
     const double      t_first = max_ratio(test, "step", 0, q), t_last = max_ratio(test, "step", nt - q, nt);
     verdict(t_last <= 2.0 * std::max(t_first, level), "T13: no growth trend (last quarter / max(first quarter, level))",
             t_last / std::max(t_first, level), 2.0);
-    // the births right after the first launch do not change the residual beyond the control level
+    // the births right after the first spawning launch do not change the residual beyond the control
+    // level (R6: the samples bracket the launch that spawned the first pair; the depositing count rises)
+    const GaussRow* before = nullptr;
+    const GaussRow* after  = nullptr;
     for (const auto& r : test) {
-      if (r.stage == "after_first_launch") {
-        verdict(r.ratio <= 2.0 * level, "T13: residual right after the first births within a factor 2 of the control level",
-                level > 0.0 ? r.ratio / level : r.ratio, 2.0);
+      if (r.stage == "before_first_births") {
+        before = &r;
       }
+      if (r.stage == "after_first_births") {
+        after = &r;
+      }
+    }
+    verdict(before != nullptr && after != nullptr && after->step == before->step,
+            "T13: the before/after samples bracket the first spawning launch (same step)",
+            before && after ? static_cast<double>(after->step) : -1.0, before ? static_cast<double>(before->step) : -1.0);
+    if (before && after) {
+      verdict(after->ndep > before->ndep, "T13: the depositing particle count increased at the first births",
+              after->ndep - before->ndep, 1.0);
+      verdict(after->ratio <= 2.0 * level, "T13: residual right after the first births within a factor 2 of the control level",
+              level > 0.0 ? after->ratio / level : after->ratio, 2.0);
     }
     return 0;
   }
