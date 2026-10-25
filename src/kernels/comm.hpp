@@ -1,6 +1,9 @@
 /**
  * @file kernels/comm.hpp
  * @brief Kernels used during communications
+ * @note [fork:hadronic] PopulatePrtlSendBuffer_kernel clears the real and
+ *       integer payloads of the sender's slot after copying them into the send
+ *       buffer, so that the dead remnant left behind carries no payload
  * @implements
  *   - kernel::comm::PrepareOutgoingPrtls_kernel<>
  *   - kernel::comm::PopulatePrtlSendBuffer_kernel<>
@@ -220,11 +223,19 @@ namespace kernel::comm {
       if (NPLDS_R > 0) {
         for (auto l { 0u }; l < NPLDS_R; ++l) {
           send_buff_pld_r(NPLDS_R * p + l) = pld_r(idx, l);
+          // [fork:hadronic] the sender's slot becomes a dead remnant: a dead
+          // particle carries no payload (the payloads travel in the buffer and
+          // are written on the receiver), so the slot is cleared before it is
+          // tagged dead; otherwise a payload-reading kernel that visits dead
+          // slots (the Bethe-Heitler debt export) would see the transported
+          // values again
+          pld_r(idx, l) = ZERO;
         }
       }
       if (NPLDS_I > 0) {
         for (auto l { 0u }; l < NPLDS_I; ++l) {
           send_buff_pld_i(NPLDS_I * p + l) = pld_i(idx, l);
+          pld_i(idx, l)                    = 0;
         }
       }
       tag(idx) = ParticleTag::dead;

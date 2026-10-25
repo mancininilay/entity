@@ -675,7 +675,10 @@ namespace kernel::hadronic {
       double       K0    = budget ? static_cast<double>(prtls.pld_r(p, prm.pld_debt_k0)) : 0.0;
 
       if (tag == ParticleTag::dead) {
-        // absorbed this step: the request is never fulfilled, the debt is exported
+        // absorbed this step (the request is never fulfilled, the debt is exported),
+        // or a cleared remnant (zero payloads: a particle sent to another domain
+        // leaves its slot dead with every payload zeroed by the send-buffer packer,
+        // so nothing is exported for it; the receiver owns its debt)
         if (delta != 0.0) {
           L.pending_discarded.add_prod(w, delta);
           prtls.pld_r(p, prm.pld_pending) = ZERO;

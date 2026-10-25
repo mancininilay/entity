@@ -50,6 +50,7 @@
 #include "archetypes/hadronic/bh_tables_device.h"
 #include "framework/containers/particles.h"
 #include "kernels/hadronic/bethe_heitler.hpp"
+#include "kernels/comm.hpp"
 
 #include <Kokkos_Core.hpp>
 
@@ -1763,6 +1764,180 @@ namespace {
             std::abs(H3.residual()) / 20.0, 1.0e-12);
   }
 
+
+  /* ------------------------------------------------------------------------ */
+  /* C-MPI-1 (round 3): a sent particle's remnant carries no payload           */
+  /* ------------------------------------------------------------------------ */
+  /**
+   * @brief The referee's scenario with the real send-buffer packer and receive
+   *        kernels (kernel::comm::PopulatePrtlSendBuffer_kernel,
+   *        ExtractReceivedPrtls_kernel), no MPI: an ion with pending 0.25 and
+   *        debt 10 tagged for sending is packed; the sender's slot must be dead
+   *        with every payload zero, the buffer must carry 0.25 and 10, and the
+   *        next Bethe-Heitler call must export 0 and discard 0 for that slot
+   *        (an ion tagged dead by the host, i.e. absorbed, in the same call is
+   *        the control: its debt is exported exactly once). Then more sends than
+   *        receives: three ions packed, one received into the first hole; the
+   *        two unfilled holes carry zero debt, the received ion is alive with
+   *        its transported debt, and the call exports nothing.
+   */
+  void test_CMPI1_send_remnant(const Tables& T) {
+    std::printf("\n=== C-MPI-1: a sent particle's dead remnant carries no payload (real packer and receive kernels) ===\n");
+    using Packer    = kernel::comm::PopulatePrtlSendBuffer_kernel<Dim::_1D, Coord::Cartesian>;
+    using Extractor = kernel::comm::ExtractReceivedPrtls_kernel<Dim::_1D, Coord::Cartesian>;
+    constexpr unsigned short NINTS = 2, NREALS = 4, NPRTLDX = 2, NPLDS_R = 3, NPLDS_I = 1;
+    const npart_t N = 6;
+    auto make = [&](Ions& ions) {
+      for (npart_t p = 0; p < N; ++p) {
+        ions.set(p, K_of_gamma(6.0), 1.0 + 0.5 * p);
+      }
+      ions.zero_payloads();
+      // the extra arrays the comm kernels need (the Ions helper has none)
+      ions.arr.i1_prev  = array_t<int*> { "i1_prev", N };
+      ions.arr.dx1_prev = array_t<prtldx_t*> { "dx1_prev", N };
+      ions.arr.phi      = array_t<real_t*> { "phi", N };
+      ions.arr.pld_i    = array_t<npart_t**> { "pld_i", N, NPLDS_I };
+      Kokkos::deep_copy(ions.arr.i1_prev, ions.arr.i1);
+      Kokkos::deep_copy(ions.arr.dx1_prev, ions.arr.dx1);
+      Kokkos::deep_copy(ions.arr.pld_i, static_cast<npart_t>(777));
+    };
+    auto set_payload = [&](Ions& ions, npart_t p, double pending, double debt, double k0) {
+      auto hp = mirror(ions.arr.pld_r);
+      hp(p, 0) = static_cast<real_t>(pending);
+      hp(p, 1) = static_cast<real_t>(debt);
+      hp(p, 2) = static_cast<real_t>(k0);
+      Kokkos::deep_copy(ions.arr.pld_r, hp);
+    };
+    auto pack = [&](Ions& ions, const std::vector<npart_t>& sent, array_t<real_t*>& buf_r, array_t<npart_t*>& buf_i) {
+      const npart_t ns = static_cast<npart_t>(sent.size());
+      array_t<npart_t*> outgoing { "outgoing", ns };
+      auto ho = Kokkos::create_mirror_view(outgoing);
+      for (npart_t k = 0; k < ns; ++k) {
+        ho(k) = sent[k];
+      }
+      Kokkos::deep_copy(outgoing, ho);
+      array_t<int*>      buf_int { "buf_int", NINTS * ns };
+      array_t<prtldx_t*> buf_dx { "buf_dx", NPRTLDX * ns };
+      buf_r = array_t<real_t*> { "buf_r", NREALS * ns };
+      array_t<real_t*>  buf_pr { "buf_pr", NPLDS_R * ns };
+      buf_i = array_t<npart_t*> { "buf_pi", NPLDS_I * ns };
+      auto& a = ions.arr;
+      Kokkos::parallel_for("pack", ns,
+                           Packer(buf_int, buf_r, buf_dx, buf_pr, buf_i, NINTS, NREALS, NPRTLDX, NPLDS_R, NPLDS_I, 0,
+                                  a.i1, a.i1_prev, a.dx1, a.dx1_prev, a.i2, a.i2_prev, a.dx2, a.dx2_prev, a.i3,
+                                  a.i3_prev, a.dx3, a.dx3_prev, a.ux1, a.ux2, a.ux3, a.weight, a.phi, a.pld_r,
+                                  a.pld_i, a.tag, outgoing));
+      Kokkos::fence();
+      buf_r = buf_pr; // return the payload buffer
+      return outgoing;
+    };
+    random_number_pool_t pool(61u);
+    auto                 prm = params(coeff_for(T, 6.0, 1.0e-4), BUDGET);
+    // ---- scenario 1: one sent ion (slot 0) and one absorbed ion (slot 3, tagged dead by the host)
+    {
+      Ions ions(N, 1.0);
+      make(ions);
+      set_payload(ions, 0, 0.25, 10.0, K_of_gamma(6.0));
+      set_payload(ions, 3, 0.125, 7.0, K_of_gamma(6.0));
+      ions.set_tag(0, static_cast<short>(2)); // the first send direction
+      ions.set_tag(3, ParticleTag::dead);     // absorbed this step (control)
+      array_t<real_t*>  buf_r;
+      array_t<npart_t*> buf_i;
+      pack(ions, { 0 }, buf_r, buf_i);
+      const auto tg = ions.tags();
+      const auto d0 = ions.payload(0), r0 = ions.payload(1), k0 = ions.payload(2);
+      auto hbr = mirror(buf_r);
+      auto hbi = mirror(buf_i);
+      auto hpi = mirror(ions.arr.pld_i);
+      verdict(tg[0] == ParticleTag::dead, "C-MPI-1: the packed sender slot is tagged dead", tg[0], 0.0);
+      verdict(d0[0] == 0.0 && r0[0] == 0.0 && k0[0] == 0.0 && hpi(0, 0) == 0,
+              "C-MPI-1: every real and integer payload of the sender slot is zero after packing",
+              std::abs(d0[0]) + std::abs(r0[0]) + std::abs(k0[0]) + static_cast<double>(hpi(0, 0)), 0.0);
+      verdict(static_cast<double>(hbr(0)) == static_cast<double>(static_cast<real_t>(0.25)) &&
+                static_cast<double>(hbr(1)) == static_cast<double>(static_cast<real_t>(10.0)) && hbi(0) == 777,
+              "C-MPI-1: the send buffer carries pending 0.25, debt 10 and the integer payload",
+              static_cast<double>(hbr(1)), 10.0);
+      verdict(d0[3] != 0.0 && r0[3] != 0.0, "C-MPI-1: the absorbed ion's payloads are untouched by the packer", r0[3], 7.0);
+      const auto w = ions.w();
+      Pairs      pairs(1000);
+      const auto L = launch(ions, pairs, T, prm, pool, DT);
+      const double exp_expect  = w[3] * static_cast<double>(static_cast<real_t>(7.0));
+      const double disc_expect = w[3] * static_cast<double>(static_cast<real_t>(0.125));
+      verdict(std::abs(L.E_exported.value() - exp_expect) <= 1.0e-12 * exp_expect,
+              "C-MPI-1: the next call exports exactly the absorbed ion's debt (nothing for the sent remnant), relative",
+              std::abs(L.E_exported.value() - exp_expect) / exp_expect, 1.0e-12);
+      verdict(std::abs(L.pending_discarded.value() - disc_expect) <= 1.0e-12 * disc_expect,
+              "C-MPI-1: the next call discards exactly the absorbed ion's request (nothing for the sent remnant), relative",
+              std::abs(L.pending_discarded.value() - disc_expect) / disc_expect, 1.0e-12);
+      std::printf("(diag) C-MPI-1: before the fix the same call would have exported w (10 + 7) = %.6f and discarded "
+                  "w (0.25 + 0.125) = %.6f; measured E_exported %.17g, pending_discarded %.17g\n",
+                  w[0] * 10.0 + exp_expect, w[0] * 0.25 + disc_expect, L.E_exported.value(),
+                  L.pending_discarded.value());
+    }
+    // ---- scenario 2: three sends, one receive into the first hole (more sends than receives)
+    {
+      Ions ions(N, 1.0);
+      make(ions);
+      for (npart_t p = 0; p < 3; ++p) {
+        set_payload(ions, p, 0.25, 10.0 + p, K_of_gamma(6.0));
+        ions.set_tag(p, static_cast<short>(2));
+      }
+      array_t<real_t*>  buf_r;
+      array_t<npart_t*> buf_i;
+      const auto        outgoing = pack(ions, { 0, 1, 2 }, buf_r, buf_i);
+      // receive one particle (the first packed one) into the first hole
+      const npart_t nrecv = 1;
+      array_t<int*>      rb_int { "rb_int", NINTS * nrecv };
+      array_t<real_t*>   rb_real { "rb_real", NREALS * nrecv };
+      array_t<prtldx_t*> rb_dx { "rb_dx", NPRTLDX * nrecv };
+      array_t<real_t*>   rb_pr { "rb_pr", NPLDS_R * nrecv };
+      array_t<npart_t*>  rb_pi { "rb_pi", NPLDS_I * nrecv };
+      {
+        auto hi = Kokkos::create_mirror_view(rb_int);
+        auto hr = Kokkos::create_mirror_view(rb_real);
+        auto hd = Kokkos::create_mirror_view(rb_dx);
+        auto hp = Kokkos::create_mirror_view(rb_pr);
+        auto hq = Kokkos::create_mirror_view(rb_pi);
+        auto hb = mirror(buf_r);
+        hi(0) = 5; hi(1) = 5;
+        hd(0) = static_cast<prtldx_t>(0.5); hd(1) = static_cast<prtldx_t>(0.5);
+        const double u = Ions::u_of_K(K_of_gamma(6.0), 1.0);
+        hr(0) = static_cast<real_t>(u); hr(1) = ZERO; hr(2) = ZERO; hr(3) = static_cast<real_t>(2.0);
+        for (unsigned short l = 0; l < NPLDS_R; ++l) {
+          hp(l) = hb(l); // the first packed particle's payloads
+        }
+        hq(0) = 777;
+        Kokkos::deep_copy(rb_int, hi);
+        Kokkos::deep_copy(rb_real, hr);
+        Kokkos::deep_copy(rb_dx, hd);
+        Kokkos::deep_copy(rb_pr, hp);
+        Kokkos::deep_copy(rb_pi, hq);
+      }
+      auto& a = ions.arr;
+      Kokkos::parallel_for("recv", nrecv,
+                           Extractor(rb_int, rb_real, rb_dx, rb_pr, rb_pi, NINTS, NREALS, NPRTLDX, NPLDS_R, NPLDS_I, N,
+                                     a.i1, a.i1_prev, a.dx1, a.dx1_prev, a.i2, a.i2_prev, a.dx2, a.dx2_prev, a.i3,
+                                     a.i3_prev, a.dx3, a.dx3_prev, a.ux1, a.ux2, a.ux3, a.weight, a.phi, a.pld_r,
+                                     a.pld_i, a.tag, outgoing));
+      Kokkos::fence();
+      const auto tg = ions.tags();
+      const auto d  = ions.payload(0), r = ions.payload(1), k = ions.payload(2);
+      verdict(tg[0] == ParticleTag::alive && r[0] == static_cast<double>(static_cast<real_t>(10.0)) &&
+                d[0] == static_cast<double>(static_cast<real_t>(0.25)),
+              "C-MPI-1: the received particle is alive in the first hole with its transported pending and debt", r[0], 10.0);
+      verdict(tg[1] == ParticleTag::dead && tg[2] == ParticleTag::dead && r[1] == 0.0 && r[2] == 0.0 && d[1] == 0.0 &&
+                d[2] == 0.0 && k[1] == 0.0 && k[2] == 0.0,
+              "C-MPI-1: the two unfilled holes are dead with zero debt, pending and K0",
+              std::abs(r[1]) + std::abs(r[2]) + std::abs(d[1]) + std::abs(d[2]), 0.0);
+      Pairs      pairs(1000);
+      const auto L = launch(ions, pairs, T, prm, pool, DT);
+      verdict(L.E_exported.value() == 0.0 && L.pending_discarded.value() == 0.0,
+              "C-MPI-1: the next call exports nothing and discards nothing (no absorbed ion, two cleared remnants)",
+              std::abs(L.E_exported.value()) + std::abs(L.pending_discarded.value()), 0.0);
+      verdict(L.n_processed == 4, "C-MPI-1: the received ion and the three untouched ions are processed (4)",
+              static_cast<double>(L.n_processed), 4.0);
+    }
+  }
 } // namespace
 
 auto main(int argc, char* argv[]) -> int {
@@ -1821,6 +1996,9 @@ auto main(int argc, char* argv[]) -> int {
     }
     if (want("r3")) {
       test_R3_k0(T);
+    }
+    if (want("cmpi1")) {
+      test_CMPI1_send_remnant(T);
     }
     std::printf("bh_pairs summary: %d passed, %d failed, %d expected failures\n",
                 n_pass, n_fail, n_expected_fail);

@@ -59,7 +59,7 @@ endforeach()
 add_executable(test-kernels-bh_pairs.xc bh_pairs.cpp)
 add_dependencies(test-kernels-bh_pairs.xc ntt_kernels ntt_metrics ntt_framework)
 target_link_libraries(test-kernels-bh_pairs.xc PRIVATE ntt_kernels ntt_metrics ntt_framework)
-foreach(grp t10 poisson none energy momentum t12 t10b texp r1 r2 r3)
+foreach(grp t10 poisson none energy momentum t12 t10b texp r1 r2 r3 cmpi1)
   add_test(NAME "KERNELS::bh_pairs_${grp}" COMMAND test-kernels-bh_pairs.xc ${grp})
 endforeach()
 
