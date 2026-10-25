@@ -1008,15 +1008,26 @@ namespace {
     }
     const double d   = ions.delta()[0];
     const double K   = ions.K()[0];
-    const double flo = pending_floor_of(K, mu_d, 100.0);
-    verdict(H.C.n_applied == 0 && std::isfinite(d) && d > 0.0,
-            "R4: no application before the floor is reached (10 steps, request 1e10 I_edge per step)",
-            static_cast<double>(H.C.n_applied), 0.0);
-    verdict(std::isfinite(flo) && flo > prm.eta_u * K && d < flo,
-            "R4: the floor is finite, above eta_u K, and above the accumulated request", flo, d);
-    diag("R4: K = " + std::to_string(K) + ", delta after 10 steps = " + std::to_string(d) + ", pending floor = " +
-         std::to_string(flo) + ", eta_u K = " + std::to_string(prm.eta_u * K) + ", n_above_table " +
-         std::to_string(H.C.n_above_table));
+    const double flo = pending_floor_of(K, mu_d, 100.0); // the build's real_t ulp
+    const double th  = std::max(flo, prm.eta_u * K);     // the kernel's application threshold
+    const double req = 10.0 * prm.tau0_over_skindepth0 * T.host.I.back() * prm.dt; // ten edge-value requests
+    // the referee's probe in single precision: floor 8.8e14 > eta_u K = 1e8, the ten
+    // requests (2e13) stay below the floor and nothing is applied; in a double
+    // build the floor is 1.6e6 < eta_u K and the first request is applied: the
+    // registered statement is "applications happen only once the threshold
+    // max(pending_floor, eta_u K) is reached", with a finite floor
+    const bool expect_none = req < th;
+    verdict(std::isfinite(flo) && std::isfinite(d) &&
+              (expect_none ? (H.C.n_applied == 0 && d > 0.0) : (H.C.n_applied >= 1)),
+            std::string("R4: finite ulp floor at |u| = 1e20; applications only once max(floor, eta_u K) is reached (") +
+              (expect_none ? "none expected in 10 steps" : "expected from the first step") + ")",
+            static_cast<double>(H.C.n_applied), expect_none ? 0.0 : 1.0);
+    verdict(std::isfinite(flo) && flo > 0.0 && (sizeof(real_t) != 4 || flo > prm.eta_u * K),
+            "R4: the floor is finite and positive (and above eta_u K in single precision)", flo, prm.eta_u * K);
+    diag("R4: real_t = " + std::string(sizeof(real_t) == 4 ? "float" : "double") + ", K = " + std::to_string(K) +
+         ", delta after 10 steps = " + std::to_string(d) + ", pending floor = " + std::to_string(flo) +
+         ", eta_u K = " + std::to_string(prm.eta_u * K) + ", ten requests = " + std::to_string(req) +
+         ", n_applied " + std::to_string(H.C.n_applied) + ", n_above_table " + std::to_string(H.C.n_above_table));
   }
 
   void test_above_table(const Tables& T) {
