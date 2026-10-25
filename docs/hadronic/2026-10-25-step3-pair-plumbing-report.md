@@ -251,7 +251,38 @@ order-independent checksums ignore.
 
 ### 0.7 Suites with the round-2 HEAD
 
-{{SUITES}}
+Single build A (round-2 HEAD, `logs/ctest-single-final.log`): **90 tests, 90
+passed**, 1713 s wall with `ctest -j1` (the suite ran while the double
+suite, the bounds-check build and the UBSan build shared the 4 cores; the
+same suite alone took 489 s for the 11 HADRONIC drivers earlier in the
+round). The 5 new entries over round 1's 85: `KERNELS::bh_pairs_r1`, `_r2`,
+`_r3`, `HADRONIC::t14b_placement`, `HADRONIC::r2_tiny_pair_weight`. Driver
+summaries from the registered run: `reject.sh` 27 inputs executed, 27
+passed (round 1: 25; new: `reject_two_species`, `reject_placement`);
+`t14b_placement.sh` 8 runs, every check passed (Serial part included);
+`r2_tiny.sh` 1 run, every check passed; `t10det.sh` 3 runs and `texp.sh` 2
+runs, every check passed; `t8_bit_identity` and `t10_poisson_determinism`
+pass with the order-independent checksums. `test-kernels-bh_pairs.xc` (all
+groups): 109 passed, 0 failed, 0 expected failures.
+
+Double build B (`logs/ctest-double-final.log`, rebuilt from the round-2
+HEAD): 89 tests registered at the time of the run (the tree had been
+configured before `r2_tiny_pair_weight` was registered), 86 passed, 3
+skipped (`t5b_cross_build`, `t8_bit_identity`, `t10_poisson_determinism`:
+no second build given to the double tree, as in round 1), 960.7 s; after
+re-running cmake the tree lists 90 tests and `ctest -R "r2_tiny|t14b"`
+passes both (`logs/ctest-double-extra.log`), so the double tree is 90
+registered, 87 passed, 3 skipped. Facts from the double build's
+`test-kernels-bh_pairs.xc`: 109 passed, 0 failed, 0 expected failures; T11
+(iv) re-registered 2.702e-3 (single 2.694e-3); the massless history row
+1.8076; poisson n_spawned 1901 (identical draws to the single build);
+array residual / B between 1.6e-17 and 7.2e-13 (E_round itself at the 1e-13
+level, as in round 1); the placement test identical to 0 difference in
+double too.
+
+Serial build C and bounds-check build D: rebuilt from the round-2 HEAD and
+used by the single suite (C: T8, T10 determinism, T14b bit identity) and
+by section 0.8 (D). MPI build: section 0.5 (compile only).
 
 ### 0.8 UBSan and bounds-check diagnostics (R2, P8)
 
@@ -285,7 +316,7 @@ of a float-rounding residual of one realisation with that of another
 realisation (the control run); the ratio is a random variable of order 1.
 In the round-2 driver runs the ratio was 2.057 once (fail at <= 2; the
 run of `ctest-r2-drivers`), then 0.871, 0.756, 1.122, 0.827, 0.867, 0.468,
-1.222, 0.604 in eight replicates (all pass), and {{T13_FINAL}} in the
+1.222, 0.604 in eight replicates (all pass), and 0.990 in the
 registered final suite. Mechanism: with OpenMP the per-thread order of the
 atomic current deposit changes the float round-off of `J` and hence of `E`
 from run to run, so the pair run's and the control run's maxima are
