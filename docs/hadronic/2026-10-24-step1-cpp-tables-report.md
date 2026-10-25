@@ -5,9 +5,10 @@ branch `dev/hadronic-tables` (created from `dev/hadronic` at `b2dd625`).
 
 Round 1: source commit `c070ed2` (physics, format, tool, test), tables and
 report at `1ebd2c4`. Round 2 (referee findings R1 to R8, this revision of the
-report): source commit `5aadf9d`, regenerated tables and this report in the
-commit that follows it. Section 10 is the referee resolution log, section 11
-the round-2 test summary.
+report): source commit `5aadf9d`, regenerated tables and report at `32c19e7`.
+Round 3 (closure finding R5, strict JSON validation in the reader): the commit
+that follows `32c19e7`; no numerical code and no table changed. Section 10 is
+the referee resolution log, section 11 the round-2 and round-3 test summary.
 
 This report is written for a reader who has not seen the session: every
 statement below is labelled as a measured fact (with the number), a convention
@@ -67,14 +68,15 @@ the problem generator or the input parser. Line numbers refer to commit
 | 1229 to 1484 | `HadronicTablesHost`, `table_upper_edge` (envelope guards), `build_tables` (peak search with `gamma_at_I_peak`, lower edge by bisection, node placement), `validate_tables` |
 | 1486 to 1515 | `BathSpec`, `make_bath` |
 
-`src/archetypes/hadronic/bh_table_io.h` (693 lines): `Sha256` (39 to 175,
+`src/archetypes/hadronic/bh_table_io.h` (1003 lines): `Sha256` (39 to 175,
 FIPS 180-4, unchanged since round 1, known-answer test in the test suite),
-JSON helpers (`json_unescape` 177, `json_to_number` 246, `json_string_array`
-258, `json_number_checked` 292), `TableFileMeta` (303), `format_table_data`
-(339), `format_table_file` (364, contract 1.4 schema), `write_table_file`
-(442), `TableFileContents` (458), `required_header_keys` (481),
-`parse_table_file` (523, literal-byte hashing and content validation),
-`read_table_file` (681).
+the strict JSON value parser of round 3 (`JsonValue` 173, `JsonParser` 201,
+`parse_json` 527, `json_unescape` 534), `json_number_checked` (545),
+`TableFileMeta` (556), `format_table_data` (592), `format_table_file` (617,
+contract 1.4 schema), `write_table_file` (695), `TableFileContents` (712),
+`required_header_keys` (735), `parse_table_file` (777, literal-byte hashing,
+strict JSON header values, typed and content validation), `read_table_file`
+(991). Line numbers of this file refer to the round-3 commit.
 
 `src/archetypes/hadronic/bh_options.h` (163 lines): `DumpOptions` and
 `parse_dump_options` (38), the strict option parser of the tool.
@@ -91,15 +93,17 @@ definition `BH_TEST_DATA_DIR`, test name `ARCHETYPES::bh_physics`. Functions:
 `test_maximon` (341), `test_phi` (373), `test_qk` (419), `test_threshold`
 (468), `test_ur` (533), `test_crpropa` (566, reads the fixture),
 `test_ur_ratios` (604), `test_table` (652), `test_table_bath` (749),
-`test_blackbody` (823), `test_file` (894, round trip and the R2 negative
-tests), `test_foreign_reader` (1140), `test_envelope` (1274), `test_options`
-(1379), `test_power_integral` (1496), `design_numbers` (1558). The checks are
-counted in two classes: **contract items** (the pre-registered acceptance
-items of contract section 5, the validity and self-convergence requirements of
-section 4 and the interpolation target T3: 55 checks) and
-**implementation-chosen checks** (reader and writer behaviour, parsing,
-regression guards, consistency checks, 89 checks), printed with the prefix
-`(impl)`. `[DIAG]` lines are reported only.
+`test_blackbody` (823), `test_file` (894, round trip, the R2 negative tests
+and the round-3 strict-JSON rejections), `test_foreign_reader` (the
+hand-written file and the JSON parser unit checks), `test_envelope`,
+`test_options`, `test_power_integral`, `design_numbers` (line numbers of the
+test file as of `5aadf9d`; round 3 added about 160 lines after line 1128).
+The checks are counted in two classes: **contract items** (the
+pre-registered acceptance items of contract section 5, the validity and
+self-convergence requirements of section 4 and the interpolation target T3:
+55 checks) and **implementation-chosen checks** (reader and writer behaviour,
+parsing, regression guards, consistency checks: 89 checks in round 2, 126 in
+round 3), printed with the prefix `(impl)`. `[DIAG]` lines are reported only.
 
 `tests/data/hadronic/anchors/crpropa-lossrate-CMB-6rows.txt`: the six CRPropa
 anchor rows with their provenance (section 4, item 5).
@@ -221,12 +225,32 @@ covers every byte of the data block; `grep -v '^#' FILE | sha256sum`
 reproduces it (verified for all five files). String values are JSON-escaped;
 non-finite numeric metadata is refused by the writer and by the reader.
 
-Reader (round 2, R2): the header/data boundary is found once; the remaining
-bytes are hashed verbatim and parsed separately; a missing or mismatched
-digest throws; then the content is validated (required keys, format and
-revision, canonical columns, exactly seven finite tokens per row, node_count
-equal to the row count, at least two rows, Gamma strictly increasing, J and I
-strictly positive). Unknown extra keys are ignored.
+Reader (round 2, R2; round 3, R5): the header/data boundary is found once;
+the remaining bytes are hashed verbatim and parsed separately. Every header
+value, required or not, is parsed by a strict JSON value parser (RFC 8259
+grammar: objects, arrays, strings with the standard escapes including
+surrogate pairs, numbers with JSON's grammar only, `true`, `false`, `null`;
+no leading `+`, no leading zeros, no `NaN` or `Infinity`, no unescaped
+control characters, no duplicate object keys, nothing before or after the
+value but whitespace); a value that is not strict JSON is an error. The
+required keys are then type-checked: `format`, `producer`, `version`,
+`status`, `grid_variable`, `data_sha256` must be strings;
+`physical_mass_ratio`, `eps_prime_max`, `gamma_envelope`, `gamma_th`,
+`gamma_min`, `gamma_max`, `y_min`, `y_max`, `lower_edge_fraction`,
+`endpoint_coalescing`, `I_peak`, `gamma_at_I_peak`, `number_normalization`,
+`mean_photon_energy`, `discarded_number_fraction`,
+`discarded_energy_fraction` must be numbers (finite by the grammar, since the
+parser refuses anything that is not a finite double); `format_revision`,
+`first_decade_intervals_per_decade`, `other_intervals_per_decade`,
+`first_decade_node_count`, `node_count` must be JSON integers (no fraction,
+no exponent: `466.0` is refused); `gamma_p_max_input` must be `null` or a
+number; `photon_field` must be an object with a string member `type`;
+`quadrature` must be an object; `columns` must be an array of strings equal
+to the canonical list. A missing or mismatched `data_sha256` throws. Then the
+content is validated (exactly seven finite tokens per row, `node_count` equal
+to the row count, at least two rows, Gamma strictly increasing, J and I
+strictly positive). Unknown extra keys are allowed and ignored, but must be
+valid JSON.
 
 ## 4. Acceptance items (contract section 5), measured
 
@@ -557,14 +581,14 @@ the README and this report are in the following commit.
 | R2 (blocking): literal-byte hashing and reader validation | accepted, `5aadf9d` | `parse_table_file` finds the header/data boundary once, hashes the remaining bytes verbatim, parses the same bytes separately; a missing or mismatched `data_sha256` throws; then required keys, format and revision, canonical `columns`, exactly seven finite tokens per row, `node_count` equal to the row count, at least two rows, Gamma strictly increasing and J, I > 0 are enforced. Negative tests (run on the mono05 and blackbody files): changed data token, inserted blank line (stale and recomputed digest), inserted comment line, missing terminal newline (stale and recomputed digest), empty data block with a valid digest, one-row and two-row tables with negative J and a correct digest, non-increasing Gamma, header claiming 999 nodes, missing `data_sha256`, eight-token row: all rejected. The positive round trip is kept. `Sha256` is untouched. |
 | R3 (should fix): strict spectrum rows and options | accepted, `5aadf9d` | `TableBath` rejects any non-comment, non-empty row that is not exactly two finite numbers, naming file and line (tests: non-numeric token, one and three columns, `inf`; comments and blank lines still accepted). The tool's options are parsed by `parse_dump_options` (`bh_options.h`): `strtod` with end pointer, whole string consumed, finite; eps0 and eps_max in (0, 2), eps_min in (0, 2) (blackbody: [0, 2)), theta > 0, mu_r > 0, gamma_p_max > 1 or the word `auto`; unknown or repeated options and missing required options are errors; failures exit with 2 and a message. Tests include the referee's strings `.5 malformed` and `--gamma_p_max not-a-number`, and `--gamma_p_max 0`. |
 | R4 (should fix): power-segment integral | accepted, `5aadf9d` | `power_integral` = a^t L expm1(tL)/(tL), limit a^t L for abs(tL) < 1e-18 (threshold on the product, not on t alone); used by the powerlaw normalisation and mean energy and by the table-bath segments. Test against a 256-panel Gauss-Legendre reference at p = -1 + 2e-12, -1 + 1e-11, -0.9, -1.1, -1, -2 on [0.1, 1.5] and at p = -1 + 2e-12, -1 + 1e-11, -0.9, -1.1, -1 on [0.5, 0.5001]: max relative deviation 7.3e-15 (tolerance 1e-13). Regenerated tables: every data token byte-identical to round 1 (change < 1e-12 as required; measured 0 at the printed 13 digits). |
-| R5 (should fix): contract 1.4 schema | accepted, `5aadf9d` | Writer and reader implement the section-2 schema exactly (key list and order, one-space columns, strict JSON, `json_string` escaping of quotes, backslashes and control characters for every string including file names, non-finite numeric metadata refused, `endpoint_coalescing: 1e-9` stated, `gamma_at_I_peak`, `number_normalization`, `mean_photon_energy`, `file_sha256` for table baths). Node placement unchanged (the adopted convention). `test_foreign_reader` parses a hand-written file with different number formatting, a `bhref` producer, escaped strings, a different `quadrature` object and an unknown extra key, and checks the decoded metadata and values; it also checks rejection of a missing key, non-canonical columns, an unsupported revision and `NaN` metadata. |
+| R5 (should fix): contract 1.4 schema | accepted, `5aadf9d` | Writer and reader implement the section-2 schema exactly (key list and order, one-space columns, strict JSON, `json_string` escaping of quotes, backslashes and control characters for every string including file names, non-finite numeric metadata refused, `endpoint_coalescing: 1e-9` stated, `gamma_at_I_peak`, `number_normalization`, `mean_photon_energy`, `file_sha256` for table baths). Node placement unchanged (the adopted convention). `test_foreign_reader` parses a hand-written file with different number formatting, a `bhref` producer, escaped strings, a different `quadrature` object and an unknown extra key, and checks the decoded metadata and values; it also checks rejection of a missing key, non-canonical columns, an unsupported revision and `NaN` metadata. **Round 3 (closure finding, accepted, commit following `32c19e7`):** the ad-hoc value handling (object text stored unvalidated, `strtod` number grammar, comma-less string arrays) is replaced by the strict JSON value parser and the type checks described in section 3.4. Regressions on the mono05 and blackbody files, each a single header replacement with a valid data digest: `photon_field: {this is not JSON}`, `quadrature: {"h_log_eps": NaN}`, `physical_mass_ratio: +1836.15`, `columns: ["gamma_p" "beta_p" ... ]` without commas, `gamma_th: 2.125 x`, an unterminated string, an unescaped control character inside a string, a nested object with a missing closing brace, `node_count: 466.0` (and `406.0`), `Infinity`, a leading zero, a number ending in a point, `photon_field` without `type`, `columns` as a string, `format_revision` as a string, an unknown key with invalid JSON: all rejected; an unknown key with valid JSON is still accepted. Parser unit checks: 16 valid values accepted, 30 invalid values rejected, the integer grammar distinguishes `466` from `466.0` and `4e2`. No numerical code and no table changed; the five candidate files are byte-identical (hashes in section 6). |
 | R6 (should fix): CRPropa fixture | accepted, `5aadf9d` | The six values moved to `tests/data/hadronic/anchors/crpropa-lossrate-CMB-6rows.txt` with the distributed-file SHA-256, the CRPropa3-data commit, the six log10 gamma values, the units and the verification note; the test reads the fixture (path from the compile definition `BH_TEST_DATA_DIR`) and regenerates nothing. C++ only. |
 | R7 (note): report wording | accepted, this report | "72 registered checks" replaced by the two-class count (55 contract items, 89 implementation-chosen checks); the phi threshold check at d = 1e-4 labelled implementation-chosen (item 2); the mu_r = 100 repeat's skipped items and the reason stated (item 4 and section 7.9); the deep-UR checks at 2 Gamma eps_c = 900 stated as kernel-limit tests outside the production envelope (item 5); section 3.1 corrected to say the mono branch uses zero lower cumulatives directly. |
 | R8 (note): tool link dependencies | accepted (optional), `5aadf9d` | `tools/CMakeLists.txt` clears the target's inherited `LINK_LIBRARIES`; `ldd` on the built tool shows no Kokkos, ADIOS2 or OpenMP library. Top-level link settings untouched. |
 
 Nothing was deferred or rejected.
 
-## 11. Round 2: build and test summary
+## 11. Rounds 2 and 3: build and test summary
 
 Same container and configuration as phase 0 (GCC 13.3, Serial + OpenMP, no
 MPI, single precision, output on). At `5aadf9d`:
@@ -578,3 +602,14 @@ MPI, single precision, output on). At `5aadf9d`:
 | tool | `--eps0 ".5 malformed"` and `--gamma_p_max not-a-number` exit 2 with a message; `--mu_r 40` exits 1 with the R1 message; `--gamma_p_max auto --mu_r 100` reproduces the mono05_mu100 table |
 
 The physics numbers of section 4 are unchanged from round 1.
+
+Round 3 (strict JSON validation in the reader, same container and
+configuration): build 160 targets, no errors, no warnings in the new files;
+ctest 53/53 passed, 4.2 s; `ARCHETYPES::bh_physics` contract items 55 passed,
+0 failed, implementation-chosen checks 126 passed, 0 failed, 2.2 s. The five
+candidate tables are byte-identical to the round-2 files (verified with
+`sha256sum -c` against the hashes recorded before the change; file hashes
+`e9699811...` mono05, `3e9276db...` mono03, `2bc1a60a...` powerlaw,
+`8c16875a...` blackbody, `be4a79d7...` mono05_mu100, full values in section
+6). No numerical code changed: the diff touches only `bh_table_io.h` (JSON
+parser and reader decoding) and the test file.

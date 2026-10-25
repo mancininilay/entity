@@ -168,122 +168,375 @@ namespace arch::bh {
   };
 
   // ------------------------------------------------------------------------ //
-  // Minimal JSON helpers for the header values
+  // Strict JSON value parser (RFC 8259) for the header values
   // ------------------------------------------------------------------------ //
+  struct JsonValue {
+    enum class Type {
+      Null,
+      Bool,
+      Number,
+      String,
+      Array,
+      Object
+    };
+
+    Type   type { Type::Null };
+    bool   boolean { false };
+    double number { 0.0 };
+    bool is_integer { false }; // JSON integer grammar: no fraction, no exponent
+    std::string                                    string;
+    std::vector<JsonValue>                         array;
+    std::vector<std::pair<std::string, JsonValue>> object;
+
+    const JsonValue* find(const std::string& key) const {
+      for (const auto& [k, v] : object) {
+        if (k == key) {
+          return &v;
+        }
+      }
+      return nullptr;
+    }
+  };
+
+  class JsonParser {
+  public:
+    /**
+     * @brief Parse exactly one JSON value; whitespace around it is allowed,
+     *        anything else before or after it is an error
+     */
+    static JsonValue parse(const std::string& text) {
+      JsonParser p(text);
+      p.skip_ws();
+      JsonValue v = p.value();
+      p.skip_ws();
+      if (p.m_pos != text.size()) {
+        p.fail("trailing characters after the JSON value");
+      }
+      return v;
+    }
+
+  private:
+    explicit JsonParser(const std::string& s) : m_s { s } {}
+
+    [[noreturn]]
+    void fail(const std::string& what) const {
+      throw std::runtime_error("JSON: " + what + " at offset " +
+                               std::to_string(m_pos) + " in '" + m_s + "'");
+    }
+
+    bool at_end() const {
+      return m_pos >= m_s.size();
+    }
+
+    char peek() const {
+      return m_s[m_pos];
+    }
+
+    void skip_ws() {
+      while (!at_end() && (peek() == ' ' || peek() == '\t' || peek() == '\n' ||
+                           peek() == '\r')) {
+        ++m_pos;
+      }
+    }
+
+    static bool is_digit(char c) {
+      return c >= '0' && c <= '9';
+    }
+
+    JsonValue value() {
+      if (at_end()) {
+        fail("unexpected end of input");
+      }
+      const char c = peek();
+      if (c == '{') {
+        return object();
+      }
+      if (c == '[') {
+        return array();
+      }
+      if (c == '"') {
+        JsonValue v;
+        v.type   = JsonValue::Type::String;
+        v.string = string_literal();
+        return v;
+      }
+      if (c == 't') {
+        return literal("true", JsonValue::Type::Bool, true);
+      }
+      if (c == 'f') {
+        return literal("false", JsonValue::Type::Bool, false);
+      }
+      if (c == 'n') {
+        return literal("null", JsonValue::Type::Null, false);
+      }
+      if (c == '-' || is_digit(c)) {
+        return number();
+      }
+      fail(std::string("unexpected character '") + c + "'");
+    }
+
+    JsonValue literal(const char* word, JsonValue::Type t, bool b) {
+      const std::size_t n = std::strlen(word);
+      if (m_s.compare(m_pos, n, word) != 0) {
+        fail(std::string("invalid literal, expected ") + word);
+      }
+      m_pos += n;
+      JsonValue v;
+      v.type    = t;
+      v.boolean = b;
+      return v;
+    }
+
+    JsonValue number() {
+      const std::size_t start = m_pos;
+      if (peek() == '-') {
+        ++m_pos;
+      }
+      if (at_end()) {
+        fail("invalid number");
+      }
+      if (peek() == '0') {
+        ++m_pos;
+      } else if (peek() >= '1' && peek() <= '9') {
+        while (!at_end() && is_digit(peek())) {
+          ++m_pos;
+        }
+      } else {
+        fail("invalid number");
+      }
+      bool integer = true;
+      if (!at_end() && peek() == '.') {
+        integer = false;
+        ++m_pos;
+        if (at_end() || !is_digit(peek())) {
+          fail("invalid number: digit expected after the decimal point");
+        }
+        while (!at_end() && is_digit(peek())) {
+          ++m_pos;
+        }
+      }
+      if (!at_end() && (peek() == 'e' || peek() == 'E')) {
+        integer = false;
+        ++m_pos;
+        if (!at_end() && (peek() == '+' || peek() == '-')) {
+          ++m_pos;
+        }
+        if (at_end() || !is_digit(peek())) {
+          fail("invalid number: digit expected in the exponent");
+        }
+        while (!at_end() && is_digit(peek())) {
+          ++m_pos;
+        }
+      }
+      const std::string tok = m_s.substr(start, m_pos - start);
+      const double      v   = std::strtod(tok.c_str(), nullptr);
+      if (!std::isfinite(v)) {
+        fail("number " + tok + " is not representable as a finite double");
+      }
+      JsonValue j;
+      j.type       = JsonValue::Type::Number;
+      j.number     = v;
+      j.is_integer = integer;
+      return j;
+    }
+
+    unsigned hex4() {
+      if (m_pos + 4 > m_s.size()) {
+        fail("truncated \\u escape");
+      }
+      unsigned cp = 0;
+      for (int i = 0; i < 4; ++i) {
+        const char c   = m_s[m_pos++];
+        cp           <<= 4;
+        if (c >= '0' && c <= '9') {
+          cp |= static_cast<unsigned>(c - '0');
+        } else if (c >= 'a' && c <= 'f') {
+          cp |= static_cast<unsigned>(c - 'a' + 10);
+        } else if (c >= 'A' && c <= 'F') {
+          cp |= static_cast<unsigned>(c - 'A' + 10);
+        } else {
+          fail("invalid hex digit in \\u escape");
+        }
+      }
+      return cp;
+    }
+
+    static void append_utf8(std::string& out, unsigned cp) {
+      if (cp < 0x80) {
+        out += static_cast<char>(cp);
+      } else if (cp < 0x800) {
+        out += static_cast<char>(0xC0 | (cp >> 6));
+        out += static_cast<char>(0x80 | (cp & 0x3F));
+      } else if (cp < 0x10000) {
+        out += static_cast<char>(0xE0 | (cp >> 12));
+        out += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+        out += static_cast<char>(0x80 | (cp & 0x3F));
+      } else {
+        out += static_cast<char>(0xF0 | (cp >> 18));
+        out += static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
+        out += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+        out += static_cast<char>(0x80 | (cp & 0x3F));
+      }
+    }
+
+    std::string string_literal() {
+      ++m_pos; // opening quote
+      std::string out;
+      while (true) {
+        if (at_end()) {
+          fail("unterminated string");
+        }
+        const auto c = static_cast<unsigned char>(m_s[m_pos++]);
+        if (c == '"') {
+          return out;
+        }
+        if (c < 0x20) {
+          fail("unescaped control character in string");
+        }
+        if (c != '\\') {
+          out += static_cast<char>(c);
+          continue;
+        }
+        if (at_end()) {
+          fail("unterminated escape sequence");
+        }
+        const char e = m_s[m_pos++];
+        switch (e) {
+          case '"':
+            out += '"';
+            break;
+          case '\\':
+            out += '\\';
+            break;
+          case '/':
+            out += '/';
+            break;
+          case 'b':
+            out += '\b';
+            break;
+          case 'f':
+            out += '\f';
+            break;
+          case 'n':
+            out += '\n';
+            break;
+          case 'r':
+            out += '\r';
+            break;
+          case 't':
+            out += '\t';
+            break;
+          case 'u': {
+            unsigned cp = hex4();
+            if (cp >= 0xD800 && cp <= 0xDBFF) {
+              if (m_pos + 2 > m_s.size() || m_s[m_pos] != '\\' ||
+                  m_s[m_pos + 1] != 'u') {
+                fail("high surrogate not followed by a low surrogate");
+              }
+              m_pos             += 2;
+              const unsigned lo  = hex4();
+              if (lo < 0xDC00 || lo > 0xDFFF) {
+                fail("invalid low surrogate");
+              }
+              cp = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
+            } else if (cp >= 0xDC00 && cp <= 0xDFFF) {
+              fail("lone low surrogate");
+            }
+            append_utf8(out, cp);
+            break;
+          }
+          default:
+            fail(std::string("invalid escape \\") + e);
+        }
+      }
+    }
+
+    JsonValue array() {
+      ++m_pos; // '['
+      JsonValue v;
+      v.type = JsonValue::Type::Array;
+      skip_ws();
+      if (!at_end() && peek() == ']') {
+        ++m_pos;
+        return v;
+      }
+      while (true) {
+        skip_ws();
+        v.array.push_back(value());
+        skip_ws();
+        if (at_end()) {
+          fail("unterminated array");
+        }
+        if (peek() == ',') {
+          ++m_pos;
+          continue;
+        }
+        if (peek() == ']') {
+          ++m_pos;
+          return v;
+        }
+        fail("expected ',' or ']' in array");
+      }
+    }
+
+    JsonValue object() {
+      ++m_pos; // '{'
+      JsonValue v;
+      v.type = JsonValue::Type::Object;
+      skip_ws();
+      if (!at_end() && peek() == '}') {
+        ++m_pos;
+        return v;
+      }
+      while (true) {
+        skip_ws();
+        if (at_end() || peek() != '"') {
+          fail("expected a string key in object");
+        }
+        const std::string key = string_literal();
+        skip_ws();
+        if (at_end() || peek() != ':') {
+          fail("expected ':' after object key");
+        }
+        ++m_pos;
+        skip_ws();
+        if (v.find(key) != nullptr) {
+          fail("duplicate object key '" + key + "'");
+        }
+        v.object.emplace_back(key, value());
+        skip_ws();
+        if (at_end()) {
+          fail("unterminated object");
+        }
+        if (peek() == ',') {
+          ++m_pos;
+          continue;
+        }
+        if (peek() == '}') {
+          ++m_pos;
+          return v;
+        }
+        fail("expected ',' or '}' in object");
+      }
+    }
+
+    const std::string& m_s;
+    std::size_t        m_pos { 0 };
+  };
+
+  inline JsonValue parse_json(const std::string& text) {
+    return JsonParser::parse(text);
+  }
 
   /**
    * @brief Decode a JSON string literal (with its quotes); throws otherwise
    */
   inline std::string json_unescape(const std::string& raw) {
-    if (raw.size() < 2 || raw.front() != '"' || raw.back() != '"') {
+    const JsonValue v = parse_json(raw);
+    if (v.type != JsonValue::Type::String) {
       throw std::runtime_error("expected a JSON string, got " + raw);
     }
-    std::string out;
-    for (std::size_t i = 1; i + 1 < raw.size(); ++i) {
-      const char c = raw[i];
-      if (c != '\\') {
-        out += c;
-        continue;
-      }
-      if (i + 2 >= raw.size()) {
-        throw std::runtime_error("dangling escape in JSON string " + raw);
-      }
-      const char e = raw[++i];
-      switch (e) {
-        case '"':
-          out += '"';
-          break;
-        case '\\':
-          out += '\\';
-          break;
-        case '/':
-          out += '/';
-          break;
-        case 'b':
-          out += '\b';
-          break;
-        case 'f':
-          out += '\f';
-          break;
-        case 'n':
-          out += '\n';
-          break;
-        case 'r':
-          out += '\r';
-          break;
-        case 't':
-          out += '\t';
-          break;
-        case 'u': {
-          if (i + 4 >= raw.size()) {
-            throw std::runtime_error("truncated \\u escape in " + raw);
-          }
-          const unsigned long cp = std::stoul(raw.substr(i + 1, 4), nullptr, 16);
-          i += 4;
-          if (cp < 0x80) {
-            out += static_cast<char>(cp);
-          } else if (cp < 0x800) {
-            out += static_cast<char>(0xC0 | (cp >> 6));
-            out += static_cast<char>(0x80 | (cp & 0x3F));
-          } else {
-            out += static_cast<char>(0xE0 | (cp >> 12));
-            out += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
-            out += static_cast<char>(0x80 | (cp & 0x3F));
-          }
-          break;
-        }
-        default:
-          throw std::runtime_error(
-            std::string("invalid escape \\") + e + " in " + raw);
-      }
-    }
-    return out;
-  }
-
-  /**
-   * @brief Strict JSON number (finite); throws otherwise
-   */
-  inline double json_to_number(const std::string& raw, const std::string& key) {
-    double v = 0.0;
-    if (!parse_number_strict(raw, v) || raw == "nan" || raw == "inf") {
-      throw std::runtime_error(
-        "header key " + key + ": '" + raw + "' is not a finite JSON number");
-    }
-    return v;
-  }
-
-  /**
-   * @brief JSON array of strings, e.g. ["a", "b"]; throws otherwise
-   */
-  inline std::vector<std::string> json_string_array(const std::string& raw) {
-    auto trim = [](std::string s) {
-      const auto a = s.find_first_not_of(" \t");
-      const auto b = s.find_last_not_of(" \t");
-      return (a == std::string::npos) ? std::string() : s.substr(a, b - a + 1);
-    };
-    const std::string t = trim(raw);
-    if (t.size() < 2 || t.front() != '[' || t.back() != ']') {
-      throw std::runtime_error("expected a JSON array, got " + raw);
-    }
-    std::vector<std::string> out;
-    std::string              inner = t.substr(1, t.size() - 2);
-    std::size_t              pos   = 0;
-    while (pos < inner.size()) {
-      const auto q1 = inner.find('"', pos);
-      if (q1 == std::string::npos) {
-        break;
-      }
-      std::size_t q2 = q1 + 1;
-      while (q2 < inner.size() && !(inner[q2] == '"' && inner[q2 - 1] != '\\')) {
-        ++q2;
-      }
-      if (q2 >= inner.size()) {
-        throw std::runtime_error("unterminated string in JSON array " + raw);
-      }
-      out.push_back(json_unescape(inner.substr(q1, q2 - q1 + 1)));
-      pos = q2 + 1;
-    }
-    return out;
+    return v.string;
   }
 
   /**
@@ -453,7 +706,8 @@ namespace arch::bh {
   }
 
   // ------------------------------------------------------------------------ //
-  // Reader: hashes the literal data bytes, then validates everything
+  // Reader: hashes the literal data bytes, parses every header value as strict
+  // JSON, then validates types and content
   // ------------------------------------------------------------------------ //
   struct TableFileContents {
     std::map<std::string, std::string> header; // key -> raw JSON text
@@ -565,67 +819,123 @@ namespace arch::bh {
     if (data.back() != '\n') {
       fail("data block does not end with a newline");
     }
+    // --- every header value must be strict JSON (RFC 8259)
+    std::map<std::string, JsonValue> parsed;
+    for (const auto& [k, raw] : c.header) {
+      try {
+        parsed[k] = parse_json(raw);
+      } catch (const std::exception& e) {
+        fail("header key " + k + ": " + e.what());
+      }
+    }
     for (const std::string& k : required_header_keys()) {
       if (!c.header.count(k)) {
         fail("missing required header key " + k);
       }
     }
-    c.data_sha256            = json_unescape(c.header.at("data_sha256"));
+    // --- typed access to the required keys
+    auto str = [&parsed, &fail](const std::string& k) {
+      const JsonValue& v = parsed.at(k);
+      if (v.type != JsonValue::Type::String) {
+        fail("header key " + k + " must be a JSON string");
+      }
+      return v.string;
+    };
+    auto num = [&parsed, &fail](const std::string& k) {
+      const JsonValue& v = parsed.at(k);
+      if (v.type != JsonValue::Type::Number) {
+        fail("header key " + k + " must be a JSON number");
+      }
+      return v.number; // finite by construction
+    };
+    auto integer = [&parsed, &fail](const std::string& k) {
+      const JsonValue& v = parsed.at(k);
+      if (v.type != JsonValue::Type::Number || !v.is_integer) {
+        fail("header key " + k + " must be a JSON integer");
+      }
+      return v.number;
+    };
+    auto object = [&parsed, &fail](const std::string& k) -> const JsonValue& {
+      const JsonValue& v = parsed.at(k);
+      if (v.type != JsonValue::Type::Object) {
+        fail("header key " + k + " must be a JSON object");
+      }
+      return v;
+    };
+    c.data_sha256            = str("data_sha256");
     const std::string digest = Sha256::digest(data);
     if (c.data_sha256 != digest) {
       fail("data_sha256 mismatch: header " + c.data_sha256 + ", data " + digest);
     }
     // --- decode the required metadata
-    c.format = json_unescape(c.header.at("format"));
+    c.format = str("format");
     if (c.format != "bh-rate-table") {
       fail("format is " + c.format + ", expected bh-rate-table");
     }
-    c.format_revision = static_cast<long>(
-      json_to_number(c.header.at("format_revision"), "format_revision"));
+    c.format_revision = static_cast<long>(integer("format_revision"));
     if (c.format_revision != 1) {
       fail("format_revision " + std::to_string(c.format_revision) +
            " not supported");
     }
-    c.producer      = json_unescape(c.header.at("producer"));
-    c.version       = json_unescape(c.header.at("version"));
-    c.status        = json_unescape(c.header.at("status"));
-    c.grid_variable = json_unescape(c.header.at("grid_variable"));
-    auto numkey     = [&c](const std::string& k) {
-      return json_to_number(c.header.at(k), k);
-    };
-    c.physical_mass_ratio               = numkey("physical_mass_ratio");
-    c.eps_prime_max                     = numkey("eps_prime_max");
-    c.gamma_envelope                    = numkey("gamma_envelope");
-    c.gamma_th                          = numkey("gamma_th");
-    c.gamma_min                         = numkey("gamma_min");
-    c.gamma_max                         = numkey("gamma_max");
-    c.y_min                             = numkey("y_min");
-    c.y_max                             = numkey("y_max");
-    c.lower_edge_fraction               = numkey("lower_edge_fraction");
-    c.endpoint_coalescing               = numkey("endpoint_coalescing");
+    c.producer                          = str("producer");
+    c.version                           = str("version");
+    c.status                            = str("status");
+    c.grid_variable                     = str("grid_variable");
+    c.physical_mass_ratio               = num("physical_mass_ratio");
+    c.eps_prime_max                     = num("eps_prime_max");
+    c.gamma_envelope                    = num("gamma_envelope");
+    c.gamma_th                          = num("gamma_th");
+    c.gamma_min                         = num("gamma_min");
+    c.gamma_max                         = num("gamma_max");
+    c.y_min                             = num("y_min");
+    c.y_max                             = num("y_max");
+    c.lower_edge_fraction               = num("lower_edge_fraction");
+    c.endpoint_coalescing               = num("endpoint_coalescing");
     c.first_decade_intervals_per_decade = static_cast<long>(
-      numkey("first_decade_intervals_per_decade"));
+      integer("first_decade_intervals_per_decade"));
     c.other_intervals_per_decade = static_cast<long>(
-      numkey("other_intervals_per_decade"));
-    c.I_peak                    = numkey("I_peak");
-    c.gamma_at_I_peak           = numkey("gamma_at_I_peak");
-    c.number_normalization      = numkey("number_normalization");
-    c.mean_photon_energy        = numkey("mean_photon_energy");
-    c.discarded_number_fraction = numkey("discarded_number_fraction");
-    c.discarded_energy_fraction = numkey("discarded_energy_fraction");
+      integer("other_intervals_per_decade"));
+    c.I_peak                    = num("I_peak");
+    c.gamma_at_I_peak           = num("gamma_at_I_peak");
+    c.number_normalization      = num("number_normalization");
+    c.mean_photon_energy        = num("mean_photon_energy");
+    c.discarded_number_fraction = num("discarded_number_fraction");
+    c.discarded_energy_fraction = num("discarded_energy_fraction");
     {
-      const double n1 = numkey("first_decade_node_count");
-      const double n2 = numkey("node_count");
-      if (n1 < 0.0 || n2 < 0.0 || n1 != std::floor(n1) || n2 != std::floor(n2)) {
+      const double n1 = integer("first_decade_node_count");
+      const double n2 = integer("node_count");
+      if (n1 < 0.0 || n2 < 0.0) {
         fail("node counts must be non-negative integers");
       }
       c.first_decade_node_count = static_cast<std::size_t>(n1);
       c.node_count              = static_cast<std::size_t>(n2);
     }
-    if (c.header.at("gamma_p_max_input") != "null") {
-      numkey("gamma_p_max_input");
+    {
+      const JsonValue& g = parsed.at("gamma_p_max_input");
+      if (g.type != JsonValue::Type::Null && g.type != JsonValue::Type::Number) {
+        fail("header key gamma_p_max_input must be null or a JSON number");
+      }
     }
-    c.columns = json_string_array(c.header.at("columns"));
+    {
+      const JsonValue& pf = object("photon_field");
+      const JsonValue* t  = pf.find("type");
+      if (t == nullptr || t->type != JsonValue::Type::String) {
+        fail("photon_field must carry a string member \"type\"");
+      }
+    }
+    object("quadrature");
+    {
+      const JsonValue& cols = parsed.at("columns");
+      if (cols.type != JsonValue::Type::Array) {
+        fail("header key columns must be a JSON array of strings");
+      }
+      for (const JsonValue& e : cols.array) {
+        if (e.type != JsonValue::Type::String) {
+          fail("header key columns must be a JSON array of strings");
+        }
+        c.columns.push_back(e.string);
+      }
+    }
     if (c.columns != canonical_columns()) {
       fail("columns differ from the canonical list");
     }

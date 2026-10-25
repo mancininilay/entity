@@ -1125,6 +1125,78 @@ namespace {
                   &err),
                 err);
     }
+    // round 3: header values that are not strict JSON (each a single
+    // replacement in an otherwise valid header with a valid data digest)
+    {
+      struct Bad {
+        const char* name;
+        const char* key;
+        const char* value;
+      };
+
+      const std::vector<Bad> bad = {
+        {                   "R5/3: photon_field not JSON","photon_field",                                                "{this is not JSON}"                                                          },
+        {                   "R5/3: NaN inside quadrature",          "quadrature",                                              "{\"h_log_eps\": NaN}" },
+        {        "R5/3: leading + in physical_mass_ratio", "physical_mass_ratio",                                                          "+1836.15" },
+        {                  "R5/3: columns without commas",
+         "columns", "[\"gamma_p\" \"beta_p\" \"y\" \"J\" \"I\" \"Dmean\" \"eps_mean\"]"                                                              },
+        {         "R5/3: trailing garbage after a number",            "gamma_th",                                                           "2.125 x" },
+        {                     "R5/3: unterminated string",            "producer",                                                      "\"entity-cpp" },
+        { "R5/3: unescaped control character in a string",             "version",                                                       "\"v0.3\t1\"" },
+        { "R5/3: nested object missing its closing brace",
+         "quadrature",                                                "{\"a\": {\"b\": 1}"                                                           },
+        {                                "R5/3: Infinity",              "I_peak",                                                          "Infinity" },
+        {                            "R5/3: leading zero",     "format_revision",                                                                "01" },
+        {                "R5/3: number ending in a point",           "gamma_min",                                                                "2." },
+        {               "R5/3: photon_field without type",        "photon_field",                                                   "{\"eps0\": 0.5}" },
+        {                     "R5/3: columns as a string",
+         "columns",                           "\"gamma_p beta_p y J I Dmean eps_mean\""                                                              },
+        {             "R5/3: format_revision as a string",     "format_revision",                                                             "\"1\"" },
+        {           "R5/3: unknown key with invalid JSON",           "zzz_extra",                                                           "{broken" },
+      };
+      for (const Bad& b : bad) {
+        std::string f2;
+        if (std::string(b.key) == "zzz_extra") {
+          f2 = header + "# zzz_extra: " + b.value + "\n" + data;
+        } else {
+          f2 = rebuild_file(bytes,
+                            data,
+                            {
+                              { b.key, b.value }
+          });
+        }
+        impl_true(b.name,
+                  throws(
+                    [&] {
+                      parse_table_file(f2);
+                    },
+                    &err),
+                  err);
+      }
+      impl_true("R5/3: node_count " + std::to_string(T.size()) +
+                  ".0 (non-integer) rejected",
+                throws(
+                  [&] {
+                    parse_table_file(rebuild_file(
+                      bytes,
+                      data,
+                      {
+                        { "node_count", std::to_string(T.size()) + ".0" }
+                    }));
+                  },
+                  &err),
+                err);
+      err = "";
+      impl_true("R5/3: unknown key with valid JSON still accepted",
+                !throws(
+                  [&] {
+                    parse_table_file(
+                      header +
+                      "# zzz_extra: {\"ok\": [1, 2.5e-3, true, null]}\n" + data);
+                  },
+                  &err),
+                err);
+    }
     // SHA-256 known-answer test (FIPS 180-4 example)
     impl_true(
       "SHA-256 known answer ('abc')",
@@ -1212,6 +1284,94 @@ namespace {
               json_unescape("\"spec\\\\dir\\\\n\\\"q\\\".txt\"") ==
                 "spec\\dir\\n\"q\".txt",
               json_unescape("\"spec\\\\dir\\\\n\\\"q\\\".txt\""));
+    // round 3: the strict JSON value parser itself
+    {
+      const std::vector<std::string> accepted = {
+        "0",
+        "-0",
+        "1836.15",
+        "1e-12",
+        "-2.5E+3",
+        "0.5",
+        "\"\"",
+        "\"a\\u00e9\\ud83d\\ude00\"",
+        "true",
+        "false",
+        "null",
+        "[]",
+        "{}",
+        "[1, \"x\", [null, {}]]",
+        " {\"a\": {\"b\": [1, 2]}, \"c\": \"d\"} ",
+        "{\"n\": -1.0e-300}"
+      };
+      const std::vector<std::string> rejected = { "+1",
+                                                  "01",
+                                                  "1.",
+                                                  ".5",
+                                                  "1e",
+                                                  "1e+",
+                                                  "NaN",
+                                                  "Infinity",
+                                                  "-Infinity",
+                                                  "nan",
+                                                  "inf",
+                                                  "1 2",
+                                                  "\"abc",
+                                                  "\"a\tb\"",
+                                                  "\"\\x\"",
+                                                  "\"\\u12\"",
+                                                  "[1,]",
+                                                  "[1 2]",
+                                                  "{\"a\" 1}",
+                                                  "{\"a\": 1,}",
+                                                  "{a: 1}",
+                                                  "{\"a\": {\"b\": 1}",
+                                                  "tru",
+                                                  "nul",
+                                                  "",
+                                                  "   ",
+                                                  "1e400",
+                                                  "{\"a\": 1, \"a\": 2}",
+                                                  "\"\\ud800\"",
+                                                  "[1] x" };
+      std::string                    worst_acc, worst_rej;
+      int                            n_acc = 0, n_rej = 0;
+      for (const std::string& t : accepted) {
+        if (!throws([&] {
+              parse_json(t);
+            })) {
+          ++n_acc;
+        } else {
+          worst_acc += " " + t;
+        }
+      }
+      for (const std::string& t : rejected) {
+        if (throws([&] {
+              parse_json(t);
+            })) {
+          ++n_rej;
+        } else {
+          worst_rej += " " + t;
+        }
+      }
+      impl_true("R5/3: strict JSON parser accepts valid values",
+                n_acc == static_cast<int>(accepted.size()),
+                worst_acc.empty() ? std::to_string(n_acc) + " of " +
+                                      std::to_string(accepted.size())
+                                  : "wrongly rejected:" + worst_acc);
+      impl_true("R5/3: strict JSON parser rejects invalid values",
+                n_rej == static_cast<int>(rejected.size()),
+                worst_rej.empty() ? std::to_string(n_rej) + " of " +
+                                      std::to_string(rejected.size())
+                                  : "wrongly accepted:" + worst_rej);
+      const JsonValue v = parse_json(
+        "{\"n\": 466, \"x\": 466.0, \"e\": 4e2, \"s\": \"\\u00e9\"}");
+      impl_true("R5/3: JSON integer grammar distinguished from 466.0 and 4e2",
+                v.find("n")->is_integer && !v.find("x")->is_integer &&
+                  !v.find("e")->is_integer && v.find("n")->number == 466.0 &&
+                  v.find("s")->string == "\xc3\xa9",
+                "ok");
+    }
     {
       const std::string nasty = "a\"b\\c\n\t\x01z";
       impl_true("R5: json_string / json_unescape round trip",
