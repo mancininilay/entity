@@ -960,14 +960,41 @@ auto main(int argc, char* argv[]) -> int {
     std::printf("bh_loss: table mono eps0 = %.3g: %zu nodes, gamma_th %.12g, gamma_min %.12g, gamma_max %.12g, "
                 "I_peak %.10e\n", EPS0, T.host.size(), T.host.gamma_th, T.host.gamma_min, T.host.gamma_max,
                 T.host.I_peak);
-    test_device_tables(T);
-    test_threshold(T);
-    test_tags(T);
-    test_above_table(T);
-    test_subcycling(T);
-    test_mu_independence_T6(T);
-    test_cooling_T5(T);
-    test_ulp_scan_T5b(T);
+    // optional group selection (ctest registers one entry per group so that
+    // the pre-registered verdicts are visible individually)
+    std::vector<std::string> groups;
+    for (int i = 1; i < argc; ++i) {
+      if (argv[i][0] != '-') {
+        groups.emplace_back(argv[i]);
+      }
+    }
+    auto want = [&groups](const char* g) {
+      return groups.empty() || std::find(groups.begin(), groups.end(), std::string(g)) != groups.end();
+    };
+    if (want("tables")) {
+      test_device_tables(T);
+    }
+    if (want("t9")) {
+      test_threshold(T);
+    }
+    if (want("tags")) {
+      test_tags(T);
+    }
+    if (want("above")) {
+      test_above_table(T);
+    }
+    if (want("subcycling")) {
+      test_subcycling(T);
+    }
+    if (want("t6")) {
+      test_mu_independence_T6(T);
+    }
+    if (want("t5")) {
+      test_cooling_T5(T);
+    }
+    if (want("t5b")) {
+      test_ulp_scan_T5b(T);
+    }
     std::printf("bh_loss summary: %d passed, %d failed, %d expected failures (T5b design off)\n",
                 n_pass, n_fail, n_expected_fail);
     if (n_fail > 0) {

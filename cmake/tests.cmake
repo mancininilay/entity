@@ -11,6 +11,7 @@ list(APPEND TEST_DIRECTORIES kernels)
 list(APPEND TEST_DIRECTORIES archetypes)
 list(APPEND TEST_DIRECTORIES framework)
 list(APPEND TEST_DIRECTORIES output)
+list(APPEND TEST_DIRECTORIES hadronic)
 
 foreach(test_dir IN LISTS TEST_DIRECTORIES)
   add_subdirectory(${SRC_DIR}/${test_dir}

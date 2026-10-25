@@ -1,0 +1,76 @@
+# bh_proto input: rejection: eta_u = 0 without allow_unsafe_application
+[simulation]
+  name    = "bh_reject"
+  engine  = "srpic"
+  runtime = 1.0
+
+[grid]
+  resolution = [16]
+  extent     = [[0.0, 16.0]]
+  [grid.metric]
+    metric = "minkowski"
+  [grid.boundaries]
+    fields    = [["PERIODIC"]]
+    particles = [["PERIODIC"]]
+
+[scales]
+  larmor0    = 1.0
+  skindepth0 = 1.0
+
+[algorithms]
+  [algorithms.timestep]
+    CFL = 0.5
+  [algorithms.fieldsolver]
+    enable = false
+  [algorithms.deposit]
+    enable = false
+
+[particles]
+  ppc0        = 1.0
+  use_weights = true
+  [[particles.species]]
+    label                    = "ion"
+    mass                     = 1836.15
+    charge                   = 1.0
+    maxnpart                 = 1e3
+    pusher                   = "Boris"
+    n_payloads_real          = 3
+    deposit                  = false
+    clear_interval           = 0
+    spatial_sorting_interval = 0
+
+[setup]
+  hadronic.enabled    = true
+  hadronic.species    = [1]
+  tau0                = 1.0
+  physical_mass_ratio = 1836.15
+  photon_field.type   = "mono"
+  photon_field.eps0   = 0.5
+  eta_u               = 0.0
+  pending_floor_ulp   = 100
+  f_max               = 0.1
+  max_substeps        = 64
+  ions.K              = [9180.75]
+  ions.per_K          = 4
+  ions.direction      = "+x"
+  ions.weight         = 1.0
+  fields.B            = [0.0, 0.0, 0.0]
+  fields.E            = [0.0, 0.0, 0.0]
+  ledger.every        = 100
+
+[output]
+  interval = 100000000
+  [output.fields]
+    enable = false
+  [output.particles]
+    enable = false
+  [output.spectra]
+    enable = false
+  [output.stats]
+    enable = false
+
+[checkpoint]
+  interval = 100000000
+
+[diagnostics]
+  interval = 100000000

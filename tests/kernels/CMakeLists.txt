@@ -41,7 +41,15 @@ gen_test(ext_force)
 gen_test(reduced_stats)
 gen_test(custom_emission)
 gen_test(custom_prtl_update)
-gen_test(bh_loss)
+# Bethe-Heitler loss-only kernel (P2 step 2): one ctest entry per pre-registered
+# group so that each verdict is visible; the executable runs every group when
+# called without arguments
+add_executable(test-kernels-bh_loss.xc bh_loss.cpp)
+add_dependencies(test-kernels-bh_loss.xc ntt_kernels ntt_metrics ntt_framework)
+target_link_libraries(test-kernels-bh_loss.xc PRIVATE ntt_kernels ntt_metrics ntt_framework)
+foreach(grp tables t9 tags above subcycling t6 t5 t5b)
+  add_test(NAME "KERNELS::bh_loss_${grp}" COMMAND test-kernels-bh_loss.xc ${grp})
+endforeach()
 
 if("${pgen}" STREQUAL "rec_mix")
   gen_test(rec_mix_segments)
