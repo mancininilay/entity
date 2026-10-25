@@ -64,7 +64,7 @@ namespace kernel::hadronic {
     double mu_r { 1836.15 };
     double eta_u { 1.0e-4 };
     double pending_floor_ulp { 100.0 };
-    double f_max { 0.1 };
+    double f_max { 0.01 };
     int    max_substeps { 64 };
     // payload indices into pld_r of the ion species
     unsigned short pld_pending { 0 };

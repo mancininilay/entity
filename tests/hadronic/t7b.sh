@@ -14,17 +14,20 @@
 # Usage: t7b.sh <entity.xc> <bh_check> <inputs> <workdir>
 source "$(dirname "$0")/common.sh"
 EXE="$1"; CHECK="$2"; INP="$3"; WD="$4"
+# Bash 3.2 compatible: indexed arrays only; eta_u per CFL tag through a function
 declare -a ENDS ENDSH ENDET FLR
-declare -A ETA=( [1]=1e-4 [2]=5e-5 [4]=2.5e-5 )
+eta_for() { case "$1" in 1) echo 1e-4 ;; 2) echo 5e-5 ;; 4) echo 2.5e-5 ;; *) echo "" ;; esac; }
+n_run=0
 for tag in 1 2 4; do
   run_entity "$EXE" "$INP/t7b_cfl$tag.toml" "$WD/cfl$tag"; check_rc $? "t7b run CFL tag $tag"
+  n_run=$((n_run + 1))
   [ $report_fail -ne 0 ] && exit 1
   grep -h "bh_proto: closure" "$WD/cfl$tag/run.log" | cut -c1-250
   REAL=$(grep -o "real_t = [a-z]*" "$WD/cfl$tag/run.log" | head -1 | awk '{print $3}')
   if [ "$tag" = "4" ]; then tol="--tol 1e-3"; else tol=""; fi
   out=$("$CHECK" t7b --ions "$WD/cfl$tag/hadronic_ions_1.txt" --eps0 0.5 --mu_r 1836.15 --mu_d 1.0 \
         --K0 9180.75 --E 0.34375 --omegaB0 1.0 --tau0 0.208288 --skindepth0 1.0 $tol \
-        --eta_u "${ETA[$tag]}" --floor_ulp 100 --real "${REAL:-float}")
+        --eta_u "$(eta_for $tag)" --floor_ulp 100 --real "${REAL:-float}")
   rc=$?
   echo "$out"
   [ $rc -ne 0 ] && report_fail=1
@@ -64,4 +67,6 @@ for tag in 1 4; do
   run_entity "$EXE" "$WD/Eonly_exact_cfl$tag.toml" "$WD/Eonly_exact_cfl$tag" || { echo "(diag) E-only run failed"; continue; }
   "$CHECK" kick --ions "$WD/Eonly_exact_cfl$tag/hadronic_ions_1.txt" --E 0.34375 --omegaB0 1.0 --mu_d 1.0 | sed "s/^/(diag E = 0.34375, no loss, cfl tag $tag) /"
 done
+if [ $n_run -eq 0 ]; then echo "FAIL: t7b.sh executed no run"; report_fail=1; fi
+echo "t7b.sh summary: $n_run registered runs executed, $([ $report_fail -eq 0 ] && echo "all checks passed" || echo "at least one check FAILED")"
 exit $report_fail

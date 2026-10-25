@@ -18,4 +18,5 @@ grep -h "execution space\|Kokkos::Serial\|Serial" "$WD/t8_below/run.log" | head 
   --ledger_b "$WD/t8_tau0zero/hadronic_ledger_1.txt" --ledger_c "$WD/t8_below/hadronic_ledger_1.txt" || report_fail=1
 # the kernel was launched in run c: n_processed stays 0 (every ion below the edge) but the stage is active
 grep -h "stage active" "$WD/t8_below/run.log" | cut -c1-120 || { echo "FAIL: run c did not launch the stage"; report_fail=1; }
+echo "t8.sh summary: $([ $report_fail -eq 0 ] && echo "all checks passed" || echo "at least one check FAILED")"
 exit $report_fail

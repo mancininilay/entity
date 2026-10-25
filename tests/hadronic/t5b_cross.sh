@@ -42,4 +42,5 @@ for mu in 1.0 1836.15; do
   done
 done
 echo "---- design off table ($TABLE) ----"; cat "$TABLE"
+echo "t5b_cross.sh summary: $([ $report_fail -eq 0 ] && echo "all checks passed" || echo "at least one check FAILED")"
 exit $report_fail

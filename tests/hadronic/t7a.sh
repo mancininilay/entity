@@ -11,4 +11,5 @@ grep -h "bh_proto: closure\|bh_proto: ledger" "$WD/B/run.log" "$WD/B0/run.log" |
 REAL=$(grep -o "real_t = [a-z]*" "$WD/B/run.log" | head -1 | awk '{print $3}')
 "$CHECK" t7a --run "$WD/B/hadronic_ions_1.txt" --ref "$WD/B0/hadronic_ions_1.txt" --tol 1e-4 --pitch_tol 1e-5 \
   --eta_u 1e-4 --floor_ulp 100 --mu_d 1.0 --real "${REAL:-float}" || report_fail=1
+echo "t7a.sh summary: $([ $report_fail -eq 0 ] && echo "all checks passed" || echo "at least one check FAILED")"
 exit $report_fail
