@@ -30,7 +30,7 @@ Facts, measured in the cloud container:
 | build C (`build-serial`) | `-D precision=single -D TESTS=OFF` against the Serial-only Kokkos |
 | stock build and ctest (before any change) | 160 targets, 53/53 tests passed, 6.0 s |
 | compile time | summed object compile times from `.ninja_log`: 1438 s (A, all targets incl. tests), 518 s (B), 463 s (C); the five engine/entity objects of A take 75 s summed |
-| run cost | 0.26 ms per step for the 1D, 16-cell, 4-ion, no-solver, no-deposit configuration on 4 OpenMP threads (10 000 steps in 2.63 s wall) |
+| run cost | 0.26 ms per step for the 1D, 16-cell, 4-ion, no-solver, no-deposit configuration on 4 OpenMP threads while other builds were running (10 000 steps in 2.63 s wall); 18 us per step on an idle machine (T7a: 2 x 11 600 steps in 0.42 s) |
 
 Logs of every build and test run are under the session scratchpad
 (`logs/*.log`); the ctest work directories of the run-based tests are under
@@ -307,7 +307,7 @@ runs (0 or round-off).
 
 Same conditions in the engine (dt = 0.5, 4 ions, run until the double build
 has lost 1%: 519 882 steps for mu_d = 1 at ratio 0.3 down to 923 steps at
-mu_d = 1836.15, ratio 100; 40 runs, 72 s in total when run alone, 352 s when
+mu_d = 1836.15, ratio 100; 40 runs, 82 s in total when run alone, 352 s when
 run concurrently with the kernel tests). Pre-registered pass:
 design on, |K_single/K_double - 1| <= 1e-4 at the end time.
 
@@ -693,7 +693,7 @@ cd build-single && ctest -R "KERNELS::bh_loss|HADRONIC" --output-on-failure
 ```
 
 Final ctest counts of build A: 67 tests (the 53 stock tests plus 14 new),
-63 passed, 4 failed, 114 s wall with `ctest -j1` (`T5b cross-build` 72 s when
+63 passed, 4 failed, 114 s wall with `ctest -j1` (`T5b cross-build` 82 s when
 run alone). The four failures are the pre-registered items reported in section
 4: `KERNELS::bh_loss_subcycling` (4.12), `KERNELS::bh_loss_t6` (4.6),
 `KERNELS::bh_loss_t5` (4.3, the dt-order; the cooling-curve checks of the same
