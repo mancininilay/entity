@@ -16,6 +16,7 @@
  *   - traits::pgen::HasMatchFieldsInX3<>
  *   - traits::pgen::HasFixFieldsConst<>
  *   - traits::pgen::HasCustomPostStep<>
+ *   - traits::pgen::HasHadronicStage<>
  *   - traits::pgen::HasCustomFieldOutput<>
  *   - traits::pgen::HasCustomStatOutput<>
  * @namespaces:
@@ -108,6 +109,19 @@ namespace traits::pgen {
   template <class PG, class DOM>
   concept HasCustomPostStep = requires(PG& pgen, timestep_t s, simtime_t t, DOM& domain) {
     { pgen.CustomPostStep(s, t, domain) } -> std::same_as<void>;
+  };
+
+  /**
+   * [fork:hadronic] A generator that owns a hadronic interaction stage exposes
+   * `HadronicStage(step, time, domain)` and the runtime placement switch
+   * `hadronic_placement_production()`; the SRPIC engine then launches the stage
+   * at the production placement (after the deposit, before the particle
+   * exchange) when the switch is on (`srpic::HadronicInteractions`).
+   */
+  template <class PG, class DOM>
+  concept HasHadronicStage = requires(PG& pgen, timestep_t s, simtime_t t, DOM& domain) {
+    { pgen.HadronicStage(s, t, domain) } -> std::same_as<void>;
+    { pgen.hadronic_placement_production() } -> std::same_as<bool>;
   };
 
   template <class PG, Dimension D, class DOM>

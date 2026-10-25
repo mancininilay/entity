@@ -22,6 +22,7 @@
 #include "engines/srpic/currents.h"
 #include "engines/srpic/fields_bcs.h"
 #include "engines/srpic/fieldsolvers.h"
+#include "engines/srpic/hadronic.h"
 #include "engines/srpic/particle_pusher.h"
 #include "engines/srpic/particles_bcs.h"
 #include "framework/domain/domain.h"
@@ -125,6 +126,17 @@ namespace ntt {
           timers.start("CurrentFiltering");
           srpic::CurrentsFilter(m_metadomain, dom, m_params);
           timers.stop("CurrentFiltering");
+        }
+
+        // [fork:hadronic] production placement of the hadronic interaction stage
+        // (spec II.1): after the deposit, before the particle exchange, so that
+        // the ions absorbed or send-tagged this step are still in place
+        if constexpr (::traits::pgen::HasHadronicStage<decltype(m_pgen), domain_t>) {
+          if (m_pgen.hadronic_placement_production()) {
+            timers.start("Custom");
+            srpic::HadronicInteractions(dom, m_pgen, step, time);
+            timers.stop("Custom");
+          }
         }
 
         timers.start("Communications");
