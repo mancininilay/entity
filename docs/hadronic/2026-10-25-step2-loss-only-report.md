@@ -762,7 +762,16 @@ Double build (B, `-D TESTS=ON`): DOUBLE_PLACEHOLDER
 
 ### 10.4 Sanitizer diagnostic (build D, `-fsanitize=undefined -fno-sanitize-recover=undefined`)
 
-UBSAN_PLACEHOLDER
+Build D compiles the kernel unit test and every library it links with
+`-fsanitize=undefined -fno-sanitize-recover=undefined -g` (231 compile commands
+carry the flag; the binary links `libubsan.so.1`, facts). Running every group
+of `test-kernels-bh_loss.xc` under the sanitizer: 101 checks passed, 0 failed,
+6 expected failures (the T5b design-off runs), exit code 0, and **no "runtime
+error" line** in the output, including the R2 regressions (coefficient 1e20
+and the non-finite request) that exercise the previously undefined
+double-to-int conversion. Before the fix the same input would convert 3.6e17 to
+`int` (undefined; the referee's UBSan report). The sanitizer build is a
+diagnostic and is not registered in ctest.
 
 ### 10.5 Fixture test (`ARCHETYPES::bh_fixtures`, contract 1.4 item 8)
 
