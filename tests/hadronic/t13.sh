@@ -4,8 +4,10 @@
 # the stock injector, threshold spectrum with a longitudinal kick (unequal lepton velocities), 200 steps.
 # The Gauss residual R_i = div_h E - (q0/(B0 V0)) rho_i (CIC rho from the arrays, double) is compared
 # with its initial value R0 (a randomly loaded background does not satisfy Gauss's law; the deposit
-# conserves R - R0 to float round-off): max|R - R0| / max|c rho| of the pair run within a factor 2 of
-# the control run without pair creation, no growth trend, the first births within the control level.
+# conserves R - R0 to round-off): max|R - R0| / max|c rho| of the pair run within a factor 2 of the
+# control run's measured residual (replaced by the a-priori floor n_steps x eps of the build's real_t
+# only when the control residual is exactly zero, as in the double build), no growth trend, the first
+# births within that level.
 # Then the same with one pass of the stock current filter (diagnostic). Bash 3.2 compatible.
 # Usage: t13.sh <entity.xc> <bh_check> <inputs> <workdir>
 source "$(dirname "$0")/common.sh"
@@ -16,14 +18,19 @@ run_entity "$EXE" "$INP/t13_control.toml" "$WD/control"; rc=$?; n_run=$((n_run +
 [ $report_fail -ne 0 ] && { echo "t13.sh summary: a run failed"; exit 1; }
 grep -h "background:" "$WD/gauss/run.log" | cut -c1-250
 grep -h "bh_proto: ledger species" "$WD/gauss/run.log" | sed 's/P_drag.*//' | cut -c1-400
-"$CHECK" gauss --test "$WD/gauss/hadronic_gauss.txt" --control "$WD/control/hadronic_gauss.txt" || report_fail=1
+# the a-priori round-off floor n_steps x eps(real_t) replaces a control residual that is exactly zero
+REAL=$(grep -o "real_t = [a-z]*" "$WD/gauss/run.log" | head -1 | awk '{print $3}')
+if [ "$REAL" = "double" ]; then EPS=2.220446049250313e-16; else EPS=1.1920928955078125e-07; fi
+STEPS=$(grep -o "max_steps = [0-9]*" "$WD/gauss/run.log" | head -1 | awk '{print $3}')
+echo "real_t = ${REAL:-float}, eps = $EPS, steps = ${STEPS:-200}"
+"$CHECK" gauss --test "$WD/gauss/hadronic_gauss.txt" --control "$WD/control/hadronic_gauss.txt" --eps "$EPS" --steps "${STEPS:-200}" || report_fail=1
 "$CHECK" ledger --file "$WD/gauss/hadronic_ledger_1.txt" --min_spawned 100 || report_fail=1
 echo "(diag) the pair run's ledger identity holds with the kick energy in E_round (the kick is not rounding):"
 grep -h "bh_proto: array identity" "$WD/gauss/run.log" | cut -c1-500
 # diagnostic: the stock current filter on
 run_entity "$EXE" "$INP/t13_filter.toml" "$WD/filter"; rc=$?
 if [ $rc -eq 0 ]; then
-  "$CHECK" gauss --test "$WD/filter/hadronic_gauss.txt" --control "$WD/control/hadronic_gauss.txt" | sed 's/^/(diag, filter on) /'
+  "$CHECK" gauss --test "$WD/filter/hadronic_gauss.txt" --control "$WD/control/hadronic_gauss.txt" --eps "$EPS" --steps "${STEPS:-200}" | sed 's/^/(diag, filter on) /'
 else
   echo "(diag) the filter run failed (exit $rc)"
 fi

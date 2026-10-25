@@ -4,8 +4,10 @@ Claude 1 (Claude Code cloud session), 2026-10-25. Fork `mancininilay/entity`,
 branch `dev/hadronic-pairs` (created from `dev/hadronic` at `ed98e1f`).
 Commits: `50b1f3d` (step-2 closure housekeeping), `9b39f3f` (core P9),
 `e628d08` (kernel and generator), `71fd517` (core P5), `46cb34f` (tests),
-plus the report and result commits listed in section 11. Line numbers refer
-to the HEAD named in the final message.
+plus the fix and report commits after it (ledger npart snapshots and the
+41-column T8 check, the MPI-safe tracking payloads of the P9 test, the T13
+degenerate-control convention, the report). Line numbers refer to the HEAD
+named in the final message.
 
 Every statement below is labelled as a **fact** (measured, with the number),
 a **convention** adopted here, or an **open question**. No pre-registered
@@ -358,14 +360,23 @@ kick of 0.3 (unequal lepton velocities), 200 steps (708 pairs born). The
 residual R_i = (E_{i+1/2} - E_{i-1/2}) - (q0/(B0 V0)) rho_i (CIC rho from the
 arrays in double, section 3.4) is compared with its first value R0 (fact: a
 randomly loaded background has rho != 0 with E = 0, max|R0| = 2.57e-7 in
-field units against max|c rho| = 1.65). Measured, in units of max|c rho|:
-max over the 20 rows of max|R - R0| = 3.05e-6 (last row 1.94e-6) for the
-pair run against 1.90e-6 (last 1.18e-6) for the control run without pair
-creation: ratio 1.61 (<= 2), pass; no growth trend (last quarter / max(first
-quarter, control) = 1.41, <= 2), pass; right after the first births max|R -
-R0| = 0 exactly (the two leptons at one position cancel in rho to the last
-bit and have deposited nothing yet), pass; identity 0, n_spawned 708 >= 100:
-pass (5 checks). Births in the cells next to the periodic boundary are
+field units against max|c rho| = 1.65). Measured, in units of max|c rho|
+(the registered run of the final suite; the OpenMP runs differ in
+realisation from run to run): max over the 20 rows of max|R - R0| = 3.88e-6
+(last row 2.44e-6) for the pair run against 2.79e-6 (last 2.40e-6) for the
+control run without pair creation: ratio 1.39 (<= 2; 1.61 in the first
+suite), pass; no growth trend (last quarter / max(first quarter, control) =
+1.39, <= 2), pass; right after the first births max|R - R0| = 0 exactly (the
+two leptons at one position cancel in rho to the last bit and have deposited
+nothing yet), pass; identity 0, n_spawned >= 100 (708 and 716): pass (5
+checks). Convention for a degenerate control: in the double build the
+control run's residual is exactly zero (the deposit and the field update
+reproduce the CIC charge to the last bit there), so the comparison "within a
+factor 2 of the control" is undefined; in that case, and only then, the
+reference is the a-priori accumulated round-off of the field update, n_steps
+x eps(real_t) = 200 x 2.2e-16 = 4.4e-14, against which the double pair run
+measures 5.5e-15 (0.12, pass). The single build keeps the brief's literal
+comparison (its control residual 2.8e-6 is 8.5 times below that floor). Births in the cells next to the periodic boundary are
 included (ions at hashed positions over all 16 cells). (diag, filter on) with
 one pass of the stock current filter the residual against the unfiltered CIC
 rho is 0.90 of max|c rho|: the filter smooths J, so div E follows a smoothed
@@ -428,7 +439,21 @@ texp_exported_debt}`. The step-2 regression: every step-2 test passes with
 `source = "none"` added to its input (the only input change; the T8 check of
 the check tool reads the 41-column ledger).
 
-Double build (B): DOUBLE_SUITE_PLACEHOLDER
+Double build (B): 85 tests, 81 passed, 3 skipped (`t5b_cross_build`,
+`t8_bit_identity`, `t10_poisson_determinism`: no second build is given to the
+double tree, as in step 2, not counted as validations), 64.2 s wall; in the
+first run `t13_gauss` failed on a degenerate criterion (the control run's
+residual is exactly zero in double arithmetic, so "within a factor 2 of the
+control" was undefined); with the convention of 4.8 for that case the test
+passes in both builds (single 1.39, double 0.12 of the respective level) and
+the double tree is 85 / 85 with the 3 skips. Facts from the double build:
+`bh_pairs` 69 passed, 0 failed, 1 expected failure (the same T11 (iv)
+labelling; measured / III.1 = 2.807), array residual / B between 1.6e-17 and
+2.1e-13 (E_round itself is at the 1e-13 level: the stored weights and
+momenta are doubles), poisson n_spawned 1950 (identical draws to the single
+build: the pool and the draws are double already), `injectors_payloads` 30 /
+30, `reduced_stats_weights` 56 / 56, `bh_proto_params` 100 / 100; the step-2
+groups pass as in the step-2 round 2.
 
 Poisson determinism on the Serial build (C, `t10det.sh`): two runs with
 `simulation.seed = 12345` give identical checksum lines for the ions, both

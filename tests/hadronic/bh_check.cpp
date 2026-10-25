@@ -58,9 +58,10 @@
  *   t12b   --log F [--measured 1]
  *         prints the startup estimate (bare and sized) from the log; with --measured compares the final
  *         npart of the pair species with the bare estimate (factor 2)
- *   gauss  --test F --control F
+ *   gauss  --test F --control F [--eps E --steps N]
  *         hadronic_gauss files: max|R - R0|/max|c rho| of the pair run within a factor 2 of the control
- *         run's, no growth trend, the first births within the control level
+ *         run's measured residual (N x E, the a-priori round-off floor, when that residual is exactly
+ *         zero), no growth trend, the first births within that level
  *   det    --a LOG --b LOG --expect same|differ
  *         identical (or different) "bh_proto: checksum" lines
  *   texp   --log F
@@ -729,6 +730,18 @@ namespace {
       throw std::runtime_error("too few 'step' rows in the gauss files");
     }
     const double t_all = max_ratio(test, "step", 0, nt), c_all = max_ratio(ctrl, "step", 0, nc);
+    // the control run's round-off level: the measured control residual; when that is exactly zero
+    // (as happens in the double build) the a-priori accumulated round-off of the field update over
+    // the run (n_steps x epsilon of the build's real_t) replaces it; --eps and --steps give the numbers
+    const double eps_build = a.count("eps") ? num(a, "eps") : 0.0;
+    const double n_steps   = a.count("steps") ? num(a, "steps") : 0.0;
+    // the brief's criterion compares with the measured control run; only when that residual is
+    // exactly zero (degenerate) is the a-priori floor used instead
+    const double level     = c_all > 0.0 ? c_all : n_steps * eps_build;
+    std::printf("(diag) control level = %s (measured control %.6e, a-priori floor n_steps x eps = %.0f x %.3e = %.6e); "
+                "test / measured control = %s\n",
+                c_all > 0.0 ? "the measured control residual" : "the a-priori floor (measured control exactly zero)", c_all,
+                n_steps, eps_build, n_steps * eps_build, c_all > 0.0 ? std::to_string(t_all / c_all).c_str() : "undefined");
     for (const auto& r : test) {
       if (r.stage != "step") {
         std::printf("(diag) test %s: max|R| %.6e, max|c rho| %.6e, max|R - R0| %.6e, ratio %.6e, npart e- %.0f e+ %.0f\n",
@@ -738,19 +751,20 @@ namespace {
     std::printf("(diag) test: %zu step rows, max over rows of max|R - R0| / max|c rho| = %.6e (last row %.6e, pairs e- %.0f); "
                 "control: %zu rows, %.6e (last %.6e)\n",
                 nt, t_all, test.back().ratio, test.back().nm, nc, c_all, ctrl.back().ratio);
-    verdict(t_all <= 2.0 * c_all && c_all > 0.0,
-            "T13: max|R - R0| / max|c rho| of the pair run within a factor 2 of the control run's (test / control)",
-            c_all > 0.0 ? t_all / c_all : t_all, 2.0);
+    verdict(t_all <= 2.0 * level && level > 0.0,
+            "T13: max|R - R0| / max|c rho| of the pair run within a factor 2 of the control run's round-off level "
+            "(test / level)",
+            level > 0.0 ? t_all / level : t_all, 2.0);
     // no growth trend: the last quarter of the rows against the first quarter
     const std::size_t q = std::max<std::size_t>(1, nt / 4);
     const double      t_first = max_ratio(test, "step", 0, q), t_last = max_ratio(test, "step", nt - q, nt);
-    verdict(t_last <= 2.0 * std::max(t_first, c_all), "T13: no growth trend (last quarter / max(first quarter, control))",
-            t_last / std::max(t_first, c_all), 2.0);
+    verdict(t_last <= 2.0 * std::max(t_first, level), "T13: no growth trend (last quarter / max(first quarter, level))",
+            t_last / std::max(t_first, level), 2.0);
     // the births right after the first launch do not change the residual beyond the control level
     for (const auto& r : test) {
       if (r.stage == "after_first_launch") {
-        verdict(r.ratio <= 2.0 * c_all, "T13: residual right after the first births within a factor 2 of the control level",
-                c_all > 0.0 ? r.ratio / c_all : r.ratio, 2.0);
+        verdict(r.ratio <= 2.0 * level, "T13: residual right after the first births within a factor 2 of the control level",
+                level > 0.0 ? r.ratio / level : r.ratio, 2.0);
       }
     }
     return 0;
