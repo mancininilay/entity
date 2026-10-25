@@ -3,8 +3,14 @@
 Claude 1 (Claude Code cloud session), 2026-10-25. Fork `mancininilay/entity`,
 branch `dev/hadronic-loss` (created from `dev/hadronic` at `a346254`).
 Commits: `b41cf59` (device tables, kernel, bh_proto generator, unit tests),
-`5c5daba` (run-based tests, check tool, inputs, host interpolation header), the
-commit carrying this report. No core file was changed (section 3.6).
+`5c5daba` (run-based tests, check tool, inputs, host interpolation header),
+`a12cc24`/`ac77a59` (round-1 report). Round 2 (referee findings, the decisions
+of 2026-10-25, the fixture test): `d68e162`, `8defba7`, and the commit carrying
+this revision of the report; the data commit `0d5d2e8` (bhref 0.1.0 fixtures)
+was added by the project. No core file was changed (section 3.6). Section 10
+is the round-2 resolution log with the re-registered results; sections 4 to 6
+keep the round-1 numbers as history where the round-2 registration changed the
+criterion (marked "round 1" there).
 
 Every statement below is labelled as a **measured fact** (with the number), a
 **convention** adopted here, or an **open question**. No pre-registered
@@ -28,6 +34,8 @@ Facts, measured in the cloud container:
 | build A (`build-single`) | `-D TESTS=ON -D output=ON -D precision=single -D mpi=OFF -D pgen=bh_proto`, OpenMP Kokkos; also `-D BH_DOUBLE_ENTITY=<build B>/src/entity.xc -D BH_SERIAL_ENTITY=<build C>/src/entity.xc` |
 | build B (`build-double`) | same with `-D precision=double -D TESTS=OFF` (only `entity.xc`) |
 | build C (`build-serial`) | `-D precision=single -D TESTS=OFF` against the Serial-only Kokkos |
+| round 2: build B with `-D TESTS=ON` | the double suite (section 10.3); `BH_DOUBLE_ENTITY` and `BH_SERIAL_ENTITY` left unset there, so its cross-build and T8 entries are skipped (R6: in the double build the "single" and "double" executables would be the same binary) |
+| round 2: build D (`build-ubsan`) | `-D precision=single -D pgen=bh_proto` with `CMAKE_CXX_FLAGS="-fsanitize=undefined -fno-sanitize-recover=undefined -g"`, only the kernel unit test target; a diagnostic, not a registered test (section 10.4) |
 | stock build and ctest (before any change) | 160 targets, 53/53 tests passed, 6.0 s |
 | compile time | summed object compile times from `.ninja_log`: 1438 s (A, all targets incl. tests), 518 s (B), 463 s (C); the five engine/entity objects of A take 75 s summed |
 | run cost | 0.26 ms per step for the 1D, 16-cell, 4-ion, no-solver, no-deposit configuration on 4 OpenMP threads while other builds were running (10 000 steps in 2.63 s wall); 18 us per step on an idle machine (T7a: 2 x 11 600 steps in 0.42 s) |
@@ -90,10 +98,10 @@ midpoint (same arithmetic, section 4.1).
 | lines | content |
 | --- | --- |
 | 62-85 | `HadronicParams`: `tau0_over_skindepth0, mu_r, eta_u, pending_floor_ulp, f_max, max_substeps`, payload indices `pld_pending, pld_debt, pld_debt_k0`, `dt, time, profile` (uniform only), `unsafe_application` (design off) |
-| 87-153 | `LossLedger`: every entry of II.2 step 6 and part IV in double (`E_drag, E_pairs, E_absorbed, E_exported, E_round, E_lost_nopairs, pending_discarded, P_drag[3], P_pairs[3], P_absorbed[3]`), the snapshots `debt_outstanding, pending_outstanding, sum_wK`, the `unsigned long long` counters (`n_events, n_spawned, n_dropped, n_substeps, n_bounded, n_closing, n_capped, n_above_table, n_latency, n_resolution`) plus `n_processed, n_alive, n_applied`; `operator+=`; `Kokkos::reduction_identity<LossLedger>` (346-350) so that `Kokkos::Sum<LossLedger>` reduces it. No `real_t` atomics anywhere |
+| 87-153 | `LossLedger`: every entry of II.2 step 6 and part IV in double (`E_drag, E_pairs, E_absorbed, E_exported, E_round, E_lost_nopairs, pending_discarded, P_drag[3], P_pairs[3], P_absorbed[3]`), the snapshots `debt_outstanding, pending_outstanding, sum_wK`, the `unsigned long long` counters (`n_events, n_spawned, n_dropped, n_substeps, n_bounded, n_closing, n_capped, n_above_table, n_latency, n_resolution`) plus `n_processed, n_alive, n_applied`, and (round 2) `n_capped_loss`; `operator+=`; `Kokkos::reduction_identity<LossLedger>` so that `Kokkos::Sum<LossLedger>` reduces it. No `real_t` atomics anywhere |
 | 159-166 | `kinetic_energy(mu, u1, u2, u3)`: `K = mu u^2 / (gamma + 1)` in double from the three stored components; the one expression shared by the kernel, the generator and the tests (the array-based closure relies on it) |
 | 168-172 | `ulp_real(real_t)`: `nextafter(x, +inf) - x` |
-| 204-342 | `operator()(p, LossLedger&)`: tag class (`dead`: `pending_discarded += w delta`, `delta <- 0`, return; anything else processed); step 0 (`K`, `Gamma_p`; above `gamma_max`: clamp and `n_above_table += 1`; below `gamma_min`: discard a pending `delta` into `pending_discarded`, snapshot, return); step 1 (`dK = coeff g I(Gamma_p) dt`, `g = 1`; if `dK > f_max K`: `n = ceil(dK/(f_max K))` midpoint-RK2 substeps on the table with `K_floor = mu_r (gamma_min - 1)` as the lower clamp, `n <= max_substeps` else `n = max_substeps`, `n_bounded += 1` and the loss clamped to `f_max K`; `n_substeps += n`; `delta += dK`; `n_processed += 1`); step 2 (`pending_floor = pending_floor_ulp ulp(|u|_real_t) mu_d u/gamma_d`, `delta_th = max(pending_floor, eta_u K)`; if `delta > 0` and `delta >= delta_th`: `K_new = min(K, max(K - delta, K_floor))`, `u_new = sqrt(K_new (K_new + 2 mu_d))/mu_d` along u-hat, stored as `real_t`, `dK_applied = K - K(u_new_stored)` in double from the stored values, `delta -= dK_applied`, `E_drag`, `E_lost_nopairs`, `P_drag`, `n_applied`; design off: `delta = 0` after the step); step 3 (`delta` stored as `real_t`, `pending_outstanding += w delta_stored`, `sum_wK`, `n_alive`) |
+| 204-360 | `operator()(p, LossLedger&)`: tag class (`dead`: `pending_discarded += w delta`, `delta <- 0`, return; anything else processed); step 0 (`K`, `Gamma_p`; above `gamma_max`: clamp and `n_above_table += 1`; below `gamma_min`: discard a pending `delta` into `pending_discarded`, snapshot, return); step 1 (`dK = coeff g I(Gamma_p) dt`, `g = 1`; if `dK > f_max K`: `n = ceil(dK/(f_max K))` midpoint-RK2 substeps on the table with `K_floor = mu_r (gamma_min - 1)` as the lower clamp, `n <= max_substeps` else `n = max_substeps`, `n_bounded += 1` and the loss clamped to `f_max K`; `n_substeps += n`; `delta += dK`; `n_processed += 1`); step 2 (`pending_floor = pending_floor_ulp ulp(|u|_real_t) mu_d u/gamma_d`, `delta_th = max(pending_floor, eta_u K)`; if `delta > 0` and `delta >= delta_th`: `K_new = min(K, max(K - delta, K_floor))`, `u_new = sqrt(K_new (K_new + 2 mu_d))/mu_d` along u-hat, stored as `real_t`, `dK_applied = K - K(u_new_stored)` in double from the stored values, `delta -= dK_applied`, `E_drag`, `E_lost_nopairs`, `P_drag`, `n_applied`; design off: `delta = 0` after the step); step 3 (`delta` stored as `real_t`, `pending_outstanding += w delta_stored`, `sum_wK`, `n_alive`) |
 
 Conventions in the kernel (each listed as an open question in section 7 where
 the brief leaves room): the `n_bounded` fallback clamps the loss to `f_max K`
@@ -116,7 +124,7 @@ rewrite of `u` from `K` would move it by rounding).
 | 494-543 | `print_summary`: grid summary and, per species and initial K, `I_exact`, `I_table`, `dK/step`, `dK/K`, `ulp(u)`, `dK_ulp = ulp mu_d u/gamma`, `dK/dK_ulp`, `delta_th` (floor and `eta_u K`), steps per application, whether sub-cycling triggers |
 | 545-614 | `InitPrtls`: capacity check naming the species and `maxnpart`, injection, `set_npart`, `set_counter`, `set_unsorted`, P9 zeroing, the injected `sum w K` from the stored arrays (double) |
 | 658-702 | `CustomPostStep`: when the stage is active (`enabled` and `tau0 > 0`) one `Kokkos::parallel_reduce` per hadronic species over `[0, npart)` with `Kokkos::Sum<LossLedger>`; ledger and ions files every `ledger.every` steps and at the last step; checksums at the last step (`step + 1 == max_steps`) |
-| 704-733 | `write_ledger`: header naming every column and unit; columns `step, time, E_drag, E_lost_nopairs, pending_discarded, pending_outstanding, P_drag_x/y/z, n_substeps, n_bounded, n_above_table, n_processed, sum_wK` (the last recomputed from the arrays in double) |
+| 704-733 | `write_ledger`: header naming every column and unit; columns `step, time, E_drag, E_lost_nopairs, pending_discarded, pending_outstanding, P_drag_x/y/z, n_substeps, n_bounded, n_capped_loss (round 2), n_above_table, n_processed, sum_wK` (the last recomputed from the arrays in double) |
 | 735-779 | `write_ions`: one block per output, rows `ion, group, K_init, K, Gamma_p, |u|, pitch (u.B/(|u||B|), 0 when B = 0), delta, tag` for the `ions.K.size() x ions.per_K` injected ions |
 | 781-834 | `finish`: per-species and field checksums, the array-based closure line, the final ledger line |
 
@@ -333,8 +341,11 @@ ulps as the ion cools and I decreases, yet every step still removes a whole
 ulp); at 10 the bias is +0.4%; at 100 it is at the 1e-7 level. The spec's
 guess of a bias "of order +-30% at 1 to 3" is not what is measured here: the
 bias is set by how far the request drifts from an integer number of ulps over
-the 1% cooling, which is 4.6% of the request for d ln I/d ln K = 4.6 at
-Gamma_p = 3, averaging to +3.7%.
+the 1% cooling: d ln I/d ln K = 7.15 at Gamma_p = 3 (measured by a centred
+difference of the exact rate, R7), so a 1% fall in K lowers the request by
+7.0%, and a request that starts at exactly one (three) ulps ends at 0.93
+(2.79) ulps while every step still removes a whole (three whole) ulps,
+averaging to the measured +3.7%.
 
 ### 4.6 T6, mu_d independence (`KERNELS::bh_loss_t6`)
 
@@ -511,10 +522,11 @@ n_alive = 1, n_processed = 1. All pass.
 
 ### 4.15 Rejection tests (`HADRONIC::bh_proto_params`, `HADRONIC::reject`)
 
-`bh_proto_params`: 49 checks, 49 passed: the valid setup parses with the
-documented values; defaults; the disabled stage needs only the ion keys; a TOML
-integer is accepted for a float key; design off with the flag; and 44
-refusals, each with a message naming `setup.<key>`: negative tau0, tau0 as a
+`bh_proto_params`: 49 checks in round 1 (58 in round 2, section 10.1), all
+passed: five positive cases (the valid setup parses with the documented
+values; defaults; the disabled stage needs only the ion keys; a TOML integer is
+accepted for a float key; design off with the flag) and 44 refusals (53 in
+round 2), each with a message naming `setup.<key>`: negative tau0, tau0 as a
 string, mu_r = 0 and negative, eps0 >= 2 (mono), eps_max >= 2 (powerlaw and
 blackbody), f_max = 0 and > 1, max_substeps = 0 and non-integer, unknown and
 missing photon_field.type, allow_unsafe_application absent or false with
@@ -554,7 +566,7 @@ tau0 and mu_r when enabled, a table bath without a file.
 | sub-cycling accuracy | **fail** (2.36e-2 vs 1e-2; 2.0e-3 at f_max = 0.01) |
 | above the table | pass |
 | tag classes | pass |
-| rejections (49 + 8) | pass |
+| rejections (49 parser checks incl. 5 positive cases, 8 end to end; round 2: 58 + 9) | pass |
 
 ctest in build A: see section 9 for the final counts (the stock 53 tests
 unchanged and passing).
@@ -603,27 +615,26 @@ with the double build to <= 1.2e-6 and with the RK4 reference to <= 3.3e-6
    dK/K <= 1e-4 per step, so "order 1.0 +- 0.3" is not a property of the
    quantity the brief names. The operator is first order (orders 1.000019 and
    0.999931 with eta_u scaled as dt against the interpolated-table reference).
-   A re-registration could either scale eta_u with dt in the convergence
-   study or compare K_eff against the table-based reference with a larger
-   base dt (so that the splitting error dominates); not done here.
+   Decided 2026-10-25 (section 10.2): the order is judged on K_eff against
+   the interpolated-table reference with eta_u scaled as dt.
 4. **T6 on the stored K (open question for the spec).** The application
    quantum makes pairwise agreement to 1e-5 of the stored K impossible by
    design when eta_u = 1e-4; K_eff agrees to < 1e-6 (the brief's
-   parenthetical). The brief's criterion could be re-registered on K_eff or
-   with eta_u <= 1e-6, where the floor then binds (pending_floor_ulp = 100
-   gives 1.1e-5 K at mu_d = 1, Gamma_p = 6).
+   parenthetical). Decided 2026-10-25 (section 10.2): T6 is judged on K_eff
+   at 1e-6.
 5. **Sub-cycling accuracy (open question for the spec).** With f_max = 0.1
    the un-sub-cycled Euler steps with dK/K in (0.03, 0.1] dominate the error
    (2.4e-2 measured against 1e-2). Lowering f_max to 0.01 brings it to 2.0e-3
-   at a cost of 250 instead of 16 substeps over the 60 steps. Using RK2 for
-   every step (not only above f_max) would also do it but changes II.2 step 1
-   and the first-order splitting statement; not done.
+   at a cost of 250 instead of 16 substeps over the 60 steps. Decided
+   2026-10-25 (section 10.2): f_max defaults to 0.01.
 6. **The n_bounded fallback (convention).** When `ceil(dK/(f_max K))` exceeds
    `max_substeps`, the RK2 integration runs with `max_substeps` substeps and
    the resulting loss is clamped to `f_max K` (III.7 "clamped to f_max K");
    the brief's "apply the capped value" was read this way. The alternative
    (apply the max_substeps RK2 result unclamped) would give 0.26 K instead of
    0.1 K in the test; the choice follows the failure policy's "safe fallback".
+   Decided 2026-10-25 (section 10.2): this reading is the specified one, with
+   the new counter `n_capped_loss`.
 7. **The pusher's own single-precision rounding bias (fact, outside this
    module).** A uniform E whose half-kick is not an integer number of ulps of
    u biases the field work systematically (+1.1% at 21.76 ulps, measured);
@@ -687,7 +698,11 @@ cmake -G Ninja -D TESTS=ON -D output=ON -D precision=single -D mpi=OFF -D pgen=b
       -D CMAKE_PREFIX_PATH="$HOME/.entity/kokkos;$HOME/.entity/adios2" \
       -D BH_DOUBLE_ENTITY=$PWD/build-double/src/entity.xc -D BH_SERIAL_ENTITY=$PWD/build-serial/src/entity.xc \
       -S . -B build-single && ninja -C build-single
-cd build-single && ctest -R "KERNELS::bh_loss|HADRONIC" --output-on-failure
+cd build-single && ctest -R "KERNELS::bh_loss|HADRONIC|ARCHETYPES::bh_" --output-on-failure
+# round 2: f_max defaults to 0.01 in the generator and in every input under pgens/bh_proto/inputs/;
+# the double suite: cmake -D TESTS=ON in build-double, ninja, ctest (its cross-build and T8 entries skip)
+# UBSan diagnostic: cmake -D CMAKE_CXX_FLAGS="-fsanitize=undefined -fno-sanitize-recover=undefined -g" ... -B build-ubsan
+#   && ninja -C build-ubsan test-kernels-bh_loss.xc && build-ubsan/tests/kernels/test-kernels-bh_loss.xc
 ./tests/kernels/test-kernels-bh_loss.xc            # all groups, full printout
 ./src/entity.xc -input ../pgens/bh_proto/inputs/smoke.toml
 ```
@@ -699,3 +714,66 @@ run alone). The four failures are the pre-registered items reported in section
 `KERNELS::bh_loss_t5` (4.3, the dt-order; the cooling-curve checks of the same
 group pass) and `HADRONIC::t7b_fields_E` (4.8, the order; the accuracy check of
 the same script passes). Every stock test passes unchanged.
+
+## 10. Round 2 (2026-10-25): referee resolution log, re-registered tests, fixture test
+
+### 10.1 Referee findings
+
+| finding | status | resolution |
+| --- | --- | --- |
+| R1 (blocking): integers narrowed before validation | accepted, fixed | `bh_proto_params.h`: a range-checked getter (`get_int_in`) validates the 64-bit TOML value against the destination range before any cast: payload slots in [0, 65534] (the species slot count is an `unsigned short`, so max(index) + 1 fits without overflow), `ledger.every` in [1, INT_MAX], `max_substeps` in [1, 1e6], `ions.per_K` in [1, INT_MAX / ions.K.size()] (the injected count fits `npart_t`); the distinctness check runs on the validated values. Regressions (all refused naming the key, fact): `payload_pending = 4294967295`, `payload_pending = 4294967296` with `payload_debt = 0`, `ledger.every = 4294967296`, `ledger.every = 2147483648`, `payload_debt_k0 = 65535`, `ions.per_K = 2147483648`, `ions.per_K = 1073741824` with two energies, `max_substeps = 4294967296`; `payload_debt_k0 = 65534` and `ledger.every = 2147483647` accepted. `bh_proto_params`: 58 checks, 58 passed. |
+| R2 (blocking): `ceil(dK/(f_max K))` converted to int before the cap | accepted, fixed | `bethe_heitler.hpp` step 1: the request is tested for finiteness; the substep count is compared with `max_substeps` in double and converted only when it fits; a non-finite request takes the capped path (n = max_substeps, loss capped at f_max K), and a non-finite integrated loss is replaced by K - K_floor before the cap. Regressions (`KERNELS::bh_loss_overflow`, fact): coefficient 1e20 (3.6e17 substeps requested) and coefficient 1e308 with dt 1e10 (non-finite request) both give a finite result, n_bounded = 1, n_capped_loss = 1, n_substeps = 64, applied loss = f_max K to 2e-6 relative. Sanitizer diagnostic: section 10.4. |
+| R3 (should fix): GCA pusher on a hadronic species | accepted, fixed | `pgen.hpp` constructor refuses `(pusher & GCA) != 0` naming the species and the pusher string; `reject_gca.toml` (`pusher = "Boris,GCA"`) added to `HADRONIC::reject` (refused with exit 1, message names GCA, fact). |
+| R4 (should fix): ulp floor from a `real_t` norm | accepted, fixed | the floor uses the double norm `u` rounded to `real_t`, with a representability guard (a norm beyond the largest finite `real_t` takes the ulp of that value; `ulp_real` is also guarded for non-finite input). Regression (`KERNELS::bh_loss_huge`, the referee's probe mu_d = 1, K = 1e20, coefficient 1e10, dt = 1, eta_u = 1e-12, pending_floor_ulp = 100): in single precision the floor is 8.80e14, above eta_u K = 1.0e8 and above the ten accumulated requests (1.99e13), and no application happens in 10 steps (n_applied = 0, fact); in the double build the floor is finite (1.6e6) but below eta_u K, so the first request is applied; the registered statement is "applications happen only once max(pending_floor, eta_u K) is reached, with a finite floor", checked in both builds. |
+| R6 (should fix): T5b unit test in the double build | accepted, fixed | `dK_ulp_of` uses the single-precision ulp whatever the build (`ulp_float_of`), so the double build runs the same ten cases (153 s under load, section 10.3). The double suite's cross-build entry is skipped (no `BH_DOUBLE_ENTITY` given there) and is not counted as a validation; the only cross-precision validation is the single suite's `HADRONIC::t5b_cross_build` against build B. |
+| R7 (note): d ln I/d ln K at Gamma_p = 3; check counts | accepted, corrected | measured by centred difference: d ln I/d ln K = 7.1527 at Gamma_p = 3 and I(0.99 K)/I(K) - 1 = -7.00% (printed by the unit test as a (diag) line); section 4.5 corrected; the parser test has 49 checks of which 5 are positive cases (44 refusals), now 58 checks (53 refusals); sections 4.15 and 4.16 corrected. |
+| R8 (project note): float pusher steady-E bias | no action in this branch | T7b keeps E = 11/32 (integer ulps); the E = 0.34 field-only diagnostic stays in the test output. |
+
+Deferred: nothing from this list.
+
+### 10.2 Decisions of 2026-10-25 and the re-registered results (single build unless stated)
+
+(a) Re-registered tests on K_eff.
+
+| test | criterion | measured | verdict |
+| --- | --- | --- | --- |
+| T5 order (re-registered) | K_eff vs the interpolated-table RK4, eta_u = 1e-4, 5e-5, 2.5e-5 at dt, dt/2, dt/4, both ratios within 1.0 +- 0.3 | Gamma_p = 6 group: 1.000019, 0.999931; Gamma_p = 3 group: 0.999771, 0.999179 | pass |
+| T5 order: eta_u K above the pending floor at every dt used | ratio > 1 | at the end of the runs: 8.90, 4.45, 2.22 (6) and 7.88, 3.94, 1.97 (3) | pass (min 1.97) |
+| T5 accuracy (unchanged) | stored K vs exact RK4, both groups, <= 1e-3 | 9.281e-5, 8.875e-5 | pass |
+| T5 interpolation separation (unchanged) | reported | exact vs table RK4 at the output times 2.2e-5 (6), 5e-6 (3) | reported |
+| T6 (re-registered) | pairwise K_eff over mu_d in {1, 25, 1836.15}, <= 1e-6 at every output time | 1.85e-8, 5.05e-8, 5.31e-8 (max 5.31e-8) | pass |
+| T7b accuracy (unchanged) | stored K vs exact RK4 at the finest dt, <= 1e-3 | 2.921e-5 (the eta_u-scaled run at CFL 0.125) | pass |
+| T7b order (re-registered) | K_eff vs the interpolated-table RK4, eta_u = 1e-4, 5e-5, 2.5e-5 (inputs `t7b_cfl{1,2,4}.toml`) | end errors 4.393e-5, 2.199e-5, 1.105e-5; orders 0.9984, 0.9931 | pass |
+| T7b: eta_u K above the floor | ratio > 1 at every dt | 16.59, 8.29, 4.15 | pass |
+| stored-K envelope, every curve | max over output times of |K_stored - K_eff| / (eta_u K + pending_floor) <= 1 | T5 base 0.904 (6), 0.891 (3); T5 scaled runs 0.677, 0.246, 0.071 (6) and 0.069, 0.742, 0.527 (3); T6 0.933, 0.923, 0.892; T7a 0.737 (B), 0.933 (B = 0); T7b 0.665, 0.609, 0.727 | pass (14 checks) |
+| T11-lite closure (unchanged) | <= 1e-9 on every kernel-only run | round-off (0 to 2.4e-15) | pass |
+
+Round-1 criteria kept as history, printed with the `(diag)` label (facts, unchanged numbers): T5 fixed-eta_u stored-K orders -0.012, -0.117 (would fail 1.0 +- 0.3); T6 stored-K pairwise 9.93e-5, 9.82e-5, 9.55e-5 (would fail 1e-5); T7b fixed-eta_u stored-K end errors 3.246e-5, 6.845e-5, 6.387e-5, orders -1.08, +0.10 (would fail); T7b stored K in the eta_u-scaled runs: 3.246e-5, 4.376e-6, 2.860e-5 (orders 2.89, -2.71, the lag and interpolation floor, reported only).
+
+(b) f_max default 0.01: `bh_proto_params.h` default, every input under `pgens/bh_proto/inputs/`, `default_params` of the unit test, and the reproduction notes. Sub-cycling accuracy at the new default (registered): max relative error vs exact RK4 over 60 steps 2.017e-3 (tolerance 1e-2, pass), n_substeps 250; the f_max = 0.1 result stays as (diag): 2.358e-2 (would fail), n_substeps 16. The T5, T6, T7 runs never trigger sub-cycling (dK/K <= 1e-4 per step), so their numbers are unchanged by the default.
+
+(c) Clamp reading: when ceil(dK/(f_max K)) > max_substeps the kernel integrates max_substeps RK2 substeps, caps the applied loss at f_max K, counts the exhaustion in `n_bounded` and the steps on which the cap changed the value in the new counter `n_capped_loss`; both are ledger columns (15 columns now; the check tool and T8's zero-ledger check read them). With max_substeps = 2 and f_max = 0.01 over 60 steps: n_bounded = 120, n_capped_loss = 120 (two ions, every step), the run continues (final K 5023, fact); the R2 regressions count 1 and 1.
+
+### 10.3 Suites
+
+Single build (A): FINAL_SINGLE_PLACEHOLDER
+
+Double build (B, `-D TESTS=ON`): DOUBLE_PLACEHOLDER
+
+### 10.4 Sanitizer diagnostic (build D, `-fsanitize=undefined -fno-sanitize-recover=undefined`)
+
+UBSAN_PLACEHOLDER
+
+### 10.5 Fixture test (`ARCHETYPES::bh_fixtures`, contract 1.4 item 8)
+
+`tests/archetypes/bh_fixtures.cpp`, registered next to `bh_physics` with `BH_TEST_DATA_DIR`. For each of the five `bhref` 0.1.0 files: the file hash matches `SHA256SUMS` and the reader verifies `data_sha256` (producer `bhref`, status `frozen:0.1.0`); the bath is rebuilt from the header's `photon_field` object (mono eps0 0.5 and 0.3, powerlaw [0.1, 1.5] index 2, blackbody theta 0.1 on [0, 1.9], mono 0.5 with mu_r = 100); `build_tables` with the default quadrature reproduces the reference node set (same count, max |dy| below 4.5e-13 for every file, tolerance 1e-9); `at_gamma` at every reference `gamma_p`:
+
+| file | nodes | core nodes (I_ref > 1e-3 I_peak_ref) | max |dJ/J| core | max |dI/I| core | tail nodes (> 1e-9) | max |dJ/J| tail | max |dI/I| tail | over all nodes (J, I) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| mono05 | 466 | 120 | 9.64e-13 | 1.01e-12 | 273 | 5.92e-11 | 5.95e-11 | 3.84e-10, 3.84e-10 |
+| mono03 | 465 | 119 | 8.22e-13 | 1.11e-12 | 272 | 3.82e-11 | 3.85e-11 | 1.96e-10, 1.97e-10 |
+| powerlaw | 429 | 88 | 6.22e-13 | 9.35e-13 | 264 | 7.52e-11 | 7.83e-11 | 3.34e-10, 3.38e-10 |
+| blackbody | 406 | 71 | 8.78e-13 | 1.10e-12 | 190 | 1.75e-11 | 2.02e-11 | 1.12e-10, 1.28e-10 |
+| mono05_mu100 | 403 | 64 | 4.10e-12 | 4.30e-12 | 210 | 1.94e-10 | 1.94e-10 | 1.07e-9, 1.07e-9 |
+
+Tolerances 1e-6 (core) and 1e-3 (tail): 35 checks, 35 passed. <D> agrees to 1.6e-11 or better and eps_mean to 9.2e-13 or better over all nodes (diag). The referee's expectation (core 1e-12, tail 2e-10) is reproduced. `tests/data/hadronic/cpp-candidate/README.md` now states that this test is the registered item 8.
