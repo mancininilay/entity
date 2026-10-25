@@ -73,7 +73,7 @@ namespace {
                                                    RadiativeDrag::NONE,
                                                    EmissionType::NONE,
                                                    npld_r,
-                                                   static_cast<unsigned short>(tracking ? 1 : 0) };
+                                                   static_cast<unsigned short>(tracking ? 2 : 0) }; // 2 integer payloads: enough for tracking with or without MPI
   }
 
   void fill_nan(Particles<Dim::_1D, Coord::Cartesian>& sp) {
@@ -269,7 +269,7 @@ namespace {
     species.emplace_back(1, "e-", 1.0f, -1.0f, 1024, 0, 0, ParticlePusher::BORIS, false,
                          RadiativeDrag::NONE, EmissionType::NONE, 2, 0);
     species.emplace_back(2, "e+", 1.0f, 1.0f, 1024, 0, 0, ParticlePusher::BORIS, true,
-                         RadiativeDrag::NONE, EmissionType::NONE, 3, 1);
+                         RadiativeDrag::NONE, EmissionType::NONE, 3, 2);
     Metadomain<SimEngine::SRPIC, M1> md { 1u, decomp, res, ext, fldsbc, prtlbc, {}, species };
     const npart_t n = 50;
     std::map<std::string, std::vector<real_t>> data;
