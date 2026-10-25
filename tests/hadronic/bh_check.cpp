@@ -793,8 +793,11 @@ namespace {
     std::printf("(diag) %s\n", l.substr(0, 400).c_str());
     verdict(eh > 0.0 && std::abs(e - eh) <= 1.0e-12 * eh, "T-exp: E_exported = host sum w r over the dead ions, relative",
             eh > 0.0 ? std::abs(e - eh) / eh : 1.0, 1.0e-12);
-    verdict(std::abs(pd - ph) <= 1.0e-12 * std::max(ph, 1.0e-300), "T-exp: pending_discarded = host sum w delta, relative",
-            ph > 0.0 ? std::abs(pd - ph) / ph : std::abs(pd), 1.0e-12);
+    // the pending request may carry a signed rounding residual, so the scale is |ph|
+    const double scale_pd = std::max(std::abs(ph), 1.0e-300);
+    verdict(std::abs(pd - ph) <= 1.0e-12 * scale_pd,
+            "T-exp: pending_discarded = host sum w delta (signed), |difference| / |host sum|",
+            std::abs(pd - ph) / scale_pd, 1.0e-12);
     verdict(n_dead > 0.0, "T-exp: dead ions with a payload were seen by the hook before the sort", n_dead, 1.0);
     const auto led = grep_lines(str(a, "log"), "bh_proto: ledger species");
     if (!led.empty()) {

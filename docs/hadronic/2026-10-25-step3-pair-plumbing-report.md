@@ -195,8 +195,248 @@ value before any cast (669-791).
 
 ## 4. Tests: measured values, tolerances, verdicts
 
-(filled in sections 4.1 to 4.12 from the runs; see the final message for the
-suite counts)
+Conventions stated before the runs (header of `tests/kernels/bh_pairs.cpp`):
+bath mono eps0 = 0.5, mu_r = 1836.15, dt = 0.5, ions with mu_d = 1 at Gamma_p
+= 6 (K = 9180.75) unless stated, the latency cap off in the kernel tests
+(periodic box), r_th_factor = 10 and f_r = 0.02 so that r_th = 10 <D> = 83.64
+binds (f_r K = 183.6); "exact" = 1e-12 relative to E_drag. At Gamma_p = 6
+(facts, printed by the test): I = 3.2617455651, J = 0.38996804790, <D> =
+8.364135428, eps_mean = 0.5. Every number below is from
+`build-single/tests/kernels/test-kernels-bh_pairs.xc` (all groups, 69
+passed, 0 failed, 1 expected failure) and from the verbose ctest run of the
+drivers (`logs/ctest-single-drivers-verbose.log`).
+
+### 4.1 T10, spawn statistics, `budget` + `delta` (`KERNELS::bh_pairs_t10`)
+
+8 ions (weights 1 and 2.5 alternating), dK/K = 1e-4 per step, 2000 steps.
+Facts: 192 packets in total, 24 per ion of which 8 on the K0 trigger; sum
+dK_applied = 1438.70 per ion, r_final = 53.351074 (stored), Gamma_p 6 ->
+5.2165, r_th 83.64 -> 76.65 over the run.
+
+| check | criterion | measured | verdict |
+| --- | --- | --- | --- |
+| packets per ion = host replay of the debt mechanism (every ion) | exact | 24 = 24 for all 8 ions (192) | pass |
+| brief's constant-threshold formula floor(sum dK / r_th(Gamma_p = 6)) | reported | 17 per ion (r_th drifts by 8% and the K0 trigger adds 8 packets per ion) | (diag) |
+| every w_pair = w r_packet / <D>(Gamma_p at spawn) | 1e-6 | 5.06e-8 (max) | pass |
+| pair payload Gamma_p = parent's Gamma_p at spawn | 1e-6 | 4.01e-8 | pass |
+| pair payload birth time = time after the spawning step | exact | 0 | pass |
+| stored debt after 2000 steps = replay | bit-exact | 0 | pass |
+| pair (i, dx) = parent's, both leptons; *_prev = *; eps payload 0.5; tags alive; equal weights, collinear equal momenta | exact | all 0 | pass (5 checks) |
+| both species' npart = n_spawned | exact | 192 = 192 | pass |
+| hadronic RNG counter unchanged | exact | n_rng = 0 | pass |
+| no drops, no capping at max_events_per_step = 8 | exact | 0 | pass |
+
+Mechanism of the K0 packets (fact): a regular packet leaves r - r_th > 0, so
+K0 is not reset; after ~200 steps |K - K0| exceeds f_r K0 = 2% and the whole
+debt is paid in one packet (r = 0, K0 reset), hence 8 such packets per ion.
+
+Capped loop (dK/K = 2e-2 per step, max_events_per_step = 1, 30 steps; a
+100-step run would fall below the table edge after 74 steps): n_capped = 240
+(every ion-step), exactly one packet per ion per step (240), the debt grows
+to 6320.23, the T11 identity exact (0, 1e-12), array residual / B = 1.34e-3
+(<= 3), E_round = array residual (0, 1e-9): pass (6 checks).
+
+Closing packets (6 ions at Gamma_p = 2.2 accumulating debt for 20 steps with
+r_th out of reach, then decelerated on the host to Gamma_p = 1.565 below
+Gamma_min = 2.13): no packet before (sum w r = 382.10), n_closing = 6, one
+packet per ion, r = K0 = 0 after, w_pair = w r / <D>(Gamma_min) to 4.7e-8,
+payload Gamma_p = the below-edge Gamma_p to 4.1e-8, identity with debt_initial
+= sum w r exact (0): pass (7 checks).
+
+### 4.2 T10, `poisson` + `delta` (`KERNELS::bh_pairs_poisson`)
+
+100 ions x 100 steps at R dt / pair_weight = 0.2 (pair_weight = 0.548816):
+n_spawned 1950 vs 2000 +- 44.7 (1.12 sigma, <= 4), per-ion-step variance
+0.1908 vs mean 0.1950 (2.2%, <= 10%), n_rng = 11950 (> 0), pairs per unit
+ion energy sum w_pair / E_drag vs 1/<D>: 0.096 sigma (<= 4), T11 identity
+1.5e-33 relative, array residual / B = 3.0e-6, E_round = array residual (0):
+pass (7 checks). A different seed gives a different realisation (pass).
+(diag) The same seed on OpenMP gave an identical spawn set in this run; bit
+identity is registered on the Serial backend (4.8). (diag) E_lost_nopairs,
+the signed drag-minus-pairs imbalance, is 42.6 of E_drag 8970.7 (0.47%,
+expectation 0; 1/sqrt(1950) = 2.3% is the one-sigma scale).
+
+### 4.3 T10, `none` (`KERNELS::bh_pairs_none`)
+
+500 steps: no spawns, E_lost_nopairs = E_drag exactly, n_rng = 0, identity
+exact: pass (5 checks).
+
+### 4.4 Pairs per unit ion energy, `budget` (`KERNELS::bh_pairs_energy`)
+
+Registered configuration: 16 ions, dK/K = 1e-6 per step, 1000 steps (K
+changes by 0.0989%), r_th_factor = 2e-4 so that the outstanding debt is
+1.1e-4 of E_drag (86832 packets). sum w_pair / E_drag vs 1/<D>(Gamma_p mid):
+1.10e-4 relative (<= 1e-3), pass; (impl) against E_drag - debt_outstanding:
+2.9e-6, pass; identity exact, array residual / B 3.6e-7, E_round = residual:
+pass. (diag) The brief's nominal configuration (dK/K = 1e-5, r_th_factor =
+10, Gamma_p changing by 0.98%) gives 7.0e-2 against E_drag (the outstanding
+debt, up to one r_th per ion, is 7.2% of E_drag) and 2.2e-3 against the paid
+energy (the drift of <D> between the spawn Gamma_p and the mid-run
+Gamma_p); at the brief's tolerance the statement holds only when the debt
+fraction and the <D> drift are both below 1e-3, which fixes the registered
+configuration above (convention).
+
+### 4.5 T11, ledger closure (`bh_pairs_t10`, `_poisson`, `_energy`, `_momentum`, `_t12`, `_texp`)
+
+(i) The counter identity (host, dd): 0 relative on every budget run, 1.5e-33
+(poisson): pass on all 7 runs. (ii) The array identity residual against the
+printed rounding budget B: 1.4e-5 (budget 2000 steps, B = 28.05), 1.3e-3
+(capped), 3.0e-6 (poisson), 3.6e-7 (per-energy run), 3.4e-6 (physical mass),
+2.6e-5 (T12 with drops), 1.5e-5 (T-exp), all <= 3: pass. (iii) E_round equals
+the array residual: |E_round - residual| / |E_round| = 0 on every run
+(E_round = 3.99e-4, 5.71e-4, -3.2e-5, -2e-6, 7.8e-5, 4.12e-4, -3.0e-5):
+pass. Facts: with the energies in dd both sides are exact sums of the same
+doubles, so the agreement is to the last bit; |residual| / B is 1e-5 or less
+because B bounds every transfer's rounding by its half-ulp while the actual
+roundings have random signs.
+
+(iv) Momentum (`KERNELS::bh_pairs_momentum`, 8 ions with mu_d = mu_r at
+Gamma_p = 6, 2000 steps, 6 packets per ion... facts: P_drag 16822.53, P_pairs
+16458.49, P_absorbed 994.91, E_drag 16551.54). Labelled before the run:
+the III.1 prediction sum w D (1/beta_p - 1) treats the leptons as massless;
+with the delta spectrum gamma_e = 4.432 and the pair momentum deficit
+2 (gamma_e - p_e) = 0.2286 per interaction exceeds D (1/beta_p - 1) = 0.1186,
+so the measured residual was expected to be 2.9 x the prediction and the 1%
+criterion to fail. Measured: P_drag - (P_pairs - P_absorbed) = 1358.95, of
+which 624.99 is the drag momentum of the still outstanding debt; the paid
+part 733.95 against the III.1 prediction 261.44 is 2.81 x (|measured -
+predicted| / predicted = 4.20 on the full residual): **EXPECTED-FAIL** at 1e-2,
+reported as such; no tolerance adjusted. (diag) Against the kinematic
+prediction with the lepton rest mass, sum w [D/beta_p(spawn) - (2
+sqrt(gamma_e^2 - 1) - eps)] = 736.00, the paid residual agrees to 2.8e-3
+(the drag of a packet is accrued at earlier, higher beta_p than the spawn
+state, so this is an approximation; the exact bookkeeping is the ledger's).
+(diag) Low-energy run at Gamma_p = 2.5 (Gamma_p = 1.5 of the brief is below
+the threshold 2.125 of this bath): residual / E_drag = 0.296 with
+D (1/beta_p - 1)/D = 0.091; the rest-mass deficit dominates there too.
+Open question for the spec (section 8).
+
+### 4.6 T12, capacity (`KERNELS::bh_pairs_t12`, `HADRONIC::t12_capacity`)
+
+Kernel level: pair maxnpart = 88 with 8 ions at dK/K = 1e-4 per step, 2000
+steps: exhaustion at step 860 (in [700, 1300]), n_injected = capacity = 8
+exactly at that step, both species full and equal (88), every slot holds a
+kernel-born lepton, n_dropped = 8976 (9064 attempts, 88 insertions), the
+per-launch identity holds at every step including the drops (max residual
+0), the debt of the dropped packets stays outstanding (debt_outstanding /
+E_drag = 0.509), the end-of-run identity exact, array residual / B 2.6e-5,
+E_round = residual: pass (10 checks).
+
+Engine level (`t12.sh`, pair maxnpart = 60 for 4 ions over 2000 steps,
+`on_capacity_estimate = warn` because the estimate (316 sized, 87.8 bare)
+exceeds 60 by design): `on_capacity = error` aborts at step 1239 with
+"on_capacity: pair capacity exhausted at step 1239 (species 1): capacity =
+0, tickets = 4, inserted = 0, n_dropped = 4 this step; e- npart 60 / maxnpart
+60, ..." (exit 1), the ledger row written before the abort has n_dropped = 4,
+npart 60 / 60, residual 0; `on_capacity = warn` runs to the end: n_dropped =
+3044, npart 60 / 60, residual 0, debt_outstanding 2184.87 of E_drag 5757.26,
+array residual = E_round = 5.28e-5: pass (8 checks). The engine abort is on
+the first step with a drop (the filling step had tickets = capacity exactly
+and no drop); the kernel test checks the filling step itself.
+
+Bounds-check rerun: section 6.
+
+### 4.7 T12b, startup estimate (`HADRONIC::t12b_estimate`)
+
+32 ions with Gamma_p log-spaced on [3, 12] (dN/dGamma ~ Gamma^-1, 8 energies
+x 4), the declared envelope index 1 on [3, 12], c_layer = 1, comm_headroom =
+0, t_run = 1000: printed estimate 904.40 macro-particles per pair species
+(rate 0.028262 per active ion per unit time); the input with maxnpart = 452
+refused with "on_capacity_estimate: the startup estimate of 904.3982562
+macro-particles per pair species (bare 904.3982562) exceeds maxnpart (e- 452,
+e+ 452)"; the input with maxnpart = 1809 runs; measured spawn count 816 =
+0.902 x the estimate (within a factor 2); no drops; identity 0: pass (5
+checks).
+
+### 4.8 T13, discrete charge conservation (`HADRONIC::t13_gauss`)
+
+1D, 16 cells, pairs deposit (ions do not), field solver on, no current
+filter, E = B = 0 initially, a background pair plasma of 32 ppc per species
+(temperature 0.1) loaded through `arch::InjectNonUniform` (512 e- and 512
+e+), 32 ions at dK/K = 1e-3 per step, threshold spectrum with a longitudinal
+kick of 0.3 (unequal lepton velocities), 200 steps (708 pairs born). The
+residual R_i = (E_{i+1/2} - E_{i-1/2}) - (q0/(B0 V0)) rho_i (CIC rho from the
+arrays in double, section 3.4) is compared with its first value R0 (fact: a
+randomly loaded background has rho != 0 with E = 0, max|R0| = 2.57e-7 in
+field units against max|c rho| = 1.65). Measured, in units of max|c rho|:
+max over the 20 rows of max|R - R0| = 3.05e-6 (last row 1.94e-6) for the
+pair run against 1.90e-6 (last 1.18e-6) for the control run without pair
+creation: ratio 1.61 (<= 2), pass; no growth trend (last quarter / max(first
+quarter, control) = 1.41, <= 2), pass; right after the first births max|R -
+R0| = 0 exactly (the two leptons at one position cancel in rho to the last
+bit and have deposited nothing yet), pass; identity 0, n_spawned 708 >= 100:
+pass (5 checks). Births in the cells next to the periodic boundary are
+included (ions at hashed positions over all 16 cells). (diag, filter on) with
+one pass of the stock current filter the residual against the unfiltered CIC
+rho is 0.90 of max|c rho|: the filter smooths J, so div E follows a smoothed
+charge density; the consistent comparison would apply the same stencil to
+rho_h (not pursued; reported only).
+
+### 4.9 T-exp, exported debt (`KERNELS::bh_pairs_texp`, `HADRONIC::texp_exported_debt`)
+
+Kernel level: 10 ions, 50 steps, then 4 ions tagged dead on the host:
+E_exported = sum w r of the dead ions (host sum before the launch) exact (0,
+1e-12), pending_discarded = sum w delta exact, r = delta = K0 = 0 afterwards,
+the identity with the exported term exact at the end of 100 steps (array
+residual / B 1.5e-5, E_round = residual): pass (6 checks). Engine level
+(`texp.sh`, 16 ions at c into absorbing x walls, dK/K = 1e-3 per step,
+t_latency auto = 1.6, 60 steps): E_exported_host = E_exported = 249.3965 (difference 0),
+pending_discarded_host = pending_discarded = -5.008e-4 (difference 0; a signed
+rounding residual of the request), 15 dead ions seen with a payload by the
+hook before the sort, the ledger identity 0, 82 pairs born before the ions
+left: pass (6 checks); `t_latency = 0` in this box refused naming
+`setup.t_latency` (pass).
+
+### 4.10 T10b, stale payloads (`KERNELS::bh_pairs_t10b`, `KERNELS::injectors_payloads`, engine scan)
+
+Kernel level: pair payload arrays with 5 slots filled with NaN, 300 steps
+(264 pairs): no live lepton carries a NaN payload, the two slots beyond the
+three specified are zero on every live lepton, the unused tails still hold
+NaN (48680 slot pairs): pass (3 checks). `injectors_payloads` (30 checks,
+section 3.5): every path of the inventory that the prototype can reach is
+exercised: the overload directly (tracking, not tracking, npld_r = 0),
+`UniformInjector_kernel` (not reachable from a `use_weights = true` Cartesian
+run through `arch::InjectUniform`, which refuses weights in Cartesian
+coordinates, fact: `particle_injector.h:213-215`; exercised by constructing
+the kernel directly), `NonUniformInjector_kernel` (reached end to end by the
+T13 background through `arch::InjectNonUniform`), `GlobalInjector_kernel`
+(reached end to end by `background.n_global`; the test constructs a
+one-domain Metadomain). End to end: every run prints "payload scan : 0 NaN
+payload entries on live particles" (fact; the T13 runs with the stock
+injector included).
+
+### 4.11 T-P5 (`KERNELS::reduced_stats_weights`)
+
+8 particles in 2D Minkowski, m = 3.5 with charges -2 and +2 (weighted and
+unweighted) and m = 1836.15 with charge +1, weights in [0.5, 3.5], momenta in
+[-2, 2]^3: N, Rho, Charge, Npart, T00, T0i, Tij against a direct double sum,
+1e-6 relative to the sum of absolute contributions: 56 checks, 56 passed
+(largest relative error of the registered cases 1.5e-7; the 64-particle
+diagnostics reach 1.5e-7 too). The stock `KERNELS::reduced_stats` passes
+unchanged.
+
+### 4.12 Suites
+
+Single build (A): 85 tests, 85 passed, 186.5 s wall with `ctest -j1`. The 53
+stock tests pass unchanged; the 32 others are `KERNELS::injectors_payloads`,
+`KERNELS::reduced_stats_weights`, `KERNELS::bh_loss_*` (10, unchanged step-2
+groups: 57 checks + T5b), `KERNELS::bh_pairs_*` (8 groups), `ARCHETYPES::bh_*`
+(2), `HADRONIC::{bh_proto_params (100 checks: 10 positive, 90 refusals),
+reject (25 inputs, 25 passed), t7a, t7b, t5b_cross_build, t8_bit_identity,
+t12_capacity, t12b_estimate, t13_gauss, t10_poisson_determinism,
+texp_exported_debt}`. The step-2 regression: every step-2 test passes with
+`source = "none"` added to its input (the only input change; the T8 check of
+the check tool reads the 41-column ledger).
+
+Double build (B): DOUBLE_SUITE_PLACEHOLDER
+
+Poisson determinism on the Serial build (C, `t10det.sh`): two runs with
+`simulation.seed = 12345` give identical checksum lines for the ions, both
+pair species and the fields and byte-identical pair files; seed 67890 differs
+(pass, 4 checks); the hadronic seeds printed are 16993438640103495697 and
+15281541011136068842. (diag) On the OpenMP build the same seed gives
+different pair checksums (509 pairs in both runs, different arrays): the pool
+assigns generator states by scheduling, as stated in the spec.
 
 ## 5. RNG seeding (fact)
 
@@ -214,9 +454,17 @@ hash), never a sum. The seed used is printed
 (`bh_proto: species 1: hadronic RNG pool seeded with splitmix64(seed ...,
 species 1, domain 0, start step 0) = ...`).
 
-## 6. Bounds-check diagnostic (build D)
+## 6. Bounds-check diagnostic (build D, P8)
 
-(filled from the run)
+Kokkos installed with `Kokkos_ENABLE_DEBUG_BOUNDS_CHECK=ON` and
+`Kokkos_ENABLE_DEBUG=ON` (fact: `KokkosCore_config.h` of
+`$HOME/.entity/kokkos-debug` defines `KOKKOS_ENABLE_DEBUG_BOUNDS_CHECK`).
+Run under it: `test-kernels-bh_pairs.xc t12 t10b texp` (19 checks passed,
+exit 0, no bounds error), the engine input `t12_capacity_warn.toml` (the
+exhaustion case: n_dropped 3044 at a full capacity of 60, residual 0, exit 0,
+no bounds error) and `t13_gauss.toml` (1222 pairs, residual 0, exit 0). The
+tickets beyond the capacity never index the pair arrays (facts). Diagnostic,
+not registered in ctest.
 
 ## 7. Deferred to Rusty (not attempted here, as the brief requires)
 
@@ -229,11 +477,46 @@ in this container, and the brief excludes the production placement.
 
 ## 8. Open questions
 
-(filled)
+1. **T11 (iv) prediction.** The III.1 formula sum w D (1/beta_p - 1) for the
+   momentum residual omits the lepton rest mass; with the mean-energy spectra
+   at Gamma_p = 6 the pair momentum deficit 2 (gamma_e - p_e) is 1.9 times
+   that term, so the 1% criterion cannot be met by construction (4.5). Either
+   the prediction should include 2 (gamma_e - sqrt(gamma_e^2 - 1)) per
+   interaction (and the outstanding debt's momentum), or the test belongs to
+   the rest-frame sampler of step 4 where the lepton energies are drawn.
+2. **The poisson identity.** The convention of 3.6 item 3 makes the identity
+   hold by definition for `poisson`; the spec should state what
+   `E_lost_nopairs` means for that source (the signed imbalance here) or
+   exempt `poisson` from the exact identity.
+3. **Pairs per unit energy at 1e-3.** The statement holds only when both the
+   outstanding-debt fraction and the <D> drift over the run are below 1e-3
+   (4.4); the brief's nominal parameters give 7e-2 and 2e-3. The spec could
+   phrase it on the paid energy (E_drag - debt_outstanding) at the
+   spawn-weighted Gamma_p.
+4. **The K0 trigger.** Because a regular packet leaves r - r_th > 0, K0 is
+   reset only on the K0 trigger; it fires every ~f_r / (dK/K) steps even when
+   packets flow regularly (4.1). If the intention is a trigger only for ions
+   whose debt stalls, K0 should be reset after every packet (K0 <- K).
+5. **The brief's T10 count formula** floor(sum dK_applied / r_th) assumes a
+   constant r_th; with Gamma_p dropping 13% over 2000 steps r_th drifts by 8%
+   and the K0 trigger adds packets, so the exact statement is the replay
+   (4.1), which is what the test registers.
+6. **One pair of species for all hadronic ion species** (3.6 item 4).
+7. **Gauss residual with the current filter** (4.8, diag): the consistent
+   check needs the filtered charge density.
+8. **`GlobalInjector_kernel` weights** (3.6 item 9): left to P10.
 
 ## 9. Not done
 
-(filled)
+- Rest-frame sampler, `table` spectrum, event mode, non-uniform bath
+  profiles (step 4 and later); `threshold` is a plumbing option only.
+- MPI, GPU, production placement, double-typed stats entries, checkpoint
+  restart of the hadronic pool (statistical restart designed, not tested):
+  section 7.
+- P10 (injector weight relaxations) and the schema / parser plumbing: excluded
+  by the brief.
+- The `pending` request of a dead ion is discarded, as the spec; the T-exp
+  runs show it is a signed rounding residual at the 1e-4 level.
 
 ## 10. Reproduction
 
