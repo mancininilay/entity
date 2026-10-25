@@ -255,7 +255,19 @@ order-independent checksums ignore.
 
 ### 0.8 UBSan and bounds-check diagnostics (R2, P8)
 
-{{UBSAN}}
+Build `build-ubsan` (fact): the single-precision OpenMP configuration with
+`-fsanitize=undefined -fno-sanitize-recover=undefined -g` (gcc 13.3.0,
+`output=OFF`), `entity.xc`, `test-kernels-bh_pairs.xc` and `bh_check` built
+(exit 0). Runs under it (`logs/ubsan-*.log`): `test-kernels-bh_pairs.xc r2
+r3 r1` 30 passed, 0 failed, exit 0, no `runtime error` line (the sampler at
+lambda = 0.2, 5, 50, 500, the cap at lambda = 500 and 5, lambda = inf, NaN
+and 1.1e19, the kernel at `pair_weight = 1e-20`, the K0 and R4 replays and
+the unequal-slot runs); `r2_tiny.sh` with the UBSan `entity.xc`
+(`pair_weight = 1e-20`, 25600 pairs, 3200 capped ion-steps): every check
+passed, exit 0, no `runtime error` line in the run log. With
+`-fno-sanitize-recover` any undefined behaviour (in particular a
+float-to-int conversion out of range, the round-1 defect) would have
+aborted the run. Diagnostic, not registered in ctest.
 
 Bounds-check build D rebuilt from the round-2 HEAD (fact, `logs/bounds-*`,
 not registered in ctest): `test-kernels-bh_pairs.xc t12 t10b texp r1 r2 r3`
