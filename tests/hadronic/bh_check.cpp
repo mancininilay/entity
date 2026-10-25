@@ -48,6 +48,23 @@
  *
  *   reject --log F --key K
  *         the log names setup.K in an error message
+ *
+ *   step 3 (pair plumbing):
+ *   ledger --file F [--tol T] [--expect_dropped 0|1] [--expect_npart N] [--min_spawned N] [--expect_rng N]
+ *          [--expect_nopairs 1]
+ *         last row of a hadronic_ledger file: identity residual <= T (1e-12) x E_drag, optional counts
+ *   abort  --log F --key K [--step_min A --step_max B]
+ *         the log carries the K message "... at step N" (on_capacity abort), N in [A, B]
+ *   t12b   --log F [--measured 1]
+ *         prints the startup estimate (bare and sized) from the log; with --measured compares the final
+ *         npart of the pair species with the bare estimate (factor 2)
+ *   gauss  --test F --control F
+ *         hadronic_gauss files: max|R - R0|/max|c rho| of the pair run within a factor 2 of the control
+ *         run's, no growth trend, the first births within the control level
+ *   det    --a LOG --b LOG --expect same|differ
+ *         identical (or different) "bh_proto: checksum" lines
+ *   texp   --log F
+ *         E_exported and pending_discarded equal the host sums over the dead ions (1e-12), identity residual
  */
 
 #include "archetypes/hadronic/bh_physics.h"
@@ -518,6 +535,272 @@ namespace {
     return 0;
   }
 
+  /* ---- step 3: ledger file (last row) ------------------------------------- */
+  struct LedgerLast {
+    std::vector<double> c;
+  };
+
+  LedgerLast read_last_ledger_row(const std::string& path) {
+    std::ifstream in(path);
+    if (!in) {
+      throw std::runtime_error("cannot open " + path);
+    }
+    std::string line, last;
+    while (std::getline(in, line)) {
+      if (!line.empty() && line[0] != '#') {
+        last = line;
+      }
+    }
+    if (last.empty()) {
+      throw std::runtime_error("no data row in " + path);
+    }
+    LedgerLast         r;
+    std::istringstream ss(last);
+    double             v;
+    while (ss >> v) {
+      r.c.push_back(v);
+    }
+    if (r.c.size() < 41) {
+      throw std::runtime_error("ledger row has " + std::to_string(r.c.size()) + " columns, expected 41");
+    }
+    return r;
+  }
+
+  // column indices of the step-3 ledger file
+  enum LedgerCol : int {
+    L_STEP = 0, L_TIME = 1, L_EDRAG = 2, L_EPAIRS = 3, L_EABS = 4, L_EEXP = 5, L_EROUND = 6, L_ELOST = 7,
+    L_PDISC = 8, L_DINIT = 9, L_DOUT = 19, L_POUT = 20, L_RES = 21, L_NEVENTS = 22, L_NSPAWNED = 23,
+    L_NDROPPED = 24, L_NCLOSING = 28, L_NCAPPED = 29, L_NCAPEV = 30, L_NRNG = 35, L_NK0 = 36, L_SUMWK = 37,
+    L_B = 38, L_NPM = 39, L_NPP = 40
+  };
+
+  int cmd_ledger(const Args& a) {
+    const auto   r   = read_last_ledger_row(str(a, "file"));
+    const double tol = a.count("tol") ? num(a, "tol") : 1.0e-12;
+    const double E   = std::abs(r.c[L_EDRAG]);
+    std::printf("LEDGER_ROW step %.0f n_events %.0f n_spawned %.0f n_dropped %.0f n_closing %.0f n_capped %.0f "
+                "n_capped_events %.0f n_rng %.0f npart_minus %.0f npart_plus %.0f E_drag %.17g E_pairs %.17g "
+                "E_absorbed %.17g E_exported %.17g E_round %.17g E_lost_nopairs %.17g debt_outstanding %.17g "
+                "residual %.6e B %.17g\n",
+                r.c[L_STEP], r.c[L_NEVENTS], r.c[L_NSPAWNED], r.c[L_NDROPPED], r.c[L_NCLOSING], r.c[L_NCAPPED],
+                r.c[L_NCAPEV], r.c[L_NRNG], r.c[L_NPM], r.c[L_NPP], r.c[L_EDRAG], r.c[L_EPAIRS], r.c[L_EABS],
+                r.c[L_EEXP], r.c[L_EROUND], r.c[L_ELOST], r.c[L_DOUT], r.c[L_RES], r.c[L_B]);
+    verdict(std::abs(r.c[L_RES]) <= tol * E, "ledger identity residual / E_drag (last row)",
+            E > 0.0 ? std::abs(r.c[L_RES]) / E : std::abs(r.c[L_RES]), tol);
+    if (a.count("expect_dropped")) {
+      const bool want = num(a, "expect_dropped") > 0.5;
+      verdict(want ? r.c[L_NDROPPED] > 0.0 : r.c[L_NDROPPED] == 0.0,
+              want ? "ledger: n_dropped > 0" : "ledger: n_dropped = 0", r.c[L_NDROPPED], want ? 1.0 : 0.0);
+    }
+    if (a.count("expect_npart")) {
+      const double n = num(a, "expect_npart");
+      verdict(r.c[L_NPM] == n && r.c[L_NPP] == n, "ledger: npart of both pair species = " + std::to_string((long)n),
+              r.c[L_NPM], n);
+    }
+    if (a.count("min_spawned")) {
+      verdict(r.c[L_NSPAWNED] >= num(a, "min_spawned"), "ledger: n_spawned >= " + a.at("min_spawned"), r.c[L_NSPAWNED],
+              num(a, "min_spawned"));
+    }
+    if (a.count("expect_rng")) {
+      const double n = num(a, "expect_rng");
+      verdict(r.c[L_NRNG] == n, "ledger: n_rng = " + a.at("expect_rng"), r.c[L_NRNG], n);
+    }
+    if (a.count("expect_nopairs") && num(a, "expect_nopairs") > 0.5) {
+      verdict(r.c[L_NSPAWNED] == 0.0 && r.c[L_ELOST] == r.c[L_EDRAG], "ledger (none): no spawns and E_lost_nopairs = E_drag",
+              r.c[L_ELOST] - r.c[L_EDRAG], 0.0);
+    }
+    return 0;
+  }
+
+  /* ---- step 3: abort message ---------------------------------------------- */
+  int cmd_abort(const Args& a) {
+    const auto lines = grep_lines(str(a, "log"), str(a, "key"));
+    bool       found = false;
+    long       step  = -1;
+    for (const auto& l : lines) {
+      const auto pos = l.find("at step ");
+      if (pos != std::string::npos) {
+        step  = std::atol(l.c_str() + pos + 8);
+        found = true;
+        std::printf("(diag) %s\n", l.substr(0, 400).c_str());
+      }
+    }
+    verdict(found, "abort: the log names " + str(a, "key") + " with the step", static_cast<double>(step), 0.0);
+    if (a.count("step_min") && a.count("step_max")) {
+      verdict(found && step >= num(a, "step_min") && step <= num(a, "step_max"),
+              "abort: the exhaustion step lies in [" + a.at("step_min") + ", " + a.at("step_max") + "]",
+              static_cast<double>(step), num(a, "step_max"));
+    }
+    return 0;
+  }
+
+  /* ---- step 3: startup estimate ------------------------------------------- */
+  double after(const std::string& l, const std::string& key) {
+    const auto pos = l.find(key);
+    if (pos == std::string::npos) {
+      throw std::runtime_error("'" + key + "' not found in: " + l.substr(0, 200));
+    }
+    return std::atof(l.c_str() + pos + key.size());
+  }
+
+  int cmd_t12b(const Args& a) {
+    const auto est = grep_lines(str(a, "log"), "capacity estimate (III.8)");
+    if (est.empty()) {
+      throw std::runtime_error("no capacity estimate line in the log");
+    }
+    const double sized = after(est.front(), "expected macro-particles per pair species = ");
+    const double bare  = after(est.front(), "(bare: ");
+    std::printf("T12B_BARE %.10g T12B_SIZED %.10g\n", bare, sized);
+    if (a.count("measured") && num(a, "measured") > 0.5) {
+      const auto led = grep_lines(str(a, "log"), "bh_proto: ledger species");
+      if (led.empty()) {
+        throw std::runtime_error("no ledger line in the log");
+      }
+      const double n = after(led.front(), "npart_minus ");
+      std::printf("T12B_MEASURED %.0f\n", n);
+      verdict(n >= 0.5 * bare && n <= 2.0 * bare,
+              "T12b: measured spawn count within a factor 2 of the estimate (bare " + std::to_string(bare) + ")",
+              n / bare, 2.0);
+    }
+    return 0;
+  }
+
+  /* ---- step 3: Gauss residual --------------------------------------------- */
+  struct GaussRow {
+    long        step;
+    double      time;
+    std::string stage;
+    double      maxR, maxrho, maxE, ratio, sumR, sumrho, maxq, maxdR;
+    int         argmax;
+    double      nm, np;
+  };
+
+  std::vector<GaussRow> read_gauss(const std::string& path) {
+    std::ifstream in(path);
+    if (!in) {
+      throw std::runtime_error("cannot open " + path);
+    }
+    std::vector<GaussRow> rows;
+    std::string           line;
+    while (std::getline(in, line)) {
+      if (line.empty() || line[0] == '#') {
+        continue;
+      }
+      std::istringstream ss(line);
+      GaussRow           r;
+      ss >> r.step >> r.time >> r.stage >> r.maxR >> r.maxrho >> r.maxE >> r.ratio >> r.argmax >> r.sumR >> r.sumrho >>
+        r.maxq >> r.nm >> r.np >> r.maxdR;
+      rows.push_back(r);
+    }
+    return rows;
+  }
+
+  int cmd_gauss(const Args& a) {
+    const auto test = read_gauss(str(a, "test"));
+    const auto ctrl = read_gauss(str(a, "control"));
+    auto max_ratio = [](const std::vector<GaussRow>& rows, const std::string& stage, std::size_t from, std::size_t to) {
+      double m = 0.0;
+      std::size_t k = 0;
+      for (const auto& r : rows) {
+        if (r.stage != stage) {
+          continue;
+        }
+        if (k >= from && k < to) {
+          m = std::max(m, r.ratio);
+        }
+        ++k;
+      }
+      return m;
+    };
+    auto count_stage = [](const std::vector<GaussRow>& rows, const std::string& stage) {
+      std::size_t k = 0;
+      for (const auto& r : rows) {
+        k += (r.stage == stage);
+      }
+      return k;
+    };
+    const auto nt = count_stage(test, "step"), nc = count_stage(ctrl, "step");
+    if (nt < 4 || nc < 4) {
+      throw std::runtime_error("too few 'step' rows in the gauss files");
+    }
+    const double t_all = max_ratio(test, "step", 0, nt), c_all = max_ratio(ctrl, "step", 0, nc);
+    for (const auto& r : test) {
+      if (r.stage != "step") {
+        std::printf("(diag) test %s: max|R| %.6e, max|c rho| %.6e, max|R - R0| %.6e, ratio %.6e, npart e- %.0f e+ %.0f\n",
+                    r.stage.c_str(), r.maxR, r.maxrho, r.maxdR, r.ratio, r.nm, r.np);
+      }
+    }
+    std::printf("(diag) test: %zu step rows, max over rows of max|R - R0| / max|c rho| = %.6e (last row %.6e, pairs e- %.0f); "
+                "control: %zu rows, %.6e (last %.6e)\n",
+                nt, t_all, test.back().ratio, test.back().nm, nc, c_all, ctrl.back().ratio);
+    verdict(t_all <= 2.0 * c_all && c_all > 0.0,
+            "T13: max|R - R0| / max|c rho| of the pair run within a factor 2 of the control run's (test / control)",
+            c_all > 0.0 ? t_all / c_all : t_all, 2.0);
+    // no growth trend: the last quarter of the rows against the first quarter
+    const std::size_t q = std::max<std::size_t>(1, nt / 4);
+    const double      t_first = max_ratio(test, "step", 0, q), t_last = max_ratio(test, "step", nt - q, nt);
+    verdict(t_last <= 2.0 * std::max(t_first, c_all), "T13: no growth trend (last quarter / max(first quarter, control))",
+            t_last / std::max(t_first, c_all), 2.0);
+    // the births right after the first launch do not change the residual beyond the control level
+    for (const auto& r : test) {
+      if (r.stage == "after_first_launch") {
+        verdict(r.ratio <= 2.0 * c_all, "T13: residual right after the first births within a factor 2 of the control level",
+                c_all > 0.0 ? r.ratio / c_all : r.ratio, 2.0);
+      }
+    }
+    return 0;
+  }
+
+  /* ---- step 3: determinism ------------------------------------------------ */
+  int cmd_det(const Args& a) {
+    const auto la = grep_lines(str(a, "a"), "bh_proto: checksum");
+    const auto lb = grep_lines(str(a, "b"), "bh_proto: checksum");
+    const bool want_same = str(a, "expect") == "same";
+    bool       same      = la.size() == lb.size() && !la.empty();
+    for (std::size_t i = 0; same && i < la.size(); ++i) {
+      same = la[i] == lb[i];
+    }
+    for (const auto& l : la) {
+      std::printf("(diag) a: %s\n", l.c_str());
+    }
+    for (const auto& l : lb) {
+      std::printf("(diag) b: %s\n", l.c_str());
+    }
+    verdict(want_same ? same : !same,
+            want_same ? "determinism: every checksum line identical (same seed)"
+                      : "determinism: the checksum lines differ (different seeds)",
+            same ? 1.0 : 0.0, want_same ? 1.0 : 0.0);
+    return 0;
+  }
+
+  /* ---- step 3: exported debt ---------------------------------------------- */
+  int cmd_texp(const Args& a) {
+    const auto lines = grep_lines(str(a, "log"), "bh_proto: exported species");
+    if (lines.empty()) {
+      throw std::runtime_error("no 'exported species' line in the log");
+    }
+    const auto&  l       = lines.front();
+    const double eh      = after(l, "E_exported_host ");
+    const double e       = after(l, "E_exported ");
+    const double ph      = after(l, "pending_discarded_host ");
+    const double pd      = after(l, "pending_discarded ");
+    const double n_dead  = after(l, "n_dead_with_payload ");
+    std::printf("(diag) %s\n", l.substr(0, 400).c_str());
+    verdict(eh > 0.0 && std::abs(e - eh) <= 1.0e-12 * eh, "T-exp: E_exported = host sum w r over the dead ions, relative",
+            eh > 0.0 ? std::abs(e - eh) / eh : 1.0, 1.0e-12);
+    verdict(std::abs(pd - ph) <= 1.0e-12 * std::max(ph, 1.0e-300), "T-exp: pending_discarded = host sum w delta, relative",
+            ph > 0.0 ? std::abs(pd - ph) / ph : std::abs(pd), 1.0e-12);
+    verdict(n_dead > 0.0, "T-exp: dead ions with a payload were seen by the hook before the sort", n_dead, 1.0);
+    const auto led = grep_lines(str(a, "log"), "bh_proto: ledger species");
+    if (!led.empty()) {
+      const double res = after(led.front(), "residual ");
+      const double E   = after(led.front(), "E_drag ");
+      verdict(std::abs(res) <= 1.0e-12 * E, "T-exp: ledger identity with the exported term, residual / E_drag",
+              std::abs(res) / E, 1.0e-12);
+    }
+    return 0;
+  }
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -546,6 +829,18 @@ int main(int argc, char** argv) {
       cmd_t8(a);
     } else if (cmd == "reject") {
       cmd_reject(a);
+    } else if (cmd == "ledger") {
+      cmd_ledger(a);
+    } else if (cmd == "abort") {
+      cmd_abort(a);
+    } else if (cmd == "t12b") {
+      cmd_t12b(a);
+    } else if (cmd == "gauss") {
+      cmd_gauss(a);
+    } else if (cmd == "det") {
+      cmd_det(a);
+    } else if (cmd == "texp") {
+      cmd_texp(a);
     } else {
       std::fprintf(stderr, "bh_check: unknown subcommand '%s'\n", cmd.c_str());
       return 2;

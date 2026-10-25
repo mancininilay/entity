@@ -1,8 +1,8 @@
-# bh_proto input: rejection (particles level): use_weights = false
+# bh_proto input: rejection: particles.use_weights = false with source = budget
 [simulation]
-  name    = "bh_reject"
+  name    = "reject_weights"
   engine  = "srpic"
-  runtime = 1.0
+  runtime = 10.0
 
 [grid]
   resolution = [16]
@@ -30,9 +30,29 @@
   use_weights = false
   [[particles.species]]
     label                    = "ion"
-    mass                     = 1836.15
+    mass                     = 1.0
     charge                   = 1.0
     maxnpart                 = 1e3
+    pusher                   = "Boris"
+    n_payloads_real          = 3
+    deposit                  = false
+    clear_interval           = 0
+    spatial_sorting_interval = 0
+  [[particles.species]]
+    label                    = "e-"
+    mass                     = 1.0
+    charge                   = -1.0
+    maxnpart                 = 2e4
+    pusher                   = "Boris"
+    n_payloads_real          = 3
+    deposit                  = false
+    clear_interval           = 0
+    spatial_sorting_interval = 0
+  [[particles.species]]
+    label                    = "e+"
+    mass                     = 1.0
+    charge                   = 1.0
+    maxnpart                 = 2e4
     pusher                   = "Boris"
     n_payloads_real          = 3
     deposit                  = false
@@ -42,21 +62,20 @@
 [setup]
   hadronic.enabled    = true
   hadronic.species    = [1]
-  source              = "none"
-  tau0                = 1.0
+  tau0                = 0.562960
   physical_mass_ratio = 1836.15
   photon_field.type   = "mono"
   photon_field.eps0   = 0.5
-  eta_u               = 1e-4
-  pending_floor_ulp   = 100
-  f_max               = 0.01
-  max_substeps        = 64
+  source              = "budget"
+  spectrum            = "delta"
+  pair_species        = [2, 3]
+  r_th_factor         = 10.0
+  f_r                 = 0.02
+  t_latency           = 0.0
+  gamma_p_typical     = 6.0
   ions.K              = [9180.75]
   ions.per_K          = 4
   ions.direction      = "+x"
-  ions.weight         = 1.0
-  fields.B            = [0.0, 0.0, 0.0]
-  fields.E            = [0.0, 0.0, 0.0]
   ledger.every        = 100
 
 [output]

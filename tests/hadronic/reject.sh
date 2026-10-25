@@ -9,7 +9,12 @@ n_run=0; n_pass=0; n_fail=0
 # <input name>:<setup key named by the message>
 for pair in reject_tau0:tau0 reject_fmax:f_max reject_bool:hadronic.enabled \
             reject_unsafe:allow_unsafe_application reject_type:photon_field.type \
-            reject_ionsK:ions.K; do
+            reject_ionsK:ions.K \
+            reject_pair_missing:pair_species reject_pair_zero:pair_species reject_pair_ion:pair_species \
+            reject_pair_same:pair_species reject_epsmax:photon_field.eps_max \
+            reject_gamma_typical:gamma_p_typical reject_fr:f_r reject_rth:r_th_factor \
+            reject_pairweight:pair_weight reject_maxevents:max_events_per_step \
+            reject_oncapacity:on_capacity reject_envelope:envelope.gamma_max; do
   name="${pair%%:*}"; key="${pair#*:}"
   if [ ! -f "$INP/$name.toml" ]; then
     echo "FAIL: $name: input $INP/$name.toml not found"; n_fail=$((n_fail + 1)); continue
@@ -29,7 +34,9 @@ for pair in reject_tau0:tau0 reject_fmax:f_max reject_bool:hadronic.enabled \
   fi
 done
 # species-level and particles-level refusals (messages name the input key)
-for pair in "reject_payloads:n_payloads_real" "reject_weights:use_weights" "reject_gca:GCA"; do
+for pair in "reject_payloads:n_payloads_real" "reject_weights:use_weights" "reject_gca:GCA" \
+            "reject_pair_charge:charge" "reject_pair_mass:mass 1" "reject_pair_slots:n_payloads_real" \
+            "reject_tlatency:t_latency"; do
   name="${pair%%:*}"; key="${pair##*:}"
   if [ ! -f "$INP/$name.toml" ]; then
     echo "FAIL: $name: input $INP/$name.toml not found"; n_fail=$((n_fail + 1)); continue

@@ -332,6 +332,9 @@ namespace user {
       bool                         ions_started { false };
       unsigned long long           n_capacity_warnings { 0 };
       unsigned long long           n_max_events_warnings { 0 };
+      kernel::hadronic::dd         exported_host {};  // sum w r over dead ions, host, before each launch
+      kernel::hadronic::dd         discarded_host {}; // sum w delta over dead ions, host, before each launch
+      unsigned long long           n_dead_host { 0 }; // dead ions seen with a non-zero debt or pending request
 
       void accumulate(const kernel::hadronic::LossLedger& L) {
         const auto snap_pending = L.pending_outstanding;
@@ -436,6 +439,7 @@ namespace user {
     spidx_t                                    pair_minus { 0 }, pair_plus { 0 };
     npart_t                                    pair_maxnpart_m { 0 }, pair_maxnpart_p { 0 };
     bool                                       gauss_started { false };
+    std::vector<double>                        gauss_R0;                 // Gauss residual per node at the first write
     double                                     estimate_bare { 0.0 };     // expected pairs per species (no margins)
     double                                     estimate_sized { 0.0 };    // with c_layer and comm_headroom
 
@@ -786,10 +790,10 @@ namespace user {
                             static_cast<double>(ion_species.size());
       estimate_bare  = N_ions * setup.active_fraction * rate * runtime;
       estimate_sized = estimate_bare * setup.c_layer * (1.0 + setup.comm_headroom);
-      const double background = setup.background_ppc * std::pow(static_cast<double>(16), 0.0) * 0.0 +
-                                static_cast<double>(setup.background_n_global);
-      // the background injected through InjectNonUniform is counted at InitPrtls (cells known there)
-      const double need = estimate_sized + background;
+      // background particles injected at InitPrtls occupy slots too (the InjectNonUniform
+      // part depends on the cell count and is not known here; InjectGlobally's is)
+      const double background = static_cast<double>(setup.background_n_global);
+      const double need       = estimate_sized + background;
       const bool   exceeded = need > static_cast<double>(pair_maxnpart_m) ||
                             need > static_cast<double>(pair_maxnpart_p);
       std::printf("bh_proto: capacity estimate (III.8): spawn rate per active ion per unit time = %.10g "
@@ -1079,6 +1083,29 @@ namespace user {
             continue;
           }
           auto& H = ledgers[sp.index()];
+          // T-exp: host-side sums over the ions tagged dead this step (absorbing
+          // walls), taken before the launch and before the sort; the kernel's
+          // E_exported / pending_discarded must reproduce them exactly
+          if (any_absorbing) {
+            auto hw = Kokkos::create_mirror_view(sp.weight);
+            auto ht = Kokkos::create_mirror_view(sp.tag);
+            auto hp = Kokkos::create_mirror_view(sp.pld_r);
+            Kokkos::deep_copy(hw, sp.weight);
+            Kokkos::deep_copy(ht, sp.tag);
+            Kokkos::deep_copy(hp, sp.pld_r);
+            unsigned long long n_dead_now = 0;
+            for (npart_t p = 0; p < sp.npart(); ++p) {
+              if (ht(p) == ParticleTag::dead) {
+                const double w = static_cast<double>(hw(p));
+                H.exported_host.add_prod(w, static_cast<double>(hp(p, setup.payload_debt)));
+                H.discarded_host.add_prod(w, static_cast<double>(hp(p, setup.payload_pending)));
+                if (hp(p, setup.payload_debt) != ZERO || hp(p, setup.payload_pending) != ZERO) {
+                  ++n_dead_now;
+                }
+              }
+            }
+            H.n_dead_host += n_dead_now;
+          }
           if (!H.debt_initial_set) {
             H.debt_initial     = sum_w_payload_from_arrays(sp, static_cast<unsigned short>(setup.payload_debt));
             H.debt_initial_set = true;
@@ -1388,17 +1415,25 @@ namespace user {
         }
         auto em = Kokkos::create_mirror_view(domain.fields.em);
         Kokkos::deep_copy(em, domain.fields.em);
-        double max_R = 0.0, max_rho = 0.0, max_E = 0.0, sum_R = 0.0, sum_rho = 0.0;
+        double max_R = 0.0, max_dR = 0.0, max_rho = 0.0, max_E = 0.0, sum_R = 0.0, sum_rho = 0.0;
         int    arg_R = -1;
+        const bool first = gauss_R0.empty();
+        if (first) {
+          gauss_R0.assign(n1, 0.0);
+        }
         for (int i = 0; i < n1; ++i) {
           const double Ep  = static_cast<double>(em(i + N_GHOSTS, em::ex1));
           const double Em  = static_cast<double>(em(((i - 1 + n1) % n1) + N_GHOSTS, em::ex1));
           const double div = Ep - Em;
           const double R   = div - gauss_coeff * rho[i];
+          if (first) {
+            gauss_R0[i] = R; // the initial residual (a randomly loaded background does not satisfy Gauss's law)
+          }
           if (std::abs(R) > max_R) {
             max_R = std::abs(R);
             arg_R = i;
           }
+          max_dR   = std::max(max_dR, std::abs(R - gauss_R0[i]));
           max_rho  = std::max(max_rho, std::abs(gauss_coeff * rho[i]));
           max_E    = std::max(max_E, std::abs(Ep));
           sum_R   += R;
@@ -1410,8 +1445,9 @@ namespace user {
                  "rho_i = CIC node charge of the depositing charged species (double from the arrays), "
                  "E from the real_t field array; gauss_coeff = q0/(B0 V0) = "
               << std::setprecision(17) << gauss_coeff << "\n";
-          out << "# columns: step | time | stage | max|R| | max|c rho| | max|E| | max|R|/max|c rho| | "
-                 "argmax i | sum_i R | sum_i rho | max|q w| (per particle) | npart e- | npart e+\n";
+          out << "# columns: step | time | stage | max|R| | max|c rho| | max|E| | max|R - R0|/max|c rho| (R0 = the "
+                 "residual at the first row) | argmax i of |R| | sum_i R | sum_i rho | max|q w| (per particle) | "
+                 "npart e- | npart e+ | max|R - R0|\n";
           gauss_started = true;
         }
         npart_t nm = 0, np = 0;
@@ -1420,9 +1456,9 @@ namespace user {
           np = domain.species[pair_plus - 1].npart();
         }
         out << std::setprecision(17) << step << " " << t << " " << stage << " " << max_R << " "
-            << max_rho << " " << max_E << " " << (max_rho > 0.0 ? max_R / max_rho : 0.0) << " "
-            << arg_R << " " << sum_R << " " << sum_rho << " " << max_abs_q << " " << nm << " " << np
-            << "\n";
+            << max_rho << " " << max_E << " " << (max_rho > 0.0 ? max_dR / max_rho : 0.0) << " "
+            << arg_R << " " << sum_R << " " << sum_rho << " " << max_abs_q << " " << nm << " " << np << " "
+            << max_dR << "\n";
       } else {
         (void)domain;
         (void)step;
@@ -1554,6 +1590,15 @@ namespace user {
                     C.n_capped_events, C.n_above_table, C.n_latency, C.n_processed, C.n_applied,
                     C.n_rng, C.n_k0_trigger, C.sum_wK, C.B_budget.value(), (unsigned)pair_npart_minus,
                     (unsigned)pair_npart_plus, estimate_bare, estimate_sized);
+        if (any_absorbing) {
+          std::printf("bh_proto: exported species %d : E_exported_host %.17g E_exported %.17g difference %.6e "
+                      "pending_discarded_host %.17g pending_discarded %.17g difference %.6e n_dead_with_payload %llu "
+                      "(host sums over dead-tagged ions before each launch, i.e. before the sort)\n",
+                      (int)sp.index(), H.exported_host.value(), C.E_exported.value(),
+                      H.exported_host.value() - C.E_exported.value(), H.discarded_host.value(),
+                      C.pending_discarded.value(), H.discarded_host.value() - C.pending_discarded.value(),
+                      H.n_dead_host);
+        }
       }
       if (pair_minus != 0) {
         for (const spidx_t sidx : { pair_minus, pair_plus }) {

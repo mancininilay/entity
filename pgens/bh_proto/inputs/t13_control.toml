@@ -1,0 +1,102 @@
+# bh_proto input: T13 control: the same box and background without pair creation (source = none)
+[simulation]
+  name    = "t13_control"
+  engine  = "srpic"
+  runtime = 100.0
+
+[grid]
+  resolution = [16]
+  extent     = [[0.0, 16.0]]
+  [grid.metric]
+    metric = "minkowski"
+  [grid.boundaries]
+    fields    = [["PERIODIC"]]
+    particles = [["PERIODIC"]]
+
+[scales]
+  larmor0    = 1.0
+  skindepth0 = 1.0
+
+[algorithms]
+  current_filters = 0
+  [algorithms.timestep]
+    CFL = 0.5
+  [algorithms.fieldsolver]
+    enable = true
+  [algorithms.deposit]
+    enable = true
+
+[particles]
+  ppc0        = 1.0
+  use_weights = true
+  [[particles.species]]
+    label                    = "ion"
+    mass                     = 1.0
+    charge                   = 1.0
+    maxnpart                 = 1e3
+    pusher                   = "Boris"
+    n_payloads_real          = 3
+    deposit                  = false
+    clear_interval           = 0
+    spatial_sorting_interval = 0
+  [[particles.species]]
+    label                    = "e-"
+    mass                     = 1.0
+    charge                   = -1.0
+    maxnpart                 = 2e4
+    pusher                   = "Boris"
+    n_payloads_real          = 3
+    deposit                  = true
+    clear_interval           = 0
+    spatial_sorting_interval = 0
+  [[particles.species]]
+    label                    = "e+"
+    mass                     = 1.0
+    charge                   = 1.0
+    maxnpart                 = 2e4
+    pusher                   = "Boris"
+    n_payloads_real          = 3
+    deposit                  = true
+    clear_interval           = 0
+    spatial_sorting_interval = 0
+
+[setup]
+  hadronic.enabled    = true
+  hadronic.species    = [1]
+  tau0                = 5.62960
+  physical_mass_ratio = 1836.15
+  photon_field.type   = "mono"
+  photon_field.eps0   = 0.5
+  source              = "none"
+  spectrum            = "threshold"
+  pair_species        = [2, 3]
+  r_th_factor         = 10.0
+  f_r                 = 0.02
+  t_latency           = 0.0
+  gamma_p_typical     = 6.0
+  on_capacity_estimate = "warn"
+  ions.K              = [9180.75]
+  ions.per_K          = 32
+  ions.direction      = "+x"
+  ledger.every        = 10
+  test.kick           = 0.3
+  test.gauss          = true
+  background.ppc      = 32.0
+  background.temperature = 0.1
+
+[output]
+  interval = 100000000
+  [output.fields]
+    enable = false
+  [output.particles]
+    enable = false
+  [output.spectra]
+    enable = false
+  [output.stats]
+    enable = false
+
+[checkpoint]
+  interval = 100000000
+
+[diagnostics]
+  interval = 100000000

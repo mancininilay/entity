@@ -54,6 +54,14 @@ target_link_libraries(test-kernels-bh_loss.xc PRIVATE ntt_kernels ntt_metrics nt
 foreach(grp tables overflow huge t9 tags above subcycling t6 t5 t5b)
   add_test(NAME "KERNELS::bh_loss_${grp}" COMMAND test-kernels-bh_loss.xc ${grp})
 endforeach()
+# Bethe-Heitler pair plumbing (P2 step 3): T10 (budget, capped, closing), poisson,
+# none, pairs per unit energy, T12, T10b, T-exp; one ctest entry per group
+add_executable(test-kernels-bh_pairs.xc bh_pairs.cpp)
+add_dependencies(test-kernels-bh_pairs.xc ntt_kernels ntt_metrics ntt_framework)
+target_link_libraries(test-kernels-bh_pairs.xc PRIVATE ntt_kernels ntt_metrics ntt_framework)
+foreach(grp t10 poisson none energy momentum t12 t10b texp)
+  add_test(NAME "KERNELS::bh_pairs_${grp}" COMMAND test-kernels-bh_pairs.xc ${grp})
+endforeach()
 
 if("${pgen}" STREQUAL "rec_mix")
   gen_test(rec_mix_segments)

@@ -35,6 +35,8 @@ ions.direction = "+x"
 ions.weight = 1.0
 fields.B = [0.0, 0.0, 0.0]
 ledger.every = 5
+pair_species = [2, 3]
+gamma_p_typical = 6.0
 )";
 
   toml::value parse_toml(const std::string& text) {
@@ -255,6 +257,100 @@ int main() {
                   drop_line(replace_line(VALID, "photon_field.type", "photon_field.type = \"table\""),
                             "photon_field.eps0"),
                   "photon_field.file");
+    // ---- step 3 (pair plumbing): defaults and rejections -------------------------------------
+    {
+      const auto s = user::bhproto::parse_setup(parse_toml(VALID));
+      const bool ok = s.source == "budget" && s.spectrum == "delta" && s.pair_minus == 2 && s.pair_plus == 3 &&
+                      s.r_th_factor == 10.0 && s.f_r == 0.02 && s.t_latency_auto && s.pair_weight == 1.0 &&
+                      s.max_events_per_step == 8 && s.on_capacity == "error" && s.on_capacity_estimate == "error" &&
+                      s.on_max_events == "error" && s.gamma_p_typical == 6.0 && s.active_fraction == 1.0 &&
+                      !s.has_envelope && s.c_layer == 3.0 && s.comm_headroom == 0.2 && !s.test_nan_payloads &&
+                      s.test_kick == 0.0 && !s.test_gauss && s.background_ppc == 0.0 && s.background_n_global == 0;
+      std::printf("%s: step-3 defaults (source budget, spectrum delta, pair_species [2, 3], r_th_factor 10, f_r 0.02, "
+                  "t_latency auto, pair_weight 1, max_events_per_step 8, on_* error, active_fraction 1, c_layer 3, "
+                  "comm_headroom 0.2, test hooks off)\n", ok ? "PASS" : "FAIL");
+      ok ? ++n_pass : ++n_fail;
+    }
+    {
+      const auto s = user::bhproto::parse_setup(parse_toml(
+        drop_line(drop_line(VALID, "pair_species"), "gamma_p_typical") + std::string("source = \"none\"\n")));
+      const bool ok = s.source == "none" && s.pair_minus == 0 && !s.pairs_enabled();
+      std::printf("%s: source = none accepted without pair_species and without gamma_p_typical\n", ok ? "PASS" : "FAIL");
+      ok ? ++n_pass : ++n_fail;
+    }
+    {
+      const auto s = user::bhproto::parse_setup(parse_toml(
+        drop_line(VALID, "gamma_p_typical") + std::string("source = \"poisson\"\npair_weight = 2.5\nt_latency = 3.0\n"
+                                                           "spectrum = \"threshold\"\nmax_events_per_step = 3\n")));
+      const bool ok = s.source == "poisson" && s.pair_weight == 2.5 && !s.t_latency_auto && s.t_latency == 3.0 &&
+                      s.spectrum == "threshold" && s.max_events_per_step == 3 && s.pairs_enabled();
+      std::printf("%s: poisson accepted without gamma_p_typical; t_latency number, threshold spectrum, "
+                  "max_events_per_step read\n", ok ? "PASS" : "FAIL");
+      ok ? ++n_pass : ++n_fail;
+    }
+    {
+      const auto s = user::bhproto::parse_setup(parse_toml(
+        drop_line(VALID, "gamma_p_typical") + std::string("envelope.index = 1.5\nenvelope.gamma_min = 3.0\n"
+                                                           "envelope.gamma_max = 12.0\nt_latency = \"auto\"\n"
+                                                           "on_capacity = \"warn\"\nactive_fraction = 0.5\n")));
+      const bool ok = s.has_envelope && s.envelope_index == 1.5 && s.envelope_gamma_min == 3.0 &&
+                      s.envelope_gamma_max == 12.0 && s.t_latency_auto && s.on_capacity == "warn" &&
+                      s.active_fraction == 0.5 && s.gamma_p_typical == 0.0;
+      std::printf("%s: envelope accepted in place of gamma_p_typical; t_latency = \"auto\"; on_capacity = warn\n",
+                  ok ? "PASS" : "FAIL");
+      ok ? ++n_pass : ++n_fail;
+    }
+    expect_reject("source unknown", VALID + std::string("source = \"exact\"\n"), "source");
+    expect_reject("spectrum unknown", VALID + std::string("spectrum = \"table\"\n"), "spectrum");
+    expect_reject("pair_species missing with budget", drop_line(VALID, "pair_species"), "pair_species");
+    expect_reject("pair_species missing with poisson",
+                  drop_line(VALID, "pair_species") + std::string("source = \"poisson\"\n"), "pair_species");
+    expect_reject("pair_species with one element", replace_line(VALID, "pair_species", "pair_species = [2]"), "pair_species");
+    expect_reject("pair_species index 0", replace_line(VALID, "pair_species", "pair_species = [0, 3]"), "pair_species");
+    expect_reject("pair_species index 256", replace_line(VALID, "pair_species", "pair_species = [2, 256]"), "pair_species");
+    expect_reject("pair_species equal to the ion species", replace_line(VALID, "pair_species", "pair_species = [1, 3]"),
+                  "pair_species");
+    expect_reject("pair_species equal to each other", replace_line(VALID, "pair_species", "pair_species = [2, 2]"),
+                  "pair_species");
+    expect_reject("pair_species not integers", replace_line(VALID, "pair_species", "pair_species = [2.0, 3.0]"),
+                  "pair_species");
+    expect_reject("r_th_factor = 0", VALID + std::string("r_th_factor = 0.0\n"), "r_th_factor");
+    expect_reject("r_th_factor negative", VALID + std::string("r_th_factor = -1.0\n"), "r_th_factor");
+    expect_reject("f_r = 0", VALID + std::string("f_r = 0.0\n"), "f_r");
+    expect_reject("f_r = 1", VALID + std::string("f_r = 1.0\n"), "f_r");
+    expect_reject("t_latency negative", VALID + std::string("t_latency = -0.5\n"), "t_latency");
+    expect_reject("t_latency not auto", VALID + std::string("t_latency = \"car\"\n"), "t_latency");
+    expect_reject("pair_weight = 0", VALID + std::string("pair_weight = 0.0\n"), "pair_weight");
+    expect_reject("max_events_per_step = 0", VALID + std::string("max_events_per_step = 0\n"), "max_events_per_step");
+    expect_reject("max_events_per_step = 4294967296", VALID + std::string("max_events_per_step = 4294967296\n"),
+                  "max_events_per_step");
+    expect_reject("on_capacity invalid", VALID + std::string("on_capacity = \"abort\"\n"), "on_capacity");
+    expect_reject("on_capacity_estimate invalid", VALID + std::string("on_capacity_estimate = \"ignore\"\n"),
+                  "on_capacity_estimate");
+    expect_reject("on_max_events invalid", VALID + std::string("on_max_events = true\n"), "on_max_events");
+    expect_reject("gamma_p_typical = 1", replace_line(VALID, "gamma_p_typical", "gamma_p_typical = 1.0"), "gamma_p_typical");
+    expect_reject("neither gamma_p_typical nor envelope with budget", drop_line(VALID, "gamma_p_typical"), "gamma_p_typical");
+    expect_reject("active_fraction = 0", VALID + std::string("active_fraction = 0.0\n"), "active_fraction");
+    expect_reject("active_fraction > 1", VALID + std::string("active_fraction = 1.5\n"), "active_fraction");
+    expect_reject("envelope incomplete", VALID + std::string("envelope.index = 1.0\n"), "envelope.index");
+    expect_reject("envelope.gamma_min = 1", VALID + std::string("envelope.index = 1.0\nenvelope.gamma_min = 1.0\n"
+                                                                 "envelope.gamma_max = 5.0\n"), "envelope.gamma_min");
+    expect_reject("envelope.gamma_min >= gamma_max", VALID + std::string("envelope.index = 1.0\nenvelope.gamma_min = 5.0\n"
+                                                                          "envelope.gamma_max = 5.0\n"), "envelope.gamma_max");
+    expect_reject("c_layer = 0", VALID + std::string("c_layer = 0.0\n"), "c_layer");
+    expect_reject("comm_headroom negative", VALID + std::string("comm_headroom = -0.1\n"), "comm_headroom");
+    expect_reject("test.kick negative", VALID + std::string("test.kick = -1.0\n"), "test.kick");
+    expect_reject("test.nan_payloads not boolean", VALID + std::string("test.nan_payloads = 1\n"), "test.nan_payloads");
+    expect_reject("background.ppc negative", VALID + std::string("background.ppc = -1.0\n"), "background.ppc");
+    expect_reject("background.temperature negative", VALID + std::string("background.temperature = -1.0\n"),
+                  "background.temperature");
+    expect_reject("background.n_global negative", VALID + std::string("background.n_global = -1\n"), "background.n_global");
+    expect_reject("background.n_global = 4294967296", VALID + std::string("background.n_global = 4294967296\n"),
+                  "background.n_global");
+    expect_reject("photon_field.eps_max = 2 (powerlaw)",
+                  replace_line(replace_line(VALID, "photon_field.type", "photon_field.type = \"powerlaw\""),
+                               "photon_field.eps0", "photon_field.eps_min = 0.1\nphoton_field.eps_max = 2.0\nphoton_field.index = 2.0"),
+                  "photon_field.eps_max");
   } catch (const std::exception& e) {
     std::printf("FAIL: unexpected exception: %s\n", e.what());
     ++n_fail;
