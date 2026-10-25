@@ -65,10 +65,17 @@ if("${pgen}" STREQUAL "bh_proto")
   add_test(NAME "HADRONIC::texp_exported_debt"
            COMMAND bash ${BH_SCRIPTS}/texp.sh ${BH_SINGLE_ENTITY} $<TARGET_FILE:bh_check>
                    ${BH_INPUTS} ${BH_WORK}/texp)
+  add_test(NAME "HADRONIC::r2_tiny_pair_weight"
+           COMMAND bash ${BH_SCRIPTS}/r2_tiny.sh ${BH_SINGLE_ENTITY} $<TARGET_FILE:bh_check>
+                   ${BH_INPUTS} ${BH_WORK}/r2_tiny)
+  # round 2: production placement of the stage (the one core change) against the post-step placement
+  add_test(NAME "HADRONIC::t14b_placement"
+           COMMAND bash ${BH_SCRIPTS}/t14b_placement.sh ${BH_SINGLE_ENTITY} "${BH_SERIAL_ENTITY}" $<TARGET_FILE:bh_check>
+                   ${BH_INPUTS} ${BH_WORK}/t14b)
   set_tests_properties("HADRONIC::t5b_cross_build" "HADRONIC::t8_bit_identity" "HADRONIC::t10_poisson_determinism"
                        PROPERTIES SKIP_RETURN_CODE 77)
   set_tests_properties("HADRONIC::t12_capacity" "HADRONIC::t12b_estimate" "HADRONIC::t13_gauss"
-                       "HADRONIC::t10_poisson_determinism" "HADRONIC::texp_exported_debt"
+                       "HADRONIC::t10_poisson_determinism" "HADRONIC::texp_exported_debt" "HADRONIC::t14b_placement" "HADRONIC::r2_tiny_pair_weight"
                        PROPERTIES TIMEOUT 1800)
   set_tests_properties("HADRONIC::t5b_cross_build" PROPERTIES TIMEOUT 7200)
   set_tests_properties("HADRONIC::t7a_fields_B" "HADRONIC::t7b_fields_E" "HADRONIC::t8_bit_identity"

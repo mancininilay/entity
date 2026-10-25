@@ -1,0 +1,98 @@
+# bh_proto input: R2 (round 2): poisson source with pair_weight = 1e-20: lambda = R dt / pair_weight ~ 1e20 exceeds the 1e9 cap every step, so every ion counts one capped step and spawns exactly max_events_per_step = 8 events per step without any int conversion of lambda; 16 ions at Gamma_p = 6, 200 steps: 16 x 200 x 8 = 25600 pairs; the ledger identity holds; UBSan diagnostic input
+[simulation]
+  name    = "r2_pairweight_tiny"
+  engine  = "srpic"
+  runtime = 100.0
+  seed    = 12345
+
+[grid]
+  resolution = [16]
+  extent     = [[0.0, 16.0]]
+  [grid.metric]
+    metric = "minkowski"
+  [grid.boundaries]
+    fields    = [["PERIODIC"]]
+    particles = [["PERIODIC"]]
+
+[scales]
+  larmor0    = 1.0
+  skindepth0 = 1.0
+
+[algorithms]
+  [algorithms.timestep]
+    CFL = 0.5
+  [algorithms.fieldsolver]
+    enable = false
+  [algorithms.deposit]
+    enable = false
+
+[particles]
+  ppc0        = 1.0
+  use_weights = true
+  [[particles.species]]
+    label                    = "ion"
+    mass                     = 1.0
+    charge                   = 1.0
+    maxnpart                 = 1e3
+    pusher                   = "Boris"
+    n_payloads_real          = 3
+    deposit                  = false
+    clear_interval           = 0
+    spatial_sorting_interval = 0
+  [[particles.species]]
+    label                    = "e-"
+    mass                     = 1.0
+    charge                   = -1.0
+    maxnpart                 = 4e4
+    pusher                   = "Boris"
+    n_payloads_real          = 3
+    deposit                  = false
+    clear_interval           = 0
+    spatial_sorting_interval = 0
+  [[particles.species]]
+    label                    = "e+"
+    mass                     = 1.0
+    charge                   = 1.0
+    maxnpart                 = 4e4
+    pusher                   = "Boris"
+    n_payloads_real          = 3
+    deposit                  = false
+    clear_interval           = 0
+    spatial_sorting_interval = 0
+
+[setup]
+  hadronic.enabled     = true
+  hadronic.species     = [1]
+  tau0                 = 5.62960
+  physical_mass_ratio  = 1836.15
+  photon_field.type    = "mono"
+  photon_field.eps0    = 0.5
+  source               = "poisson"
+  spectrum             = "delta"
+  pair_species         = [2, 3]
+  r_th_factor          = 10.0
+  f_r                  = 0.02
+  t_latency            = 0.0
+  gamma_p_typical      = 6.0
+  ions.K               = [9180.75]
+  ions.per_K           = 16
+  ions.direction       = "+x"
+  ledger.every         = 50
+  pair_weight          = 1e-20
+  max_events_per_step  = 8
+  on_max_events        = "warn"
+  on_capacity_estimate = "warn"
+
+[output]
+  interval = 100000000
+  [output.fields]
+    enable = false
+  [output.particles]
+    enable = false
+  [output.spectra]
+    enable = false
+  [output.stats]
+    enable = false
+
+[checkpoint]
+  interval = 100000000

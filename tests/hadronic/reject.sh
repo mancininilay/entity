@@ -14,7 +14,8 @@ for pair in reject_tau0:tau0 reject_fmax:f_max reject_bool:hadronic.enabled \
             reject_pair_same:pair_species reject_epsmax:photon_field.eps_max \
             reject_gamma_typical:gamma_p_typical reject_fr:f_r reject_rth:r_th_factor \
             reject_pairweight:pair_weight reject_maxevents:max_events_per_step \
-            reject_oncapacity:on_capacity reject_envelope:envelope.gamma_max; do
+            reject_oncapacity:on_capacity reject_envelope:envelope.gamma_max \
+            reject_placement:hadronic.placement; do
   name="${pair%%:*}"; key="${pair#*:}"
   if [ ! -f "$INP/$name.toml" ]; then
     echo "FAIL: $name: input $INP/$name.toml not found"; n_fail=$((n_fail + 1)); continue

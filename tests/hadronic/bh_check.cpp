@@ -51,6 +51,7 @@
  *
  *   step 3 (pair plumbing):
  *   ledger --file F [--tol T] [--expect_dropped 0|1] [--expect_npart N] [--min_spawned N] [--expect_rng N]
+ *          [--expect_events N] [--expect_capped_events N]
  *          [--expect_nopairs 1]
  *         last row of a hadronic_ledger file: identity residual <= T (1e-12) x E_drag, optional counts
  *   abort  --log F --key K [--step_min A --step_max B]
@@ -66,6 +67,11 @@
  *         identical (or different) "bh_proto: checksum" lines
  *   texp   --log F
  *         E_exported and pending_discarded equal the host sums over the dead ions (1e-12), identity residual
+ *   cmp    --a F --b F [--tol T]
+ *          compares two hadronic_ledger files row by row (T14b placement test):
+ *          same number of data rows, every counter column (step, n_*, npart)
+ *          exactly equal, every real column |a - b| <= T max(1, |a|, |b|)
+ *          (default T = 1e-12); prints the largest relative difference
  */
 
 #include "archetypes/hadronic/bh_physics.h"
@@ -616,6 +622,15 @@ namespace {
       const double n = num(a, "expect_rng");
       verdict(r.c[L_NRNG] == n, "ledger: n_rng = " + a.at("expect_rng"), r.c[L_NRNG], n);
     }
+    if (a.count("expect_events")) {
+      const double n = num(a, "expect_events");
+      verdict(r.c[L_NEVENTS] == n && r.c[L_NSPAWNED] == n, "ledger: n_events = n_spawned = " + a.at("expect_events"),
+              r.c[L_NEVENTS], n);
+    }
+    if (a.count("expect_capped_events")) {
+      const double n = num(a, "expect_capped_events");
+      verdict(r.c[L_NCAPEV] == n, "ledger: n_capped_events = " + a.at("expect_capped_events"), r.c[L_NCAPEV], n);
+    }
     if (a.count("expect_nopairs") && num(a, "expect_nopairs") > 0.5) {
       verdict(r.c[L_NSPAWNED] == 0.0 && r.c[L_ELOST] == r.c[L_EDRAG], "ledger (none): no spawns and E_lost_nopairs = E_drag",
               r.c[L_ELOST] - r.c[L_EDRAG], 0.0);
@@ -811,6 +826,78 @@ namespace {
     return 0;
   }
 
+  /* ---- step 3 round 2: placement comparison of two ledger files ---------- */
+  std::vector<std::vector<double>> read_ledger_rows(const std::string& path) {
+    std::ifstream in(path);
+    if (!in) {
+      throw std::runtime_error("cannot open " + path);
+    }
+    std::vector<std::vector<double>> rows;
+    std::string                      line;
+    while (std::getline(in, line)) {
+      if (line.empty() || line[0] == '#') {
+        continue;
+      }
+      std::vector<double> r;
+      std::istringstream  ss(line);
+      double              v;
+      while (ss >> v) {
+        r.push_back(v);
+      }
+      if (r.size() != LEDGER_COLS) {
+        throw std::runtime_error("ledger row has " + std::to_string(r.size()) + " columns, expected " +
+                                 std::to_string(LEDGER_COLS) + " in " + path);
+      }
+      rows.push_back(r);
+    }
+    if (rows.empty()) {
+      throw std::runtime_error("no data row in " + path);
+    }
+    return rows;
+  }
+
+  int cmd_cmp(const Args& a) {
+    const auto   A   = read_ledger_rows(str(a, "a"));
+    const auto   B   = read_ledger_rows(str(a, "b"));
+    const double tol = a.count("tol") ? num(a, "tol") : 1.0e-12;
+    verdict(A.size() == B.size(), "placement: the two ledger files have the same number of rows",
+            static_cast<double>(A.size()), static_cast<double>(B.size()));
+    if (A.size() != B.size()) {
+      return 0;
+    }
+    auto is_counter = [](std::size_t c) {
+      return c == L_STEP || (c >= L_NEVENTS && c <= L_NCLOSE0) || c == L_NPM || c == L_NPP;
+    };
+    double      worst = 0.0, worst_cnt = 0.0;
+    std::size_t worst_row = 0, worst_col = 0;
+    for (std::size_t r = 0; r < A.size(); ++r) {
+      for (std::size_t c = 0; c < LEDGER_COLS; ++c) {
+        const double x = A[r][c], y = B[r][c];
+        if (is_counter(c)) {
+          worst_cnt = std::max(worst_cnt, std::abs(x - y));
+        } else {
+          const double d = std::abs(x - y) / std::max({ 1.0, std::abs(x), std::abs(y) });
+          if (d > worst) {
+            worst     = d;
+            worst_row = r;
+            worst_col = c;
+          }
+        }
+      }
+    }
+    std::printf("CMP rows %zu largest relative difference %.6e at row %zu column %zu (a %.17g, b %.17g); "
+                "n_spawned a %.0f b %.0f; E_pairs a %.17g b %.17g\n",
+                A.size(), worst, worst_row, worst_col, A[worst_row][worst_col], B[worst_row][worst_col],
+                A.back()[L_NSPAWNED], B.back()[L_NSPAWNED], A.back()[L_EPAIRS], B.back()[L_EPAIRS]);
+    verdict(worst_cnt == 0.0, "placement: every counter column (step, n_*, npart) identical in every row", worst_cnt,
+            0.0);
+    verdict(worst <= tol, "placement: every real column identical to round-off, |a - b| / max(1, |a|, |b|)", worst,
+            tol);
+    verdict(A.back()[L_NSPAWNED] > 0.0, "placement: pairs were spawned (the comparison is not vacuous)",
+            A.back()[L_NSPAWNED], 1.0);
+    return 0;
+  }
+
   /* ---- step 3: exported debt ---------------------------------------------- */
   int cmd_texp(const Args& a) {
     const auto lines = grep_lines(str(a, "log"), "bh_proto: exported species");
@@ -882,6 +969,8 @@ int main(int argc, char** argv) {
       cmd_det(a);
     } else if (cmd == "texp") {
       cmd_texp(a);
+    } else if (cmd == "cmp") {
+      cmd_cmp(a);
     } else {
       std::fprintf(stderr, "bh_check: unknown subcommand '%s'\n", cmd.c_str());
       return 2;

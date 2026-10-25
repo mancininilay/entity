@@ -14,7 +14,11 @@
  *
  * Keys (all under `[setup]`; floats accept TOML integers):
  *   hadronic.enabled            bool, required
- *   hadronic.species            non-empty array of int >= 1, required (the ion species)
+ *   hadronic.species            array of exactly one int >= 1, required (the ion species; the
+ *                               generator refuses more than one, decision (d))
+ *   hadronic.placement          "poststep" | "production" (default poststep): where the engine
+ *                               launches the stage (CustomPostStep, or after the deposit and
+ *                               before the particle exchange through srpic::HadronicInteractions)
  *   tau0                        float >= 0 (0 = stage not launched), required when enabled
  *   physical_mass_ratio         float > 0, required when enabled
  *   photon_field.type           "mono" | "powerlaw" | "blackbody" | "table", required when enabled
@@ -113,6 +117,7 @@ namespace user::bhproto {
     std::string        on_capacity { "error" };
     std::string        on_capacity_estimate { "error" };
     std::string        on_max_events { "error" };
+    std::string        placement { "poststep" }; // "poststep" | "production" (hadronic.placement)
     double             gamma_p_typical { 0.0 };
     double             active_fraction { 1.0 };
     bool               has_envelope { false };
@@ -432,6 +437,7 @@ namespace user::bhproto {
 
     static const std::set<std::string> known = {
       "hadronic.enabled",      "hadronic.species",
+      "hadronic.placement",
       "tau0",                  "physical_mass_ratio",
       "photon_field.type",     "photon_field.eps0",
       "photon_field.eps_min",  "photon_field.eps_max",
@@ -471,6 +477,10 @@ namespace user::bhproto {
 
     Setup s;
     s.enabled = get_bool(setup, "hadronic.enabled");
+    s.placement = get_string_or(setup, "hadronic.placement", "poststep");
+    if (s.placement != "poststep" && s.placement != "production") {
+      fail("hadronic.placement", "= '" + s.placement + "' must be \"poststep\" or \"production\"");
+    }
 
     // ions (always required: the generator injects them regardless of the stage)
     s.ions_K = get_number_array(setup, "ions.K");

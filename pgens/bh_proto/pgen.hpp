@@ -74,6 +74,10 @@
 
 #include <Kokkos_Core.hpp>
 
+#if defined(MPI_ENABLED)
+  #include <mpi.h>
+#endif
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -276,44 +280,75 @@ namespace user {
       }
     }
 
+    /**
+     * @brief Order-independent 64-bit checksum of the six field components over
+     *        every cell (ghosts included): the wraparound sum of per-cell hashes
+     *        (the cell's local index and its six values), so that the result does
+     *        not depend on the traversal order; a multi-domain run sums the
+     *        per-rank values (3.1)
+     */
     template <Dimension D>
     inline auto checksum_fields(const ndfield_t<D, 6>& em) -> std::uint64_t {
-      std::uint64_t h  = 0xCBF29CE484222325ULL;
-      auto          hv = Kokkos::create_mirror_view(em);
+      std::uint64_t total = 0;
+      auto          hv    = Kokkos::create_mirror_view(em);
       Kokkos::deep_copy(hv, em);
+      auto cell = [&](std::uint64_t idx, auto value_of) {
+        std::uint64_t h = 0xCBF29CE484222325ULL;
+        mix_bits(h, idx);
+        for (std::size_t c = 0; c < 6; ++c) {
+          mix_bits(h, bits_of(value_of(c)));
+        }
+        total += splitmix64(h);
+      };
       if constexpr (D == Dim::_1D) {
-        mix_bits(h, em.extent(0));
         for (std::size_t i = 0; i < em.extent(0); ++i) {
-          for (std::size_t c = 0; c < 6; ++c) {
-            mix_bits(h, bits_of(hv(i, c)));
-          }
+          cell(i, [&](std::size_t c) { return hv(i, c); });
         }
       } else if constexpr (D == Dim::_2D) {
-        mix_bits(h, em.extent(0));
-        mix_bits(h, em.extent(1));
         for (std::size_t i = 0; i < em.extent(0); ++i) {
           for (std::size_t j = 0; j < em.extent(1); ++j) {
-            for (std::size_t c = 0; c < 6; ++c) {
-              mix_bits(h, bits_of(hv(i, j, c)));
-            }
+            cell(i * em.extent(1) + j, [&](std::size_t c) { return hv(i, j, c); });
           }
         }
       } else {
-        mix_bits(h, em.extent(0));
-        mix_bits(h, em.extent(1));
-        mix_bits(h, em.extent(2));
         for (std::size_t i = 0; i < em.extent(0); ++i) {
           for (std::size_t j = 0; j < em.extent(1); ++j) {
             for (std::size_t k = 0; k < em.extent(2); ++k) {
-              for (std::size_t c = 0; c < 6; ++c) {
-                mix_bits(h, bits_of(hv(i, j, k, c)));
-              }
+              cell((i * em.extent(1) + j) * em.extent(2) + k,
+                   [&](std::size_t c) { return hv(i, j, k, c); });
             }
           }
         }
       }
-      return h;
+      return total;
     }
+
+    /**
+     * @brief The ledger reduced over the local domains and (under MPI) over the
+     *        ranks (3.1): the cumulative kernel ledger, the segment-start debt
+     *        and the host-side export sums, all global; written by rank 0
+     */
+    struct GlobalLedger {
+      kernel::hadronic::LossLedger C {};
+      kernel::hadronic::dd         debt_initial {};
+      kernel::hadronic::dd         exported_host {};
+      kernel::hadronic::dd         discarded_host {};
+      unsigned long long           n_dead_host { 0 };
+
+      auto identity_residual() const -> double {
+        kernel::hadronic::dd r;
+        r.add(C.E_drag);
+        r.add(debt_initial);
+        r.sub(C.E_pairs);
+        r.add(C.E_absorbed);
+        r.sub(C.E_round);
+        r.sub(C.E_stochastic);
+        r.sub(C.debt_outstanding);
+        r.sub(C.E_exported);
+        r.sub(C.E_lost_nopairs);
+        return r.value();
+      }
+    };
 
     inline auto hex(std::uint64_t h) -> std::string {
       char buf[32];
@@ -336,11 +371,24 @@ namespace user {
       kernel::hadronic::dd         discarded_host {}; // sum w delta over dead ions, host, before each launch
       unsigned long long           n_dead_host { 0 }; // dead ions seen with a non-zero debt or pending request
 
-      void accumulate(const kernel::hadronic::LossLedger& L) {
-        const auto snap_pending = L.pending_outstanding;
-        const auto snap_debt    = L.debt_outstanding;
-        const auto snap_sum     = L.sum_wK;
-        const auto snap_alive   = L.n_alive;
+      // snapshots are summed over the local domains of one step and replaced at the next
+      kernel::hadronic::dd snap_pending {}, snap_debt {};
+      double               snap_sum { 0.0 };
+      unsigned long long   snap_alive { 0 };
+      long long            snap_step { -1 };
+
+      void accumulate(const kernel::hadronic::LossLedger& L, timestep_t step) {
+        if (static_cast<long long>(step) != snap_step) {
+          snap_pending = kernel::hadronic::dd {};
+          snap_debt    = kernel::hadronic::dd {};
+          snap_sum     = 0.0;
+          snap_alive   = 0;
+          snap_step    = static_cast<long long>(step);
+        }
+        snap_pending += L.pending_outstanding;
+        snap_debt    += L.debt_outstanding;
+        snap_sum     += L.sum_wK;
+        snap_alive   += L.n_alive;
         cumulative += L;
         cumulative.pending_outstanding = snap_pending;
         cumulative.debt_outstanding    = snap_debt;
@@ -422,12 +470,25 @@ namespace user {
     std::uint64_t base_seed { 0 };
     bool          seed_set { false };
     double        gauss_coeff { 0.0 }; // q0 / (B0 V0)
+    int           mpi_rank { 0 };
+    int           mpi_size { 1 };
+    unsigned int  n_domains_total { 1 };
+    unsigned long long spawned_at_previous_poststep { 0 }; // production placement: n_spawned at the previous post-step
 
     // tables
     std::shared_ptr<const arch::bh::PhotonBath> bath;
     arch::bh::Quadrature                        quadrature;
     arch::bh::HadronicTablesHost                tables_host;
     arch::bh::HadronicTables                    tables;
+
+    // R6 Gauss-law sample (test.gauss): one residual evaluation of the domain
+    struct GaussSample {
+      double             max_R { 0.0 }, max_dR { 0.0 }, max_rho { 0.0 }, max_E { 0.0 }, sum_R { 0.0 }, sum_rho { 0.0 };
+      double             max_abs_q { 0.0 }, ratio { 0.0 };
+      int                arg_R { -1 };
+      unsigned long long n_depositing { 0 };
+      npart_t            nm { 0 }, np { 0 };
+    };
 
     // species bookkeeping
     std::vector<spidx_t>                       ion_species; // 1-based indices
@@ -442,6 +503,8 @@ namespace user {
     bool                                       gauss_started { false };
     std::vector<double>                        gauss_R0;                 // Gauss residual per node at the first sample
     bool                                       gauss_first_birth_done { false };
+    GaussSample                                gauss_prev {};             // production placement: previous post-step sample
+    bool                                       gauss_prev_valid { false };
     double                                     estimate_bare { 0.0 };     // expected pairs per species (no margins)
     double                                     estimate_sized { 0.0 };    // with c_layer and comm_headroom
 
@@ -631,6 +694,18 @@ namespace user {
                      "is injected into the two pair species)",
                      HERE);
 
+      // ---- MPI readiness (3.1) -------------------------------------------------
+#if defined(MPI_ENABLED)
+      MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
+      MPI_Comm_size(MPI_COMM_WORLD, &mpi_size);
+      raise::ErrorIf(any_absorbing && metadomain.ndomains() > 1,
+                     "bh_proto: absorbing particle boundaries with more than one domain are refused in an MPI "
+                     "build: the dead-ion harvest of the prototype is valid only at the production placement "
+                     "under MPI (decision (e)); the post-step harvest sees refilled slots",
+                     HERE);
+#endif
+      n_domains_total = metadomain.ndomains();
+
       // ---- latency cap ------------------------------------------------------
       if (setup.pairs_enabled() && setup.source == "budget") {
         if (setup.t_latency_auto) {
@@ -688,6 +763,20 @@ namespace user {
                   setup.t_latency_auto ? "auto" : "given", L_min,
                   seed_set ? "simulation.seed = " : "default ", (unsigned long long)base_seed,
                   (unsigned)start_step);
+      std::printf("bh_proto: hadronic.placement = %s: the stage runs %s; MPI %s (%d rank%s, %u domain%s); "
+                  "ledger reduced over the domains%s, written by rank 0\n",
+                  setup.placement.c_str(),
+                  hadronic_placement_production()
+                    ? "at the production placement (srpic::HadronicInteractions: after the deposit, before "
+                      "the particle exchange)"
+                    : "at the post-step placement (CustomPostStep, after the exchange)",
+#if defined(MPI_ENABLED)
+                  "enabled",
+#else
+                  "not compiled",
+#endif
+                  mpi_size, mpi_size == 1 ? "" : "s", n_domains_total, n_domains_total == 1 ? "" : "s",
+                  mpi_size > 1 ? " and over the ranks (MPI_Allreduce)" : "");
       std::fflush(stdout);
     }
 
@@ -836,9 +925,7 @@ namespace user {
     /* initial conditions                                                    */
     /* -------------------------------------------------------------------- */
     inline void InitPrtls(Domain<S, M>& domain) {
-      raise::ErrorIf(domain.index() != 0u,
-                     "bh_proto: multi-domain runs are out of scope (prototype)",
-                     HERE);
+      // every local domain injects its own ions (the estimate and maxnpart are per domain)
       const int n1 = static_cast<int>(domain.mesh.n_active(in::x1));
       const int n2 = (D == Dim::_2D || D == Dim::_3D)
                        ? static_cast<int>(domain.mesh.n_active(in::x2)) : 1;
@@ -1057,23 +1144,17 @@ namespace user {
     /* -------------------------------------------------------------------- */
     /* the stage                                                             */
     /* -------------------------------------------------------------------- */
-    inline void CustomPostStep(timestep_t step, simtime_t /*time*/, Domain<S, M>& domain) {
+    /**
+     * @brief The hadronic interaction stage on one local domain: the dead-ion
+     *        harvest (host sums, non-MPI only), one launch of the kernel per
+     *        hadronic ion species with the pair destinations, the host-side
+     *        insertion bookkeeping and the failure policies. Called from
+     *        CustomPostStep (placement = poststep) or by the engine after the
+     *        deposit and before the particle exchange (placement = production,
+     *        srpic::HadronicInteractions).
+     */
+    inline void HadronicStage(timestep_t step, simtime_t /*time*/, Domain<S, M>& domain) {
       const double t_after = static_cast<double>(step + 1) * dt; // t^{n+1}
-      const bool   last    = (step + 1 >= max_steps);
-      const bool   row     = ((step + 1) % static_cast<timestep_t>(setup.ledger_every) == 0u) || last;
-      // R6: the "before / after the first births" samples bracket the launch that
-      // spawns the first pair: the pre-launch residual is computed every step until
-      // then and written only when the launch that follows it spawns
-      GaussSample before_first {};
-      bool        have_before = false;
-      if (setup.test_gauss && !gauss_first_birth_done) {
-        before_first = gauss_sample(domain);
-        have_before  = true;
-      }
-      unsigned long long spawned_before = 0;
-      for (const auto& kv : ledgers) {
-        spawned_before += kv.second.cumulative.n_spawned;
-      }
       if (stage_active) {
         kernel::hadronic::HadronicParams prm;
         prm.tau0_over_skindepth0 = setup.tau0 / skindepth0;
@@ -1182,7 +1263,7 @@ namespace user {
               targets, *pools[sp.index()] },
             Kokkos::Sum<kernel::hadronic::LossLedger>(L));
           Kokkos::fence();
-          if (setup.pairs_enabled()) {
+            if (setup.pairs_enabled()) {
             auto& spm = domain.species[pair_minus - 1];
             auto& spp = domain.species[pair_plus - 1];
             npart_t tickets = 0;
@@ -1200,7 +1281,7 @@ namespace user {
                            fmt::format("bh_proto: internal: n_injected %u != n_spawned %llu",
                                        (unsigned)n_injected, L.n_spawned),
                            HERE);
-            H.accumulate(L);
+            H.accumulate(L, step);
             if (L.n_dropped > 0) {
               const auto msg = fmt::format(
                 "bh_proto: on_capacity: pair capacity exhausted at step %u (species %d): "
@@ -1236,9 +1317,51 @@ namespace user {
               H.n_max_events_warnings += 1;
             }
           } else {
-            H.accumulate(L);
+            H.accumulate(L, step);
           }
         }
+      }
+    }
+
+    /**
+     * @brief The placement switch read by the engine (traits::pgen::HasHadronicStage)
+     */
+    auto hadronic_placement_production() const -> bool {
+      return setup.placement == "production";
+    }
+
+    inline void CustomPostStep(timestep_t step, simtime_t time, Domain<S, M>& domain) {
+      const double t_after = static_cast<double>(step + 1) * dt; // t^{n+1}
+      const bool   last    = (step + 1 >= max_steps);
+      const bool   row     = ((step + 1) % static_cast<timestep_t>(setup.ledger_every) == 0u) || last;
+      // R6: the "before / after the first births" samples bracket the launch that
+      // spawns the first pair: the pre-launch residual is computed every step until
+      // then and written only when the launch that follows it spawns (post-step
+      // placement; at the production placement the stage ran inside step_forward and
+      // only the "after" sample of the step is available)
+      GaussSample before_first {};
+      bool        have_before = false;
+      if (setup.test_gauss && !gauss_first_birth_done) {
+        if (!hadronic_placement_production()) {
+          before_first = gauss_sample(domain);
+          have_before  = true;
+        } else if (gauss_prev_valid) {
+          // production placement: the sample taken at the end of the previous
+          // post-step (no births yet) is the state before this step's stage
+          before_first = gauss_prev;
+          have_before  = true;
+        }
+      }
+      unsigned long long spawned_before = 0;
+      for (const auto& kv : ledgers) {
+        spawned_before += kv.second.cumulative.n_spawned;
+      }
+      if (!hadronic_placement_production()) {
+        HadronicStage(step, time, domain);
+      } else if (setup.test_gauss && !gauss_first_birth_done) {
+        // the stage ran at the production placement: count its spawns as "before" = the
+        // previous step's total so that the first-birth step is still detected below
+        spawned_before = spawned_at_previous_poststep;
       }
       if (setup.test_gauss && !gauss_first_birth_done) {
         unsigned long long spawned_after = 0;
@@ -1273,13 +1396,182 @@ namespace user {
           write_gauss(domain, step, t_after, "step");
         }
       }
+      {
+        unsigned long long spawned_total = 0;
+        for (const auto& kv : ledgers) {
+          spawned_total += kv.second.cumulative.n_spawned;
+        }
+        spawned_at_previous_poststep = spawned_total;
+      }
+      if (setup.test_gauss && !gauss_first_birth_done && hadronic_placement_production()) {
+        gauss_prev       = gauss_sample(domain);
+        gauss_prev_valid = true;
+      }
       if (last) {
         finish(domain);
       }
     }
 
+    /* ---------------------------------------------------------------------- */
+    /* 3.1 MPI readiness: reductions, order-independent checksums, file names   */
+    /* ---------------------------------------------------------------------- */
+
+    /// sum of a 64-bit counter over the ranks (identity without MPI)
+    auto mpi_sum_u64(unsigned long long x) const -> unsigned long long {
+#if defined(MPI_ENABLED)
+      MPI_Allreduce(MPI_IN_PLACE, &x, 1, MPI_UNSIGNED_LONG_LONG, MPI_SUM, MPI_COMM_WORLD);
+#endif
+      return x;
+    }
+
+    auto mpi_sum_npart(npart_t n) const -> unsigned long long {
+      return mpi_sum_u64(static_cast<unsigned long long>(n));
+    }
+
+    /// per-rank output file name: base[_rank<r>].txt (the rank suffix only under MPI with > 1 rank)
+    auto per_rank_name(const std::string& base) const -> std::string {
+      if (mpi_size > 1) {
+        return base + "_rank" + std::to_string(mpi_rank) + ".txt";
+      }
+      return base + ".txt";
+    }
+
+    /**
+     * @brief The ledger reduced over the ranks (3.1): every dd entry is reduced
+     *        as its (hi, lo) pair of doubles with MPI_Allreduce(MPI_SUM) and
+     *        renormalised, the momenta and sum_wK as doubles, the counters as
+     *        64-bit unsigned integers. Without MPI the local ledger is returned
+     *        (it is already the sum over the local domains).
+     */
+    auto reduce_ledger(const bhproto::HostLedger& H) const -> bhproto::GlobalLedger {
+      bhproto::GlobalLedger G;
+      G.C              = H.cumulative;
+      G.debt_initial   = H.debt_initial;
+      G.exported_host  = H.exported_host;
+      G.discarded_host = H.discarded_host;
+      G.n_dead_host    = H.n_dead_host;
+#if defined(MPI_ENABLED)
+      if (mpi_size > 1) {
+        using kernel::hadronic::dd;
+        dd* dds[] = { &G.C.E_drag,         &G.C.E_pairs,          &G.C.E_absorbed,
+                      &G.C.E_exported,     &G.C.E_round,          &G.C.E_stochastic,
+                      &G.C.E_lost_nopairs, &G.C.pending_discarded, &G.C.debt_outstanding,
+                      &G.C.pending_outstanding, &G.C.B_budget,    &G.debt_initial,
+                      &G.exported_host,    &G.discarded_host };
+        constexpr int NDD = sizeof(dds) / sizeof(dds[0]);
+        std::vector<double> buf(2 * NDD + 10, 0.0);
+        for (int k = 0; k < NDD; ++k) {
+          buf[2 * k]     = dds[k]->hi;
+          buf[2 * k + 1] = dds[k]->lo;
+        }
+        for (int d = 0; d < 3; ++d) {
+          buf[2 * NDD + d]     = G.C.P_drag[d];
+          buf[2 * NDD + 3 + d] = G.C.P_pairs[d];
+          buf[2 * NDD + 6 + d] = G.C.P_absorbed[d];
+        }
+        buf[2 * NDD + 9] = G.C.sum_wK;
+        MPI_Allreduce(MPI_IN_PLACE, buf.data(), static_cast<int>(buf.size()), MPI_DOUBLE, MPI_SUM,
+                      MPI_COMM_WORLD);
+        for (int k = 0; k < NDD; ++k) {
+          dd r;
+          r.add(buf[2 * k]);
+          r.add(buf[2 * k + 1]);
+          *dds[k] = r;
+        }
+        for (int d = 0; d < 3; ++d) {
+          G.C.P_drag[d]     = buf[2 * NDD + d];
+          G.C.P_pairs[d]    = buf[2 * NDD + 3 + d];
+          G.C.P_absorbed[d] = buf[2 * NDD + 6 + d];
+        }
+        G.C.sum_wK = buf[2 * NDD + 9];
+        unsigned long long* cnt[] = { &G.C.n_events,        &G.C.n_spawned,       &G.C.n_dropped,
+                                      &G.C.n_substeps,      &G.C.n_bounded,       &G.C.n_capped_loss,
+                                      &G.C.n_closing,       &G.C.n_closing_at_rest, &G.C.n_capped,
+                                      &G.C.n_capped_events, &G.C.n_above_table,   &G.C.n_latency,
+                                      &G.C.n_resolution,    &G.C.n_processed,     &G.C.n_alive,
+                                      &G.C.n_applied,       &G.C.n_rng,           &G.C.n_k0_trigger,
+                                      &G.n_dead_host };
+        constexpr int NC = sizeof(cnt) / sizeof(cnt[0]);
+        unsigned long long cbuf[NC];
+        for (int k = 0; k < NC; ++k) {
+          cbuf[k] = *cnt[k];
+        }
+        MPI_Allreduce(MPI_IN_PLACE, cbuf, NC, MPI_UNSIGNED_LONG_LONG, MPI_SUM, MPI_COMM_WORLD);
+        for (int k = 0; k < NC; ++k) {
+          *cnt[k] = cbuf[k];
+        }
+      }
+#endif
+      return G;
+    }
+
+    /**
+     * @brief Order-independent 64-bit checksum of one species (T8, 3.1): the
+     *        wraparound sum over the first npart slots of splitmix64 of a
+     *        per-particle hash of (cell indices, displacements, momenta, weight,
+     *        tag, payload row). It does not depend on the particle order, so the
+     *        per-rank values can be summed over the ranks; it does depend on the
+     *        local cell indices, so it is a per-decomposition reference.
+     */
+    auto checksum_species(const Particles<D, M::CoordType>& sp) const -> std::uint64_t {
+      const auto n = static_cast<std::size_t>(sp.npart());
+      auto mirror = [](const auto& v) {
+        auto h = Kokkos::create_mirror_view(v);
+        Kokkos::deep_copy(h, v);
+        return h;
+      };
+      auto i1 = mirror(sp.i1);
+      auto dx1 = mirror(sp.dx1);
+      auto i2 = mirror(sp.i2);
+      auto dx2 = mirror(sp.dx2);
+      auto i3 = mirror(sp.i3);
+      auto dx3 = mirror(sp.dx3);
+      auto ux1 = mirror(sp.ux1);
+      auto ux2 = mirror(sp.ux2);
+      auto ux3 = mirror(sp.ux3);
+      auto w  = mirror(sp.weight);
+      auto tg = mirror(sp.tag);
+      auto pl = mirror(sp.pld_r);
+      const std::size_t npld = pl.extent(1);
+      std::uint64_t total = 0;
+      for (std::size_t p = 0; p < n; ++p) {
+        std::uint64_t h = 0xCBF29CE484222325ULL;
+        bhproto::mix_bits(h, bhproto::bits_of(i1(p)));
+        bhproto::mix_bits(h, bhproto::bits_of(dx1(p)));
+        if constexpr (D == Dim::_2D || D == Dim::_3D) {
+          bhproto::mix_bits(h, bhproto::bits_of(i2(p)));
+          bhproto::mix_bits(h, bhproto::bits_of(dx2(p)));
+        }
+        if constexpr (D == Dim::_3D) {
+          bhproto::mix_bits(h, bhproto::bits_of(i3(p)));
+          bhproto::mix_bits(h, bhproto::bits_of(dx3(p)));
+        }
+        bhproto::mix_bits(h, bhproto::bits_of(ux1(p)));
+        bhproto::mix_bits(h, bhproto::bits_of(ux2(p)));
+        bhproto::mix_bits(h, bhproto::bits_of(ux3(p)));
+        bhproto::mix_bits(h, bhproto::bits_of(w(p)));
+        bhproto::mix_bits(h, bhproto::bits_of(tg(p)));
+        for (std::size_t c = 0; c < npld; ++c) {
+          bhproto::mix_bits(h, bhproto::bits_of(pl(p, c)));
+        }
+        total += splitmix64(h);
+      }
+      return total;
+    }
+
     void write_ledger(const Particles<D, M::CoordType>& sp, timestep_t step, double t) {
       auto&             H    = ledgers[sp.index()];
+      // the array snapshot is recomputed from the stored arrays (independent of the kernel),
+      // summed over ranks; the ledger is reduced over ranks (3.1) and written by rank 0
+      double swk = sum_wK_from_arrays(sp, ion_mass.at(sp.index()));
+#if defined(MPI_ENABLED)
+      MPI_Allreduce(MPI_IN_PLACE, &swk, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+#endif
+      const auto G   = reduce_ledger(H);
+      const auto npm = mpi_sum_npart(pair_npart_minus), npp = mpi_sum_npart(pair_npart_plus);
+      if (mpi_rank != 0) {
+        return;
+      }
       const std::string name = "hadronic_ledger_" + std::to_string((int)sp.index()) + ".txt";
       std::ofstream out(name, H.file_started ? std::ios::app : std::ios::trunc);
       if (!H.file_started) {
@@ -1312,30 +1604,28 @@ namespace user {
                "rounding budget of the transfers] | npart_minus | npart_plus [snapshots]\n";
         H.file_started = true;
       }
-      // the array snapshot is recomputed from the stored arrays (independent of the kernel)
-      const double swk = sum_wK_from_arrays(sp, ion_mass.at(sp.index()));
-      const auto&  C   = H.cumulative;
+      const auto& C = G.C;
       out << std::setprecision(17) << step << " " << t << " " << C.E_drag.value() << " "
           << C.E_pairs.value() << " " << C.E_absorbed.value() << " " << C.E_exported.value() << " "
           << C.E_round.value() << " " << C.E_stochastic.value() << " " << C.E_lost_nopairs.value() << " "
-          << C.pending_discarded.value() << " " << H.debt_initial.value() << " " << C.P_drag[0]
+          << C.pending_discarded.value() << " " << G.debt_initial.value() << " " << C.P_drag[0]
           << " " << C.P_drag[1] << " " << C.P_drag[2] << " " << C.P_pairs[0] << " " << C.P_pairs[1]
           << " " << C.P_pairs[2] << " " << C.P_absorbed[0] << " " << C.P_absorbed[1] << " "
           << C.P_absorbed[2] << " " << C.debt_outstanding.value() << " "
-          << C.pending_outstanding.value() << " " << H.identity_residual() << " " << C.n_events
+          << C.pending_outstanding.value() << " " << G.identity_residual() << " " << C.n_events
           << " " << C.n_spawned << " " << C.n_dropped << " " << C.n_substeps << " " << C.n_bounded
           << " " << C.n_capped_loss << " " << C.n_closing << " " << C.n_capped << " "
           << C.n_capped_events << " " << C.n_above_table << " " << C.n_latency << " "
           << C.n_processed << " " << C.n_applied << " " << C.n_rng << " " << C.n_k0_trigger << " "
-          << C.n_closing_at_rest << " " << swk << " " << C.B_budget.value() << " " << pair_npart_minus
-          << " " << pair_npart_plus << "\n";
+          << C.n_closing_at_rest << " " << swk << " " << C.B_budget.value() << " " << npm << " " << npp
+          << "\n";
     }
 
     npart_t pair_npart_minus { 0 }, pair_npart_plus { 0 };
 
     void write_ions(const Particles<D, M::CoordType>& sp, timestep_t step, double t) {
       auto&             H    = ledgers[sp.index()];
-      const std::string name = "hadronic_ions_" + std::to_string((int)sp.index()) + ".txt";
+      const std::string name = per_rank_name("hadronic_ions_" + std::to_string((int)sp.index()));
       std::ofstream out(name, H.ions_started ? std::ios::app : std::ios::trunc);
       const double Bn = std::sqrt(setup.B[0] * setup.B[0] + setup.B[1] * setup.B[1] +
                                   setup.B[2] * setup.B[2]);
@@ -1391,7 +1681,7 @@ namespace user {
       }
       auto& spm = domain.species[pair_minus - 1];
       auto& spp = domain.species[pair_plus - 1];
-      std::ofstream out("hadronic_pairs.txt", std::ios::trunc);
+      std::ofstream out(per_rank_name("hadronic_pairs"), std::ios::trunc);
       out << "# bh_proto pairs: species e- = " << (int)pair_minus << ", e+ = " << (int)pair_plus
           << "; one row per slot k of the two species (contiguous: slot k of e- and slot k of e+ "
              "form a pair when both were born by the kernel; background particles have payload "
@@ -1435,14 +1725,6 @@ namespace user {
      *        residual of the first sample (a randomly loaded background does not
      *        satisfy Gauss's law; the deposit conserves R - R0)
      */
-    struct GaussSample {
-      double             max_R { 0.0 }, max_dR { 0.0 }, max_rho { 0.0 }, max_E { 0.0 }, sum_R { 0.0 }, sum_rho { 0.0 };
-      double             max_abs_q { 0.0 }, ratio { 0.0 };
-      int                arg_R { -1 };
-      unsigned long long n_depositing { 0 };
-      npart_t            nm { 0 }, np { 0 };
-    };
-
     GaussSample gauss_sample(Domain<S, M>& domain) {
       GaussSample g;
       if constexpr (D == Dim::_1D) {
@@ -1511,7 +1793,7 @@ namespace user {
     }
 
     void write_gauss_sample(const GaussSample& g, timestep_t step, double t, const char* stage) {
-      std::ofstream out("hadronic_gauss.txt", gauss_started ? std::ios::app : std::ios::trunc);
+      std::ofstream out(per_rank_name("hadronic_gauss"), gauss_started ? std::ios::app : std::ios::trunc);
       if (!gauss_started) {
         out << "# bh_proto Gauss residual (1D): R_i = (E_{i+1/2} - E_{i-1/2}) - (q0/(B0 V0)) rho_i, "
                "rho_i = CIC node charge of the depositing charged species (double from the arrays), "
@@ -1572,43 +1854,58 @@ namespace user {
         }
         write_pairs(domain);
       }
+      // the pair-side sums are global (3.1): hi and lo of each dd summed over the ranks
+      auto reduce_dd = [this](kernel::hadronic::dd& d) {
+#if defined(MPI_ENABLED)
+        if (mpi_size > 1) {
+          double buf[2] = { d.hi, d.lo };
+          MPI_Allreduce(MPI_IN_PLACE, buf, 2, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+          kernel::hadronic::dd r;
+          r.add(buf[0]);
+          r.add(buf[1]);
+          d = r;
+        }
+#else
+        (void)d;
+        (void)this;
+#endif
+      };
+      reduce_dd(pairs_net);
+      reduce_dd(pairs_E);
+      reduce_dd(pairs_eps);
+      reduce_dd(pairs_w);
+      n_pairs_born = mpi_sum_u64(n_pairs_born);
+      const auto npm_g = mpi_sum_npart(pair_npart_minus), npp_g = mpi_sum_npart(pair_npart_plus);
       for (auto& sp : domain.species) {
         if (ion_mass.count(sp.index()) == 0) {
           continue;
         }
-        std::uint64_t h = 0xCBF29CE484222325ULL;
-        const auto    n = static_cast<std::size_t>(sp.npart());
-        bhproto::mix_bits(h, n);
-        bhproto::checksum_1d(h, sp.i1, n);
-        if constexpr (D == Dim::_2D || D == Dim::_3D) {
-          bhproto::checksum_1d(h, sp.i2, n);
-        }
-        if constexpr (D == Dim::_3D) {
-          bhproto::checksum_1d(h, sp.i3, n);
-        }
-        bhproto::checksum_1d(h, sp.dx1, n);
-        if constexpr (D == Dim::_2D || D == Dim::_3D) {
-          bhproto::checksum_1d(h, sp.dx2, n);
-        }
-        if constexpr (D == Dim::_3D) {
-          bhproto::checksum_1d(h, sp.dx3, n);
-        }
-        bhproto::checksum_1d(h, sp.ux1, n);
-        bhproto::checksum_1d(h, sp.ux2, n);
-        bhproto::checksum_1d(h, sp.ux3, n);
-        bhproto::checksum_1d(h, sp.weight, n);
-        bhproto::checksum_1d(h, sp.tag, n);
-        bhproto::checksum_2d(h, sp.pld_r, n);
-        const double wK_final = sum_wK_from_arrays(sp, ion_mass.at(sp.index()));
-        double       wK_init  = 0.0;
+        // order-independent checksum of every ion array, summed over the ranks (3.1, T8)
+        const std::uint64_t h       = mpi_sum_u64(checksum_species(sp));
+        const auto          npart_g = mpi_sum_npart(sp.npart());
+        double wK_final = sum_wK_from_arrays(sp, ion_mass.at(sp.index()));
+        double wK_init  = 0.0;
         for (const double v : initial_wK[sp.index()]) {
           wK_init += v;
         }
+        auto debt_final = sum_w_payload_from_arrays(sp, static_cast<unsigned short>(setup.payload_debt));
+#if defined(MPI_ENABLED)
+        if (mpi_size > 1) {
+          double buf[2] = { wK_final, wK_init };
+          MPI_Allreduce(MPI_IN_PLACE, buf, 2, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+          wK_final = buf[0];
+          wK_init  = buf[1];
+        }
+#endif
+        reduce_dd(debt_final);
         const auto& H = ledgers[sp.index()];
-        const auto& C = H.cumulative;
-        const auto  debt_final = sum_w_payload_from_arrays(sp, static_cast<unsigned short>(setup.payload_debt));
-        std::printf("bh_proto: checksum species %d npart %u : %s\n", (int)sp.index(),
-                    (unsigned)sp.npart(), bhproto::hex(h).c_str());
+        const auto  G = reduce_ledger(H); // the global ledger: identity residual over all ranks
+        const auto& C = G.C;
+        if (mpi_rank != 0) {
+          continue;
+        }
+        std::printf("bh_proto: checksum species %d npart %llu : %s\n", (int)sp.index(), npart_g,
+                    bhproto::hex(h).c_str());
         std::printf("bh_proto: closure species %d : sum w (K_init - K_final) = %.17g, "
                     "E_drag = %.17g, difference = %.6e, relative = %.6e\n",
                     (int)sp.index(), wK_init - wK_final, C.E_drag.value(),
@@ -1623,7 +1920,7 @@ namespace user {
           rhs.sub(C.E_exported);
           rhs.sub(C.E_lost_nopairs);
           rhs.sub(C.E_stochastic);
-          rhs.add(H.debt_initial);
+          rhs.add(G.debt_initial);
           kernel::hadronic::dd res = rhs;
           res.sub(pairs_net);
           std::printf("bh_proto: array identity species %d : sum_pairs w_s (E- + E+ - eps_s) = %.17g "
@@ -1647,40 +1944,33 @@ namespace user {
                     "estimate_bare %.10g estimate_sized %.10g\n",
                     (int)sp.index(), C.E_drag.value(), C.E_pairs.value(), C.E_absorbed.value(),
                     C.E_exported.value(), C.E_round.value(), C.E_stochastic.value(), C.E_lost_nopairs.value(),
-                    C.pending_discarded.value(), H.debt_initial.value(), C.debt_outstanding.value(),
-                    C.pending_outstanding.value(), H.identity_residual(), C.P_drag[0], C.P_drag[1],
+                    C.pending_discarded.value(), G.debt_initial.value(), C.debt_outstanding.value(),
+                    C.pending_outstanding.value(), G.identity_residual(), C.P_drag[0], C.P_drag[1],
                     C.P_drag[2], C.P_pairs[0], C.P_pairs[1], C.P_pairs[2], C.P_absorbed[0],
                     C.P_absorbed[1], C.P_absorbed[2], C.n_events, C.n_spawned, C.n_dropped,
                     C.n_substeps, C.n_bounded, C.n_capped_loss, C.n_closing, C.n_capped,
                     C.n_capped_events, C.n_above_table, C.n_latency, C.n_processed, C.n_applied,
-                    C.n_rng, C.n_k0_trigger, C.n_closing_at_rest, C.sum_wK, C.B_budget.value(), (unsigned)pair_npart_minus,
-                    (unsigned)pair_npart_plus, estimate_bare, estimate_sized);
+                    C.n_rng, C.n_k0_trigger, C.n_closing_at_rest, C.sum_wK, C.B_budget.value(), (unsigned)npm_g,
+                    (unsigned)npp_g, estimate_bare, estimate_sized);
         if (any_absorbing) {
           std::printf("bh_proto: exported species %d : E_exported_host %.17g E_exported %.17g difference %.6e "
                       "pending_discarded_host %.17g pending_discarded %.17g difference %.6e n_dead_with_payload %llu "
                       "(host sums over dead-tagged ions before each launch, i.e. before the sort)\n",
-                      (int)sp.index(), H.exported_host.value(), C.E_exported.value(),
-                      H.exported_host.value() - C.E_exported.value(), H.discarded_host.value(),
-                      C.pending_discarded.value(), H.discarded_host.value() - C.pending_discarded.value(),
-                      H.n_dead_host);
+                      (int)sp.index(), G.exported_host.value(), C.E_exported.value(),
+                      G.exported_host.value() - C.E_exported.value(), G.discarded_host.value(),
+                      C.pending_discarded.value(), G.discarded_host.value() - C.pending_discarded.value(),
+                      G.n_dead_host);
         }
       }
       if (pair_minus != 0) {
         for (const spidx_t sidx : { pair_minus, pair_plus }) {
-          auto&         sp = domain.species[sidx - 1];
-          std::uint64_t h  = 0xCBF29CE484222325ULL;
-          const auto    n  = static_cast<std::size_t>(sp.npart());
-          bhproto::mix_bits(h, n);
-          bhproto::checksum_1d(h, sp.i1, n);
-          bhproto::checksum_1d(h, sp.dx1, n);
-          bhproto::checksum_1d(h, sp.ux1, n);
-          bhproto::checksum_1d(h, sp.ux2, n);
-          bhproto::checksum_1d(h, sp.ux3, n);
-          bhproto::checksum_1d(h, sp.weight, n);
-          bhproto::checksum_1d(h, sp.tag, n);
-          bhproto::checksum_2d(h, sp.pld_r, n);
-          std::printf("bh_proto: checksum species %d npart %u : %s\n", (int)sidx, (unsigned)n,
-                      bhproto::hex(h).c_str());
+          auto&               sp = domain.species[sidx - 1];
+          const std::uint64_t h  = mpi_sum_u64(checksum_species(sp));
+          const auto          n  = mpi_sum_npart(sp.npart());
+          if (mpi_rank == 0) {
+            std::printf("bh_proto: checksum species %d npart %llu : %s\n", (int)sidx, n,
+                        bhproto::hex(h).c_str());
+          }
         }
       }
       // T10b: no live particle of any species carries a NaN payload
@@ -1712,11 +2002,20 @@ namespace user {
             }
           }
         }
-        std::printf("bh_proto: payload scan : %llu NaN payload entries on live particles, %llu in the "
-                    "unused tails (tails are allowed to hold anything)\n", nan_live, nan_tail);
+        nan_live = mpi_sum_u64(nan_live);
+        nan_tail = mpi_sum_u64(nan_tail);
+        if (mpi_rank == 0) {
+          std::printf("bh_proto: payload scan : %llu NaN payload entries on live particles, %llu in the "
+                      "unused tails (tails are allowed to hold anything)\n", nan_live, nan_tail);
+        }
       }
-      std::printf("bh_proto: checksum fields : %s\n",
-                  bhproto::hex(bhproto::checksum_fields<D>(domain.fields.em)).c_str());
+      {
+        // order-independent sum of per-cell hashes, summed over the ranks
+        const std::uint64_t hf = mpi_sum_u64(bhproto::checksum_fields<D>(domain.fields.em));
+        if (mpi_rank == 0) {
+          std::printf("bh_proto: checksum fields : %s\n", bhproto::hex(hf).c_str());
+        }
+      }
       std::fflush(stdout);
     }
   };
