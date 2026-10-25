@@ -42,6 +42,7 @@
 [setup]
   hadronic.enabled    = false
   hadronic.species    = [1]
+  source              = "none"
   ions.K              = [1836.15, 1928.0]
   ions.per_K          = 4
   ions.direction      = "+x"

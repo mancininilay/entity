@@ -65,6 +65,7 @@ namespace arch::bh {
     array_t<double*> eps_mean; // interaction-weighted mean photon energy
     array_t<double*> log_loss; // ln I
     array_t<double*> log_rate; // ln J
+    array_t<double*> log_dmean; // ln <D> (= ln I - ln J at the nodes)
 
     /**
      * @brief Index of the cell containing y (0 <= idx <= n - 2), for
@@ -148,6 +149,58 @@ namespace arch::bh {
       bool above;
       return interpolate_log(log_rate, rate, Gamma, above);
     }
+
+    /**
+     * @brief Mean ion loss per interaction <D>(Gamma) = I/J (m_e c^2), the
+     *        log-linear interpolation of the node ratios (identical, to double
+     *        rounding, to the ratio of the interpolated I and J). Edge
+     *        conventions for the outcome law (step 3 / closing packets): the
+     *        value at the first node below the lower edge, the last node value
+     *        at and above the upper edge.
+     */
+    Inline auto Dmean(double Gamma) const -> double {
+      if (!(Gamma > gamma_th) || !(Gamma >= gamma_min)) {
+        return dmean(0);
+      }
+      if (Gamma >= gamma_max) {
+        return dmean(n - 1);
+      }
+      const double yy = math::log10(Gamma - gamma_th);
+      if (yy < y_min) {
+        return dmean(0);
+      }
+      if (yy >= y_max) {
+        return dmean(n - 1);
+      }
+      const int    i  = cell_index(yy);
+      const double y0 = y(i), y1 = y(i + 1);
+      const double t  = (yy - y0) / (y1 - y0);
+      return math::exp(log_dmean(i) + t * (log_dmean(i + 1) - log_dmean(i)));
+    }
+
+    /**
+     * @brief Interaction-weighted mean photon energy eps_mean(Gamma) (m_e c^2),
+     *        linear in y of the node values, same edge conventions as Dmean
+     */
+    Inline auto EpsMean(double Gamma) const -> double {
+      if (!(Gamma > gamma_th) || !(Gamma >= gamma_min)) {
+        return eps_mean(0);
+      }
+      if (Gamma >= gamma_max) {
+        return eps_mean(n - 1);
+      }
+      const double yy = math::log10(Gamma - gamma_th);
+      if (yy < y_min) {
+        return eps_mean(0);
+      }
+      if (yy >= y_max) {
+        return eps_mean(n - 1);
+      }
+      const int    i  = cell_index(yy);
+      const double y0 = y(i), y1 = y(i + 1);
+      const double t  = (yy - y0) / (y1 - y0);
+      return eps_mean(i) + t * (eps_mean(i + 1) - eps_mean(i));
+    }
   };
 
   /**
@@ -190,6 +243,7 @@ namespace arch::bh {
     D.eps_mean   = array_t<double*> { "bh_eps_mean", n };
     D.log_loss   = array_t<double*> { "bh_log_loss", n };
     D.log_rate   = array_t<double*> { "bh_log_rate", n };
+    D.log_dmean  = array_t<double*> { "bh_log_dmean", n };
 
     auto h_y   = Kokkos::create_mirror_view(D.y);
     auto h_g   = Kokkos::create_mirror_view(D.gamma);
@@ -199,6 +253,7 @@ namespace arch::bh {
     auto h_e   = Kokkos::create_mirror_view(D.eps_mean);
     auto h_lI  = Kokkos::create_mirror_view(D.log_loss);
     auto h_lJ  = Kokkos::create_mirror_view(D.log_rate);
+    auto h_lD  = Kokkos::create_mirror_view(D.log_dmean);
     for (std::size_t i = 0; i < n; ++i) {
       if (!(T.I[i] > 0.0) || !(T.J[i] > 0.0) || !std::isfinite(T.I[i]) ||
           !std::isfinite(T.J[i])) {
@@ -214,6 +269,13 @@ namespace arch::bh {
       h_e(i)  = T.eps_mean[i];
       h_lI(i) = std::log(T.I[i]);
       h_lJ(i) = std::log(T.J[i]);
+      if (!(T.Dmean[i] > 0.0) || !std::isfinite(T.Dmean[i]) ||
+          !(T.eps_mean[i] > 0.0) || !std::isfinite(T.eps_mean[i])) {
+        throw std::invalid_argument(
+          "mirror_tables_to_device: <D> or eps_mean not positive and finite at node " +
+          std::to_string(i));
+      }
+      h_lD(i) = std::log(T.Dmean[i]);
     }
     Kokkos::deep_copy(D.y, h_y);
     Kokkos::deep_copy(D.gamma, h_g);
@@ -223,6 +285,7 @@ namespace arch::bh {
     Kokkos::deep_copy(D.eps_mean, h_e);
     Kokkos::deep_copy(D.log_loss, h_lI);
     Kokkos::deep_copy(D.log_rate, h_lJ);
+    Kokkos::deep_copy(D.log_dmean, h_lD);
     return D;
   }
 

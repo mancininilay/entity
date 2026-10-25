@@ -1,29 +1,63 @@
 /**
  * @file kernels/hadronic/bethe_heitler.hpp
- * @brief Bethe-Heitler ion interaction kernel, loss-only subset (spec v3.1.3
- *        II.2 steps 0 to 3 with `source = none`): continuous ion energy loss
- *        read from the startup tables with the precision-safe pending-loss
- *        application of III.3. No debt, packets, pairs or RNG are built here;
- *        the ledger carries every field of II.2 step 6 with the pair-related
- *        ones identically zero.
+ * @brief Bethe-Heitler ion interaction kernel (spec v3.2 II.2, mode
+ *        `continuous`): continuous ion energy loss read from the startup
+ *        tables with the precision-safe pending-loss application of III.3
+ *        (step 2), the per-ion debt and packet mechanism of III.4 with the
+ *        three sources `budget`, `poisson`, `none`, pair creation with the
+ *        mean-energy spectra `delta` and `threshold` (III.4; no rest-frame
+ *        sampler here), pair insertion into two dedicated species with atomic
+ *        tickets (II.3), the hadronic RNG pool (II.4) and the full
+ *        double-precision ledger with its identity (II.2 step 6).
  *
- * Conventions (all energy bookkeeping in double):
- *   K     = mu_d u^2 / (gamma_d + 1)            ion kinetic energy (m_e c^2)
+ * Conventions (all energy bookkeeping in double; the ledger energies in a
+ * compensated double-double accumulator so that the identity closes to far
+ * below double round-off whatever the summation order):
+ *   K       = mu_d u^2 / (gamma_d + 1)          ion kinetic energy (m_e c^2)
  *   Gamma_p = 1 + K / mu_r                      physical proton Lorentz factor
- *   dK    = (tau0 / skindepth0) g(x) I(Gamma_p) dt   requested loss per step
- *   delta = pld_r(p, pending)                   pending (unapplied) loss request
- *   delta_th = max(pending_floor, eta_u K),  pending_floor = pending_floor_ulp
- *              * ulp(|u| as real_t) * mu_d u / gamma_d
+ *   dK      = (tau0 / skindepth0) g(x) I(Gamma_p) dt   requested loss per step
+ *   delta   = pld_r(p, pending)                 pending (unapplied) loss request
+ *   r       = pld_r(p, debt)                    debt: energy removed from the
+ *                                               ion and not yet paid to a pair
+ *   K0      = pld_r(p, debt_k0)                 ion kinetic energy when the
+ *                                               current debt started (0 if r = 0)
  *   application: K_new = max(K - delta, K_floor), u_new = sqrt(K_new (K_new +
  *   2 mu_d)) / mu_d along u-hat, stored as real_t; dK_applied = K(u_old) -
- *   K(u_new_stored) from the two stored values; delta -= dK_applied.
+ *   K(u_new_stored) from the two stored values; delta -= dK_applied;
+ *   budget: r += dK_applied, K0 <- K_new if r was 0.
+ *   packets (budget): r_th = min(r_th_factor <D>(Gamma_p), f_r K,
+ *   dK t_latency / dt [if t_latency > 0]); while (r >= r_th, or |K - K0| >
+ *   f_r K0 once with r_packet = r) and fewer than max_events_per_step packets:
+ *   r_packet = min(r, r_th); D = <D> (delta) or 2 Gamma_p - eps_mean
+ *   (threshold); w_pair = w r_packet / D; both leptons at the ion's (i, dx)
+ *   with gamma_e = (D + eps_mean) / 2 (delta) or Gamma_p (threshold) along
+ *   u-hat; on success r -= r_packet; on capacity failure keep r and stop.
+ *   Closing packet below the table edge: r_packet = r with the law at
+ *   Gamma_min. Dead ions: E_exported += w r, pending_discarded += w delta,
+ *   r = delta = K0 = 0.
+ *   E_round: the single-precision rounding of every transfer, computed in
+ *   double from the stored values: for each packet w r_packet - w_s (E_s -
+ *   eps_s) with w_s the stored weight, E_s = gamma_- + gamma_+ from the stored
+ *   momenta and eps_s the stored eps payload; plus w (r_exact - r_stored) for
+ *   the rounding of the debt payload itself. With these, the identity
+ *   E_drag + debt_initial = (E_pairs - E_absorbed) + E_round + debt_outstanding
+ *   + E_exported + E_lost_nopairs holds to the accumulator's round-off.
+ *   poisson: no debt; per step n ~ Poisson(R dt / pair_weight) events (R =
+ *   coeff J(Gamma_p) g), capped at max_events_per_step (n_capped_events),
+ *   w_pair = pair_weight w, the unweighted law; E_lost_nopairs accumulates
+ *   the signed imbalance w dK_applied - sum_events w_pair D (expectation zero),
+ *   so that the same identity holds by construction (convention).
+ *   none: loss only, E_lost_nopairs = E_drag.
  *
  * The functor is used with `Kokkos::parallel_reduce` and the `LossLedger`
- * value type (a struct of doubles and 64-bit counters reduced with
- * `Kokkos::Sum`); no real_t atomics are used anywhere.
+ * value type (a struct of double-double accumulators, doubles and 64-bit
+ * counters reduced with `Kokkos::Sum`); no real_t atomics are used anywhere;
+ * integer atomics only for the spawn tickets.
  *
  * @implements
+ *   - kernel::hadronic::dd
  *   - kernel::hadronic::HadronicParams
+ *   - kernel::hadronic::PairTargets
  *   - kernel::hadronic::LossLedger
  *   - kernel::hadronic::BetheHeitler_kernel<>
  * @namespaces:
@@ -40,24 +74,120 @@
 
 #include "archetypes/hadronic/bh_tables_device.h"
 #include "framework/containers/particles.h"
+#include "kernels/injectors.hpp"
 
 #include <Kokkos_Core.hpp>
 
+#include <cstdint>
 #include <limits>
 
 namespace kernel::hadronic {
   using namespace ntt;
 
   /**
-   * @brief Spatial profile g(x) of the photon bath (D5); only `uniform` in
-   *        this step
+   * @brief Spatial profile g(x) of the photon bath (D5); only `uniform` here
    */
   enum class BathProfile : int {
     Uniform = 0
   };
 
+  enum class PairSource : int {
+    None    = 0,
+    Budget  = 1,
+    Poisson = 2
+  };
+
+  enum class PairSpectrum : int {
+    Delta     = 0,
+    Threshold = 1
+  };
+
   /**
-   * @brief Scalar parameters of the kernel (II.2), loss-only subset
+   * @brief Compensated double-double accumulator (hi + lo), device-callable.
+   *        Sums and products of doubles are accumulated with error-free
+   *        transformations (two-sum, two-product via fma), so the result is
+   *        correct to ~1e-32 relative to the largest partial sum, whatever the
+   *        order of the reduction. Used for every ledger energy entry.
+   */
+  struct dd {
+    double hi { 0.0 };
+    double lo { 0.0 };
+
+    KOKKOS_INLINE_FUNCTION
+    dd() = default;
+
+    KOKKOS_INLINE_FUNCTION
+    explicit dd(double x) : hi { x }, lo { 0.0 } {}
+
+    KOKKOS_INLINE_FUNCTION
+    static void two_sum(double a, double b, double& s, double& e) {
+      s               = a + b;
+      const double bb = s - a;
+      e               = (a - (s - bb)) + (b - bb);
+    }
+
+    KOKKOS_INLINE_FUNCTION
+    static void two_prod(double a, double b, double& p, double& e) {
+      p = a * b;
+      e = Kokkos::fma(a, b, -p);
+    }
+
+    KOKKOS_INLINE_FUNCTION
+    void add(double x) {
+      double s, e;
+      two_sum(hi, x, s, e);
+      lo += e;
+      two_sum(s, lo, hi, lo);
+    }
+
+    KOKKOS_INLINE_FUNCTION
+    void add(const dd& o) {
+      add(o.hi);
+      add(o.lo);
+    }
+
+    KOKKOS_INLINE_FUNCTION
+    void sub(const dd& o) {
+      add(-o.hi);
+      add(-o.lo);
+    }
+
+    /**
+     * @brief += a * b with the product's rounding error carried
+     */
+    KOKKOS_INLINE_FUNCTION
+    void add_prod(double a, double b) {
+      double p, e;
+      two_prod(a, b, p, e);
+      add(p);
+      add(e);
+    }
+
+    /**
+     * @brief += (this dd scaled by a) ... used as a static helper: a * x
+     */
+    KOKKOS_INLINE_FUNCTION
+    static auto prod(double a, const dd& x) -> dd {
+      dd r;
+      r.add_prod(a, x.hi);
+      r.add_prod(a, x.lo);
+      return r;
+    }
+
+    KOKKOS_INLINE_FUNCTION
+    auto value() const -> double {
+      return hi + lo;
+    }
+
+    KOKKOS_INLINE_FUNCTION
+    auto operator+=(const dd& o) -> dd& {
+      add(o);
+      return *this;
+    }
+  };
+
+  /**
+   * @brief Scalar parameters of the kernel (II.2)
    */
   struct HadronicParams {
     double tau0_over_skindepth0 { 0.0 };
@@ -71,49 +201,89 @@ namespace kernel::hadronic {
     unsigned short pld_debt { 1 };
     unsigned short pld_debt_k0 { 2 };
     double         dt { 0.0 };
-    double         time { 0.0 };
+    double         time { 0.0 }; // the time stamped on newborn pairs (time after the step)
     int            profile { static_cast<int>(BathProfile::Uniform) };
     // "design off" (T5b only): the table dK is applied to u every step with no
     // pending accumulation (the remainder of each application is discarded)
     bool unsafe_application { false };
+    // ---- pair creation (step 3) ---------------------------------------------
+    int    source { static_cast<int>(PairSource::None) };
+    int    spectrum { static_cast<int>(PairSpectrum::Delta) };
+    double r_th_factor { 10.0 };
+    double f_r { 0.02 };
+    double t_latency { 0.0 }; // code time; 0 = latency cap off
+    double pair_weight { 1.0 }; // poisson
+    int    max_events_per_step { 8 };
+    // T13 only: antisymmetric longitudinal kick (in u, m_e c) of the two leptons
+    // along the ion direction, deterministic from the ticket (no RNG): e- gets
+    // +k u-hat, e+ gets -k u-hat with k = kick * (2 h - 1), h a hash of the
+    // ticket in [0, 1); the kick energy is not rounding and lands in E_round
+    double kick { 0.0 };
   };
 
   /**
-   * @brief Per-launch ledger (II.2 step 6 and part IV), reduced in double
+   * @brief Pair destinations (II.3): the two dedicated species, their offsets
+   *        (current npart), the capacity computed on the host before the
+   *        launch, and the device spawn counter
+   */
+  struct PairTargets {
+    ParticleArrays   minus;
+    ParticleArrays   plus;
+    npart_t          offset_m { 0 };
+    npart_t          offset_p { 0 };
+    npart_t          capacity { 0 };
+    npart_t          counter_m { 0 };
+    npart_t          counter_p { 0 };
+    npart_t          domain_idx { 0 };
+    bool             tracking_m { false };
+    bool             tracking_p { false };
+    unsigned short   npld_r { 0 }; // real payload slots of the pair species (>= 3)
+    array_t<npart_t> spawn_counter;
+    bool             valid { false };
+  };
+
+  /**
+   * @brief Per-launch ledger (II.2 step 6 and part IV)
    *
    * Cumulative entries are summed by the host over launches; `debt_outstanding`,
    * `pending_outstanding`, `sum_wK`, `n_alive` are snapshots of the launch.
    */
   struct LossLedger {
-    double E_drag { 0.0 };
-    double E_pairs { 0.0 };
-    double E_absorbed { 0.0 };
-    double E_exported { 0.0 };
-    double E_round { 0.0 };
-    double E_lost_nopairs { 0.0 };
-    double pending_discarded { 0.0 };
+    dd E_drag;
+    dd E_pairs;
+    dd E_absorbed;
+    dd E_exported;
+    dd E_round;
+    dd E_lost_nopairs;
+    dd pending_discarded;
     double P_drag[3] { 0.0, 0.0, 0.0 };
     double P_pairs[3] { 0.0, 0.0, 0.0 };
     double P_absorbed[3] { 0.0, 0.0, 0.0 };
     // snapshots
-    double debt_outstanding { 0.0 };
-    double pending_outstanding { 0.0 };
+    dd     debt_outstanding;
+    dd     pending_outstanding;
     double sum_wK { 0.0 }; // sum of w K over alive and send-tagged ions after the launch
+    // single-precision rounding budget of the transfers (T11): sum over pair
+    // creations of w_pair E_pair 2^-23 plus sum over loss applications of w K 2^-22
+    dd B_budget;
     // counters
-    unsigned long long n_events { 0 };
-    unsigned long long n_spawned { 0 };
-    unsigned long long n_dropped { 0 };
+    unsigned long long n_events { 0 };        // spawn attempts (packets or poisson events)
+    unsigned long long n_spawned { 0 };       // successful insertions (pairs)
+    unsigned long long n_dropped { 0 };       // insertions refused for capacity
     unsigned long long n_substeps { 0 };
     unsigned long long n_bounded { 0 };
-    unsigned long long n_capped_loss { 0 }; // steps on which the f_max K cap changed the applied loss
-    unsigned long long n_closing { 0 };
-    unsigned long long n_capped { 0 };
+    unsigned long long n_capped_loss { 0 };   // steps on which the f_max K cap changed the applied loss
+    unsigned long long n_closing { 0 };       // closing packets (below the table edge)
+    unsigned long long n_capped { 0 };        // budget: packet loops stopped by max_events_per_step with r >= r_th
+    unsigned long long n_capped_events { 0 }; // poisson: steps on which the event count exceeded the cap
     unsigned long long n_above_table { 0 };
-    unsigned long long n_latency { 0 };
+    unsigned long long n_latency { 0 };       // steps on which the pending floor exceeds the packet threshold
     unsigned long long n_resolution { 0 };
-    unsigned long long n_processed { 0 }; // ions whose loss was evaluated from the table
-    unsigned long long n_alive { 0 };     // snapshot: alive and send-tagged ions
-    unsigned long long n_applied { 0 };   // applications to u this launch
+    unsigned long long n_processed { 0 };     // ions whose loss was evaluated from the table
+    unsigned long long n_alive { 0 };         // snapshot: alive and send-tagged ions
+    unsigned long long n_applied { 0 };       // applications to u this launch
+    unsigned long long n_rng { 0 };           // random numbers drawn from the hadronic pool
+    unsigned long long n_k0_trigger { 0 };    // packets spawned on the K0 trigger
 
     KOKKOS_INLINE_FUNCTION
     LossLedger() = default;
@@ -135,6 +305,7 @@ namespace kernel::hadronic {
       debt_outstanding    += o.debt_outstanding;
       pending_outstanding += o.pending_outstanding;
       sum_wK              += o.sum_wK;
+      B_budget            += o.B_budget;
       n_events            += o.n_events;
       n_spawned           += o.n_spawned;
       n_dropped           += o.n_dropped;
@@ -143,12 +314,15 @@ namespace kernel::hadronic {
       n_capped_loss       += o.n_capped_loss;
       n_closing           += o.n_closing;
       n_capped            += o.n_capped;
+      n_capped_events     += o.n_capped_events;
       n_above_table       += o.n_above_table;
       n_latency           += o.n_latency;
       n_resolution        += o.n_resolution;
       n_processed         += o.n_processed;
       n_alive             += o.n_alive;
       n_applied           += o.n_applied;
+      n_rng               += o.n_rng;
+      n_k0_trigger        += o.n_k0_trigger;
       return *this;
     }
   };
@@ -162,6 +336,14 @@ namespace kernel::hadronic {
     const double u2s = u1 * u1 + u2 * u2 + u3 * u3;
     const double g   = math::sqrt(1.0 + u2s);
     return mu * u2s / (g + 1.0);
+  }
+
+  /**
+   * @brief Lepton Lorentz factor (mass 1) in double from the stored components;
+   *        the expression shared by the kernel ledger and the array closure
+   */
+  Inline auto lepton_gamma(double u1, double u2, double u3) -> double {
+    return math::sqrt(1.0 + u1 * u1 + u2 * u2 + u3 * u3);
   }
 
   /**
@@ -181,27 +363,60 @@ namespace kernel::hadronic {
   }
 
   /**
-   * @brief Loss-only Bethe-Heitler kernel over the ions of one species
-   * @tparam M Metric (template as the other particle kernels; unused in the
-   *           uniform-profile subset)
+   * @brief splitmix64 finaliser (device-callable); used for the T13 kick only
+   */
+  Inline auto splitmix64_dev(std::uint64_t x) -> std::uint64_t {
+    x += 0x9E3779B97F4A7C15ULL;
+    x  = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    x  = (x ^ (x >> 27)) * 0x94D049BB133111EBULL;
+    return x ^ (x >> 31);
+  }
+
+  /**
+   * @brief Bethe-Heitler kernel over the ions of one species
+   * @tparam M Metric (Cartesian coordinates assumed for the pair insertion)
    */
   template <class M>
   struct BetheHeitler_kernel {
     static constexpr auto D = M::Dim;
+    static constexpr auto C = M::CoordType;
 
-    ParticleArrays          prtls;
-    const double            mu_d;
+    ParticleArrays                 prtls;
+    const double                   mu_d;
     const arch::bh::HadronicTables tables;
-    const HadronicParams    prm;
+    const HadronicParams           prm;
+    PairTargets                    pairs;
+    random_number_pool_t           pool;
 
-    BetheHeitler_kernel(const ParticleArrays&          arrays,
-                        double                         ion_mass,
+    /**
+     * @brief Loss-only construction (source = none; no pair destinations)
+     */
+    BetheHeitler_kernel(const ParticleArrays&           arrays,
+                        double                          ion_mass,
                         const arch::bh::HadronicTables& tbl,
-                        const HadronicParams&          params)
+                        const HadronicParams&           params)
       : prtls { arrays }
       , mu_d { ion_mass }
       , tables { tbl }
-      , prm { params } {}
+      , prm { params }
+      , pairs {}
+      , pool { 0x9E3779B97F4A7C15ULL } {}
+
+    /**
+     * @brief Full construction with the pair destinations and the hadronic pool
+     */
+    BetheHeitler_kernel(const ParticleArrays&           arrays,
+                        double                          ion_mass,
+                        const arch::bh::HadronicTables& tbl,
+                        const HadronicParams&           params,
+                        const PairTargets&              targets,
+                        const random_number_pool_t&     hadronic_pool)
+      : prtls { arrays }
+      , mu_d { ion_mass }
+      , tables { tbl }
+      , prm { params }
+      , pairs { targets }
+      , pool { hadronic_pool } {}
 
     /**
      * @brief I(Gamma_p(K)) with the edge conventions (0 below, edge value above)
@@ -211,16 +426,216 @@ namespace kernel::hadronic {
       return tables.I(Gp);
     }
 
+    /**
+     * @brief Outcome law at Gamma_p (mean-energy spectra): the ion loss D per
+     *        interaction, the absorbed photon energy eps, the two lepton
+     *        Lorentz factors
+     */
+    Inline void outcome_law(double Gp, double& Dv, double& eps, double& g_m, double& g_p) const {
+      const double Dm = tables.Dmean(Gp);
+      eps             = tables.EpsMean(Gp);
+      if (prm.spectrum == static_cast<int>(PairSpectrum::Threshold)) {
+        g_m = Gp;
+        g_p = Gp;
+        Dv  = 2.0 * Gp - eps;
+      } else {
+        Dv  = Dm;
+        g_m = 0.5 * (Dm + eps);
+        g_p = g_m;
+      }
+    }
+
+    /**
+     * @brief Write one lepton (II.3): position and prev = the ion's, momentum v,
+     *        weight, tag, payloads (birth time, parent Gamma_p, eps; the rest 0)
+     */
+    Inline void write_lepton(ParticleArrays&       dst,
+                             bool                  tracking,
+                             npart_t               idx,
+                             npart_t               species_cntr,
+                             prtlidx_t             p,
+                             const vec_t<Dim::_3D>& v,
+                             real_t                w_s,
+                             short                 tag,
+                             double                Gp,
+                             double                eps) const {
+      tuple_t<int, D>      xi;
+      tuple_t<prtldx_t, D> dxi;
+      if constexpr (D == Dim::_1D || D == Dim::_2D || D == Dim::_3D) {
+        xi[0]  = prtls.i1(p);
+        dxi[0] = prtls.dx1(p);
+      }
+      if constexpr (D == Dim::_2D || D == Dim::_3D) {
+        xi[1]  = prtls.i2(p);
+        dxi[1] = prtls.dx2(p);
+      }
+      if constexpr (D == Dim::_3D) {
+        xi[2]  = prtls.i3(p);
+        dxi[2] = prtls.dx3(p);
+      }
+      if (tracking) {
+        kernel::InjectParticle<D, C, true>(idx, dst.i1, dst.i2, dst.i3, dst.dx1, dst.dx2,
+                                           dst.dx3, dst.ux1, dst.ux2, dst.ux3, dst.phi,
+                                           dst.weight, dst.tag, dst.pld_i, xi, dxi, v, w_s,
+                                           ZERO, pairs.domain_idx, species_cntr);
+      } else {
+        kernel::InjectParticle<D, C, false>(idx, dst.i1, dst.i2, dst.i3, dst.dx1, dst.dx2,
+                                            dst.dx3, dst.ux1, dst.ux2, dst.ux3, dst.phi,
+                                            dst.weight, dst.tag, dst.pld_i, xi, dxi, v, w_s,
+                                            ZERO, pairs.domain_idx, species_cntr);
+      }
+      // *_prev = * (tile key; the next push rewrites it before any deposit, P2)
+      if constexpr (D == Dim::_1D || D == Dim::_2D || D == Dim::_3D) {
+        dst.i1_prev(idx)  = xi[0];
+        dst.dx1_prev(idx) = dxi[0];
+      }
+      if constexpr (D == Dim::_2D || D == Dim::_3D) {
+        dst.i2_prev(idx)  = xi[1];
+        dst.dx2_prev(idx) = dxi[1];
+      }
+      if constexpr (D == Dim::_3D) {
+        dst.i3_prev(idx)  = xi[2];
+        dst.dx3_prev(idx) = dxi[2];
+      }
+      dst.tag(idx) = tag; // the parent's tag (alive or send-tagged)
+      // every real payload slot written
+      for (unsigned short c = 0; c < pairs.npld_r; ++c) {
+        dst.pld_r(idx, c) = ZERO;
+      }
+      dst.pld_r(idx, 0) = static_cast<real_t>(prm.time);
+      dst.pld_r(idx, 1) = static_cast<real_t>(Gp);
+      dst.pld_r(idx, 2) = static_cast<real_t>(eps);
+    }
+
+    /**
+     * @brief Spawn one pair (II.3): atomic ticket against the host capacity,
+     *        both leptons written at offset + ticket, ledger entries from the
+     *        stored values. `intended` is the energy the ion pays for this
+     *        pair (w r_packet for budget, w_pair D for poisson) in dd; the
+     *        rounding of the transfer goes to E_round.
+     * @return true on success, false on capacity failure (n_dropped counted)
+     */
+    Inline auto spawn_pair(prtlidx_t   p,
+                           LossLedger& L,
+                           double      w_pair,
+                           const dd&   intended,
+                           double      d1,
+                           double      d2,
+                           double      d3, // unit direction of the ion
+                           double      Gp,
+                           double      eps,
+                           double      g_m,
+                           double      g_p,
+                           short       tag) const -> bool {
+      L.n_events += 1;
+      if (!pairs.valid) {
+        L.n_dropped += 1;
+        return false;
+      }
+      const npart_t ticket = Kokkos::atomic_fetch_add(&pairs.spawn_counter(),
+                                                      static_cast<npart_t>(1));
+      if (ticket >= pairs.capacity) {
+        L.n_dropped += 1;
+        return false;
+      }
+      const npart_t im = pairs.offset_m + ticket;
+      const npart_t ip = pairs.offset_p + ticket;
+
+      const real_t w_s = static_cast<real_t>(w_pair);
+      const double um  = math::sqrt((g_m > 1.0) ? (g_m - 1.0) * (g_m + 1.0) : 0.0);
+      const double up  = math::sqrt((g_p > 1.0) ? (g_p - 1.0) * (g_p + 1.0) : 0.0);
+      double       k   = 0.0;
+      if (prm.kick != 0.0) {
+        const double h = static_cast<double>(splitmix64_dev(static_cast<std::uint64_t>(ticket) ^
+                                                            0xD1B54A32D192ED03ULL) >> 11) *
+                         0x1.0p-53;
+        k = prm.kick * (2.0 * h - 1.0);
+      }
+      vec_t<Dim::_3D> vm { static_cast<real_t>((um + k) * d1), static_cast<real_t>((um + k) * d2),
+                           static_cast<real_t>((um + k) * d3) };
+      vec_t<Dim::_3D> vp { static_cast<real_t>((up - k) * d1), static_cast<real_t>((up - k) * d2),
+                           static_cast<real_t>((up - k) * d3) };
+      ParticleArrays mm = pairs.minus;
+      ParticleArrays pp = pairs.plus;
+      write_lepton(mm, pairs.tracking_m, im, pairs.counter_m + ticket, p, vm, w_s, tag, Gp, eps);
+      write_lepton(pp, pairs.tracking_p, ip, pairs.counter_p + ticket, p, vp, w_s, tag, Gp, eps);
+
+      // ledger from the stored values
+      const double wd    = static_cast<double>(w_s);
+      const double gm_s  = lepton_gamma(static_cast<double>(vm[0]), static_cast<double>(vm[1]),
+                                        static_cast<double>(vm[2]));
+      const double gp_s  = lepton_gamma(static_cast<double>(vp[0]), static_cast<double>(vp[1]),
+                                        static_cast<double>(vp[2]));
+      const double E_s   = gm_s + gp_s;
+      const double eps_s = static_cast<double>(static_cast<real_t>(eps));
+      L.E_pairs.add_prod(wd, E_s);
+      L.E_absorbed.add_prod(wd, eps_s);
+      L.B_budget.add(wd * E_s * 0x1.0p-23);
+      for (int c = 0; c < 3; ++c) {
+        L.P_pairs[c] += wd * (static_cast<double>(vm[c]) + static_cast<double>(vp[c]));
+      }
+      L.P_absorbed[0] += wd * eps_s * d1;
+      L.P_absorbed[1] += wd * eps_s * d2;
+      L.P_absorbed[2] += wd * eps_s * d3;
+      // E_round += intended - w_s (E_s - eps_s)
+      L.E_round.add(intended);
+      L.E_round.add_prod(-wd, E_s);
+      L.E_round.add_prod(wd, eps_s);
+      L.n_spawned += 1;
+      return true;
+    }
+
+    /**
+     * @brief Poisson deviate with mean lambda (Knuth for lambda <= 30, normal
+     *        approximation above), drawing from the hadronic pool; every draw
+     *        counted in n_rng
+     */
+    Inline auto poisson_draw(double lambda, LossLedger& L) const -> int {
+      auto gen = pool.get_state();
+      int  n   = 0;
+      if (lambda <= 30.0) {
+        const double Lim = math::exp(-lambda);
+        double       prod = 1.0;
+        int          k    = 0;
+        do {
+          ++k;
+          prod *= gen.drand();
+          L.n_rng += 1;
+        } while (prod > Lim && k < 10000);
+        n = k - 1;
+      } else {
+        // Box-Muller normal approximation (rounded, clamped at 0)
+        const double u1 = gen.drand(), u2 = gen.drand();
+        L.n_rng        += 2;
+        const double z  = math::sqrt(-2.0 * math::log(u1 > 1e-300 ? u1 : 1e-300)) *
+                         math::cos(2.0 * 3.14159265358979323846 * u2);
+        const double x = lambda + math::sqrt(lambda) * z;
+        n              = x > 0.0 ? static_cast<int>(x + 0.5) : 0;
+      }
+      pool.free_state(gen);
+      return n;
+    }
+
     Inline void operator()(prtlidx_t p, LossLedger& L) const {
-      const short tag = prtls.tag(p);
-      const double w  = static_cast<double>(prtls.weight(p));
-      double delta    = static_cast<double>(prtls.pld_r(p, prm.pld_pending));
+      const short  tag   = prtls.tag(p);
+      const double w     = static_cast<double>(prtls.weight(p));
+      double       delta = static_cast<double>(prtls.pld_r(p, prm.pld_pending));
+      const bool   budget  = prm.source == static_cast<int>(PairSource::Budget);
+      const bool   poisson = prm.source == static_cast<int>(PairSource::Poisson);
+      // debt and K0 are read only with the budget source (the slots stay 0 otherwise)
+      const double r_in  = budget ? static_cast<double>(prtls.pld_r(p, prm.pld_debt)) : 0.0;
+      double       K0    = budget ? static_cast<double>(prtls.pld_r(p, prm.pld_debt_k0)) : 0.0;
 
       if (tag == ParticleTag::dead) {
-        // absorbed this step: the request is never fulfilled
+        // absorbed this step: the request is never fulfilled, the debt is exported
         if (delta != 0.0) {
-          L.pending_discarded        += w * delta;
+          L.pending_discarded.add_prod(w, delta);
           prtls.pld_r(p, prm.pld_pending) = ZERO;
+        }
+        if (budget && r_in != 0.0) {
+          L.E_exported.add_prod(w, r_in);
+          prtls.pld_r(p, prm.pld_debt)    = ZERO;
+          prtls.pld_r(p, prm.pld_debt_k0) = ZERO;
         }
         return;
       }
@@ -228,24 +643,50 @@ namespace kernel::hadronic {
 
       // step 0: energies
       const real_t u1r = prtls.ux1(p), u2r = prtls.ux2(p), u3r = prtls.ux3(p);
-      const double u1 = static_cast<double>(u1r);
-      const double u2 = static_cast<double>(u2r);
-      const double u3 = static_cast<double>(u3r);
+      const double u1  = static_cast<double>(u1r);
+      const double u2  = static_cast<double>(u2r);
+      const double u3  = static_cast<double>(u3r);
       const double u2s = u1 * u1 + u2 * u2 + u3 * u3;
       const double u   = math::sqrt(u2s);
       const double gd  = math::sqrt(1.0 + u2s);
       const double K   = mu_d * u2s / (gd + 1.0);
       double       Gp  = 1.0 + K / prm.mu_r;
+      // debt in exact arithmetic across this step
+      dd r;
+      r.add(r_in);
 
       if (Gp > tables.gamma_max) {
         Gp = tables.gamma_max; // clamp to the edge: edge value of the table
         L.n_above_table += 1;
       }
       if (Gp < tables.gamma_min) {
-        // below the lower edge: no loss, no debt in this step (no closing packet)
+        // below the lower edge: no loss; a pending request is discarded; a debt
+        // (ion decelerated by the fields) is paid in one closing packet with the
+        // law at Gamma_min
         if (delta != 0.0) {
-          L.pending_discarded        += w * delta;
+          L.pending_discarded.add_prod(w, delta);
           prtls.pld_r(p, prm.pld_pending) = ZERO;
+        }
+        if (budget && r_in > 0.0 && u > 0.0) {
+          double Dv, eps, g_m, g_p;
+          outcome_law(tables.gamma_min, Dv, eps, g_m, g_p);
+          const double w_pair = w * r_in / Dv;
+          dd           intended;
+          intended.add_prod(w, r_in);
+          if (spawn_pair(p, L, w_pair, intended, u1 / u, u2 / u, u3 / u, Gp, eps, g_m, g_p, tag)) {
+            r = dd {};
+            K0 = 0.0;
+            L.n_closing += 1;
+          }
+          const real_t r_s = static_cast<real_t>(r.value());
+          dd           rounding = r;
+          rounding.add(-static_cast<double>(r_s));
+          L.E_round.add(dd::prod(w, rounding));
+          prtls.pld_r(p, prm.pld_debt)    = r_s;
+          prtls.pld_r(p, prm.pld_debt_k0) = static_cast<real_t>(K0);
+          L.debt_outstanding.add_prod(w, static_cast<double>(r_s));
+        } else if (budget) {
+          L.debt_outstanding.add_prod(w, r_in);
         }
         L.n_alive += 1;
         L.sum_wK  += w * K;
@@ -308,6 +749,21 @@ namespace kernel::hadronic {
       delta += dK;
       L.n_processed += 1;
 
+      // packet threshold at the pre-application state (couples the application
+      // threshold to the packet threshold, III.3)
+      double r_th_pre = 0.0;
+      if (budget && dK > 0.0) {
+        const double a = prm.r_th_factor * tables.Dmean(Gp);
+        const double b = prm.f_r * K;
+        r_th_pre       = (a < b) ? a : b;
+        if (prm.t_latency > 0.0) {
+          const double c = dK * prm.t_latency / prm.dt;
+          if (c < r_th_pre) {
+            r_th_pre = c;
+          }
+        }
+      }
+
       // step 2: precision-safe application. The ulp of the stored momentum
       // norm is taken from the double norm u rounded to real_t (R4: a real_t
       // sum of squares overflows for |u| ~ 1e20); a norm that is not
@@ -317,8 +773,17 @@ namespace kernel::hadronic {
                           : std::numeric_limits<real_t>::max();
       const double pending_floor = prm.pending_floor_ulp * ulp_real(ur) * mu_d *
                                    u / gd;
-      const double delta_th = (pending_floor > prm.eta_u * K) ? pending_floor
-                                                              : prm.eta_u * K;
+      double delta_th_base = prm.eta_u * K;
+      if (budget && r_th_pre > 0.0 && r_th_pre < delta_th_base) {
+        delta_th_base = r_th_pre;
+      }
+      if (budget && r_th_pre > 0.0 && pending_floor > r_th_pre) {
+        L.n_latency += 1;
+      }
+      const double delta_th = (pending_floor > delta_th_base) ? pending_floor : delta_th_base;
+      double K_cur = K;
+      double n1d = u1, n2d = u2, n3d = u3; // current stored components (double)
+      double dK_applied = 0.0;
       if (delta > 0.0 && delta >= delta_th && u > 0.0) {
         double K_new = K - delta;
         if (K_new < K_floor) {
@@ -335,34 +800,146 @@ namespace kernel::hadronic {
         prtls.ux1(p) = n1;
         prtls.ux2(p) = n2;
         prtls.ux3(p) = n3;
-        const double K_stored = kinetic_energy(mu_d,
-                                               static_cast<double>(n1),
-                                               static_cast<double>(n2),
-                                               static_cast<double>(n3));
-        const double dK_applied = K - K_stored;
+        n1d = static_cast<double>(n1);
+        n2d = static_cast<double>(n2);
+        n3d = static_cast<double>(n3);
+        const double K_stored = kinetic_energy(mu_d, n1d, n2d, n3d);
+        dK_applied = K - K_stored;
         delta -= dK_applied;
         if (prm.unsafe_application) {
           delta = 0.0; // design off: no pending accumulation
         }
-        L.E_drag         += w * dK_applied;
-        L.E_lost_nopairs += w * dK_applied;
-        L.P_drag[0]      += w * mu_d * (u1 - static_cast<double>(n1));
-        L.P_drag[1]      += w * mu_d * (u2 - static_cast<double>(n2));
-        L.P_drag[2]      += w * mu_d * (u3 - static_cast<double>(n3));
-        L.n_applied      += 1;
-        L.sum_wK         += w * K_stored;
-      } else {
-        if (prm.unsafe_application) {
-          delta = 0.0;
+        L.E_drag.add_prod(w, dK_applied);
+        L.B_budget.add(w * K * 0x1.0p-22);
+        if (budget) {
+          if (r_in == 0.0) {
+            K0 = K_stored;
+          }
+          r.add(dK_applied);
+        } else if (poisson) {
+          L.E_lost_nopairs.add_prod(w, dK_applied);
+        } else {
+          L.E_lost_nopairs.add_prod(w, dK_applied);
         }
-        L.sum_wK += w * K;
+        L.P_drag[0] += w * mu_d * (u1 - n1d);
+        L.P_drag[1] += w * mu_d * (u2 - n2d);
+        L.P_drag[2] += w * mu_d * (u3 - n3d);
+        L.n_applied += 1;
+        K_cur = K_stored;
+      } else if (prm.unsafe_application) {
+        delta = 0.0;
       }
       const real_t delta_r = static_cast<real_t>(delta);
       prtls.pld_r(p, prm.pld_pending) = delta_r;
+      L.pending_outstanding.add_prod(w, static_cast<double>(delta_r));
+      L.sum_wK += w * K_cur;
+      L.n_alive += 1;
 
-      // step 3: snapshots (debt-related entries stay zero: source = none)
-      L.pending_outstanding += w * static_cast<double>(delta_r);
-      L.n_alive             += 1;
+      // steps 3-4: pair creation at the post-application state
+      const double un = math::sqrt(n1d * n1d + n2d * n2d + n3d * n3d);
+      double       Gp_cur = 1.0 + K_cur / prm.mu_r;
+      if (Gp_cur > tables.gamma_max) {
+        Gp_cur = tables.gamma_max;
+      }
+      const double d1 = un > 0.0 ? n1d / un : 1.0;
+      const double d2 = un > 0.0 ? n2d / un : 0.0;
+      const double d3 = un > 0.0 ? n3d / un : 0.0;
+
+      if (budget) {
+        if (dK > 0.0 && r.value() > 0.0 && un > 0.0) {
+          double Dv, eps, g_m, g_p;
+          outcome_law(Gp_cur, Dv, eps, g_m, g_p);
+          double r_th = prm.r_th_factor * tables.Dmean(Gp_cur);
+          if (prm.f_r * K_cur < r_th) {
+            r_th = prm.f_r * K_cur;
+          }
+          if (prm.t_latency > 0.0) {
+            const double c = dK * prm.t_latency / prm.dt;
+            if (c < r_th) {
+              r_th = c;
+            }
+          }
+          bool k0_trigger = (K0 > 0.0) && (math::abs(K_cur - K0) > prm.f_r * K0);
+          int  n_pk       = 0;
+          if (r_th > 0.0) {
+            while (true) {
+              const double rv = r.value();
+              if (!(rv > 0.0)) {
+                break;
+              }
+              if (n_pk >= prm.max_events_per_step) {
+                if (rv >= r_th) {
+                  L.n_capped += 1;
+                }
+                break;
+              }
+              double r_packet;
+              bool   via_k0 = false;
+              if (rv >= r_th) {
+                r_packet = (rv < r_th) ? rv : r_th;
+              } else if (k0_trigger) {
+                r_packet = rv;
+                via_k0   = true;
+              } else {
+                break;
+              }
+              const double w_pair = w * r_packet / Dv;
+              dd           intended;
+              intended.add_prod(w, r_packet);
+              if (!spawn_pair(p, L, w_pair, intended, d1, d2, d3, Gp_cur, eps, g_m, g_p, tag)) {
+                break; // capacity: keep the debt
+              }
+              r.add(-r_packet);
+              if (via_k0) {
+                L.n_k0_trigger += 1;
+              }
+              k0_trigger = false;
+              ++n_pk;
+            }
+          }
+        }
+        // store the debt; its rounding to real_t goes to E_round
+        double rv = r.value();
+        if (rv < 0.0 && rv > -1e-300) {
+          rv = 0.0;
+        }
+        const real_t r_s = static_cast<real_t>(rv);
+        if (r_s == ZERO) {
+          K0 = 0.0;
+        }
+        dd rounding = r;
+        rounding.add(-static_cast<double>(r_s));
+        L.E_round.add(dd::prod(w, rounding));
+        prtls.pld_r(p, prm.pld_debt)    = r_s;
+        prtls.pld_r(p, prm.pld_debt_k0) = static_cast<real_t>(K0);
+        L.debt_outstanding.add_prod(w, static_cast<double>(r_s));
+      } else if (poisson) {
+        if (dK > 0.0 && un > 0.0 && prm.pair_weight > 0.0) {
+          const double R      = coeff * tables.J(Gp_cur) * g_x;
+          const double lambda = R * prm.dt / prm.pair_weight;
+          if (lambda > 0.0) {
+            int n = poisson_draw(lambda, L);
+            if (n > prm.max_events_per_step) {
+              n = prm.max_events_per_step;
+              L.n_capped_events += 1;
+            }
+            if (n > 0) {
+              double Dv, eps, g_m, g_p;
+              outcome_law(Gp_cur, Dv, eps, g_m, g_p);
+              const double w_pair = prm.pair_weight * w;
+              for (int e = 0; e < n; ++e) {
+                dd intended;
+                intended.add_prod(w_pair, Dv);
+                if (!spawn_pair(p, L, w_pair, intended, d1, d2, d3, Gp_cur, eps, g_m, g_p, tag)) {
+                  break;
+                }
+                // the drag not matched by this pair (signed, expectation zero)
+                L.E_lost_nopairs.sub(intended);
+              }
+            }
+          }
+        }
+      }
     }
   };
 

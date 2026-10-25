@@ -1,15 +1,16 @@
 /**
  * @file pgens/bh_proto/bh_proto_params.h
  * @brief Strict reader of the `[setup]` table of the bh_proto problem generator
- *        (Bethe-Heitler loss-only prototype, P2 step 2).
+ *        (Bethe-Heitler prototype, P2 steps 2 and 3).
  *
  * The reader works on the raw TOML value (`SimulationParams::data()`), not on
  * the flattened `setup.*` container, so that nested tables (`hadronic.enabled`,
  * `photon_field.type`, `ions.K`), empty arrays and wrong types are seen and
  * refused with a message naming the key and the value. Every numeric key is
- * range-checked. No sentinel value can result from a failed conversion: a key
- * is either absent (and takes its documented default, when it has one) or
- * converts completely, or the reader throws.
+ * range-checked against its destination type before any cast. No sentinel
+ * value can result from a failed conversion: a key is either absent (and takes
+ * its documented default, when it has one) or converts completely, or the
+ * reader throws.
  *
  * Keys (all under `[setup]`; floats accept TOML integers):
  *   hadronic.enabled            bool, required
@@ -22,9 +23,26 @@
  *   eta_u                       float >= 0 (default 1e-4)
  *   pending_floor_ulp           float >= 0 (default 100)
  *   f_max                       float in (0, 1] (default 0.01; decision of 2026-10-25)
- *   max_substeps                int >= 1 (default 64)
+ *   max_substeps                int in [1, 1e6] (default 64)
  *   allow_unsafe_application    bool (default false); required true when eta_u = 0 or pending_floor_ulp = 0
  *   payload_pending / payload_debt / payload_debt_k0   int in [0, 65534], distinct (default 0, 1, 2)
+ *   source                      "budget" | "poisson" | "none" (default budget)
+ *   spectrum                    "delta" | "threshold" (default delta)
+ *   pair_species                array [i_minus, i_plus] of int in [1, 255], distinct, not an ion
+ *                               species; required unless source = none
+ *   r_th_factor                 float > 0 (default 10)
+ *   f_r                         float in (0, 1) (default 0.02)
+ *   t_latency                   "auto" | float >= 0 (default auto; 0 = cap off)
+ *   pair_weight                 float > 0 (default 1; poisson)
+ *   max_events_per_step         int in [1, 1e6] (default 8)
+ *   on_capacity / on_capacity_estimate / on_max_events   "error" | "warn" (default error)
+ *   gamma_p_typical             float > 1 or 0 (default 0 = use the envelope)
+ *   active_fraction             float in (0, 1] (default 1)
+ *   envelope.index              float (finite), envelope.gamma_min > 1, envelope.gamma_max > gamma_min
+ *                               (all three or none); with source = budget one of gamma_p_typical
+ *                               or the envelope is required
+ *   c_layer                     float > 0 (default 3)
+ *   comm_headroom               float >= 0 (default 0.2)
  *   ions.K                      non-empty array of float > 0 (kinetic energies, m_e c^2), required
  *   ions.per_K                  int >= 1 with per_K * ions.K.size() <= INT_MAX, required
  *   ions.direction              "+x" | "isotropic", required
@@ -32,6 +50,16 @@
  *   fields.B, fields.E          arrays of three floats (default zero)
  *   ledger.every                int in [1, INT_MAX] (default 1)
  *   table_dump                  bool (default true): write the table file next to the run output
+ *   test.nan_payloads           bool (default false): fill every real payload slot of every
+ *                               species with NaN before any injection (T10b)
+ *   test.kick                   float >= 0 (default 0): antisymmetric transverse kick of the
+ *                               leptons (T13)
+ *   test.gauss                  bool (default false): write the discrete Gauss residual (T13)
+ *   background.ppc              float >= 0 (default 0): a neutral background of the two pair
+ *                               species injected through arch::InjectNonUniform (stock path)
+ *   background.temperature      float >= 0 (default 0)
+ *   background.n_global         int in [0, INT_MAX] (default 0): particles per pair species
+ *                               injected through arch::InjectGlobally (stock path, weight 1)
  *
  * @namespaces:
  *   - user::bhproto::
@@ -71,6 +99,29 @@ namespace user::bhproto {
     int                payload_pending { 0 };
     int                payload_debt { 1 };
     int                payload_debt_k0 { 2 };
+    // pair creation
+    std::string        source { "budget" };
+    std::string        spectrum { "delta" };
+    int                pair_minus { 0 }; // 0 = not given (source = none)
+    int                pair_plus { 0 };
+    double             r_th_factor { 10.0 };
+    double             f_r { 0.02 };
+    bool               t_latency_auto { true };
+    double             t_latency { 0.0 };
+    double             pair_weight { 1.0 };
+    int                max_events_per_step { 8 };
+    std::string        on_capacity { "error" };
+    std::string        on_capacity_estimate { "error" };
+    std::string        on_max_events { "error" };
+    double             gamma_p_typical { 0.0 };
+    double             active_fraction { 1.0 };
+    bool               has_envelope { false };
+    double             envelope_index { 0.0 };
+    double             envelope_gamma_min { 0.0 };
+    double             envelope_gamma_max { 0.0 };
+    double             c_layer { 3.0 };
+    double             comm_headroom { 0.2 };
+    // ions
     std::vector<double> ions_K;
     int                ions_per_K { 0 };
     std::string        ions_direction;
@@ -79,9 +130,20 @@ namespace user::bhproto {
     std::array<double, 3> E { 0.0, 0.0, 0.0 };
     int                ledger_every { 1 };
     bool               table_dump { true };
+    // test hooks
+    bool               test_nan_payloads { false };
+    double             test_kick { 0.0 };
+    bool               test_gauss { false };
+    double             background_ppc { 0.0 };
+    double             background_temperature { 0.0 };
+    int                background_n_global { 0 };
 
     auto design_off() const -> bool {
       return eta_u == 0.0 && pending_floor_ulp == 0.0;
+    }
+
+    auto pairs_enabled() const -> bool {
+      return enabled && source != "none";
     }
   };
 
@@ -275,6 +337,28 @@ namespace user::bhproto {
       return std::string(v->as_string());
     }
 
+    inline auto get_string_or(const toml::value& root,
+                              const std::string& key,
+                              const std::string& def) -> std::string {
+      const auto* v = find_path(root, key);
+      if (v == nullptr) {
+        return def;
+      }
+      if (!v->is_string()) {
+        fail(key, "must be a string, got a " + type_name(*v));
+      }
+      return std::string(v->as_string());
+    }
+
+    inline auto get_policy_or(const toml::value& root,
+                              const std::string& key) -> std::string {
+      const auto s = get_string_or(root, key, "error");
+      if (s != "error" && s != "warn") {
+        fail(key, "= '" + s + "' must be \"error\" or \"warn\"");
+      }
+      return s;
+    }
+
     inline auto get_number_array(const toml::value& root, const std::string& key)
       -> std::vector<double> {
       const auto* v = find_path(root, key);
@@ -361,7 +445,19 @@ namespace user::bhproto {
       "ions.per_K",            "ions.direction",
       "ions.weight",           "fields.B",
       "fields.E",              "ledger.every",
-      "table_dump"
+      "table_dump",
+      "source",                "spectrum",
+      "pair_species",          "r_th_factor",
+      "f_r",                   "t_latency",
+      "pair_weight",           "max_events_per_step",
+      "on_capacity",           "on_capacity_estimate",
+      "on_max_events",         "gamma_p_typical",
+      "active_fraction",       "envelope.index",
+      "envelope.gamma_min",    "envelope.gamma_max",
+      "c_layer",               "comm_headroom",
+      "test.nan_payloads",     "test.kick",
+      "test.gauss",            "background.ppc",
+      "background.temperature", "background.n_global"
     };
     {
       std::vector<std::string> keys;
@@ -406,6 +502,25 @@ namespace user::bhproto {
     s.E = get_vec3_or_zero(setup, "fields.E");
     s.ledger_every = get_int_in(setup, "ledger.every", 1, std::numeric_limits<int>::max(), false, 1);
     s.table_dump = get_bool_or(setup, "table_dump", true);
+
+    // test hooks (independent of the stage)
+    s.test_nan_payloads = get_bool_or(setup, "test.nan_payloads", false);
+    s.test_kick         = get_number_or(setup, "test.kick", 0.0);
+    if (!(s.test_kick >= 0.0)) {
+      fail("test.kick", "= " + fmt_double(s.test_kick) + " must be >= 0");
+    }
+    s.test_gauss     = get_bool_or(setup, "test.gauss", false);
+    s.background_ppc = get_number_or(setup, "background.ppc", 0.0);
+    if (!(s.background_ppc >= 0.0)) {
+      fail("background.ppc", "= " + fmt_double(s.background_ppc) + " must be >= 0");
+    }
+    s.background_temperature = get_number_or(setup, "background.temperature", 0.0);
+    if (!(s.background_temperature >= 0.0)) {
+      fail("background.temperature",
+           "= " + fmt_double(s.background_temperature) + " must be >= 0");
+    }
+    s.background_n_global = get_int_in(setup, "background.n_global", 0,
+                                       std::numeric_limits<int>::max(), false, 0);
 
     // the ion species of the problem (ions are injected into them; the stage
     // runs on them when enabled)
@@ -549,6 +664,125 @@ namespace user::bhproto {
           s.payload_debt == s.payload_debt_k0) {
         fail("payload_pending", "payload_debt and payload_debt_k0 must be three distinct slots");
       }
+    }
+
+    // ---- pair creation (step 3) ----------------------------------------------
+    s.source = get_string_or(setup, "source", "budget");
+    if (s.source != "budget" && s.source != "poisson" && s.source != "none") {
+      fail("source", "= '" + s.source + "' must be \"budget\", \"poisson\" or \"none\"");
+    }
+    s.spectrum = get_string_or(setup, "spectrum", "delta");
+    if (s.spectrum != "delta" && s.spectrum != "threshold") {
+      fail("spectrum", "= '" + s.spectrum + "' must be \"delta\" or \"threshold\"");
+    }
+    {
+      const auto* v = find_path(setup, "pair_species");
+      if (v == nullptr) {
+        if (s.source != "none") {
+          fail("pair_species",
+               "is required with source = \"" + s.source +
+                 "\" (array [i_minus, i_plus] of species indices >= 1)");
+        }
+      } else {
+        if (!v->is_array() || v->as_array().size() != 2) {
+          fail("pair_species", "must be an array of exactly two species indices [i_minus, i_plus]");
+        }
+        const auto a = as_int(v->as_array()[0], "pair_species[0]");
+        const auto b = as_int(v->as_array()[1], "pair_species[1]");
+        if (a < 1 || a > 255) {
+          fail("pair_species[0]", "= " + std::to_string(a) + " must be a species index in [1, 255]");
+        }
+        if (b < 1 || b > 255) {
+          fail("pair_species[1]", "= " + std::to_string(b) + " must be a species index in [1, 255]");
+        }
+        if (a == b) {
+          fail("pair_species", "lists the same species twice (" + std::to_string(a) + ")");
+        }
+        for (const auto ion : s.species) {
+          if (ion == a || ion == b) {
+            fail("pair_species",
+                 "lists species " + std::to_string(ion) + " which is a hadronic ion species");
+          }
+        }
+        s.pair_minus = static_cast<int>(a);
+        s.pair_plus  = static_cast<int>(b);
+      }
+    }
+    s.r_th_factor = get_number_or(setup, "r_th_factor", 10.0);
+    if (!(s.r_th_factor > 0.0)) {
+      fail("r_th_factor", "= " + fmt_double(s.r_th_factor) + " must be > 0");
+    }
+    s.f_r = get_number_or(setup, "f_r", 0.02);
+    if (!(s.f_r > 0.0 && s.f_r < 1.0)) {
+      fail("f_r", "= " + fmt_double(s.f_r) + " must lie in (0, 1)");
+    }
+    {
+      const auto* v = find_path(setup, "t_latency");
+      if (v == nullptr) {
+        s.t_latency_auto = true;
+      } else if (v->is_string()) {
+        if (std::string(v->as_string()) != "auto") {
+          fail("t_latency", "must be a number >= 0 or the string \"auto\"");
+        }
+        s.t_latency_auto = true;
+      } else {
+        s.t_latency_auto = false;
+        s.t_latency      = as_number(*v, "t_latency");
+        if (!(s.t_latency >= 0.0)) {
+          fail("t_latency", "= " + fmt_double(s.t_latency) + " must be >= 0 (0 = cap off)");
+        }
+      }
+    }
+    s.pair_weight = get_number_or(setup, "pair_weight", 1.0);
+    if (!(s.pair_weight > 0.0)) {
+      fail("pair_weight", "= " + fmt_double(s.pair_weight) + " must be > 0");
+    }
+    s.max_events_per_step = get_int_in(setup, "max_events_per_step", 1, 1000000LL, false, 8);
+    s.on_capacity          = get_policy_or(setup, "on_capacity");
+    s.on_capacity_estimate = get_policy_or(setup, "on_capacity_estimate");
+    s.on_max_events        = get_policy_or(setup, "on_max_events");
+    s.gamma_p_typical      = get_number_or(setup, "gamma_p_typical", 0.0);
+    if (!(s.gamma_p_typical == 0.0 || s.gamma_p_typical > 1.0)) {
+      fail("gamma_p_typical",
+           "= " + fmt_double(s.gamma_p_typical) + " must be > 1, or 0 to use the envelope");
+    }
+    s.active_fraction = get_number_or(setup, "active_fraction", 1.0);
+    if (!(s.active_fraction > 0.0 && s.active_fraction <= 1.0)) {
+      fail("active_fraction", "= " + fmt_double(s.active_fraction) + " must lie in (0, 1]");
+    }
+    {
+      const bool hi = has("envelope.index"), hmin = has("envelope.gamma_min"),
+                 hmax = has("envelope.gamma_max");
+      if (hi || hmin || hmax) {
+        if (!(hi && hmin && hmax)) {
+          fail("envelope.index", "envelope.gamma_min and envelope.gamma_max must all be given together");
+        }
+        s.has_envelope       = true;
+        s.envelope_index     = get_number(setup, "envelope.index");
+        s.envelope_gamma_min = get_number(setup, "envelope.gamma_min");
+        s.envelope_gamma_max = get_number(setup, "envelope.gamma_max");
+        if (!(s.envelope_gamma_min > 1.0)) {
+          fail("envelope.gamma_min", "= " + fmt_double(s.envelope_gamma_min) + " must be > 1");
+        }
+        if (!(s.envelope_gamma_max > s.envelope_gamma_min)) {
+          fail("envelope.gamma_max",
+               "= " + fmt_double(s.envelope_gamma_max) + " must exceed envelope.gamma_min = " +
+                 fmt_double(s.envelope_gamma_min));
+        }
+      }
+    }
+    if (s.source == "budget" && s.gamma_p_typical == 0.0 && !s.has_envelope) {
+      fail("gamma_p_typical",
+           "or an envelope (envelope.index, envelope.gamma_min, envelope.gamma_max) is "
+           "required with source = \"budget\" (startup capacity estimate, III.8)");
+    }
+    s.c_layer = get_number_or(setup, "c_layer", 3.0);
+    if (!(s.c_layer > 0.0)) {
+      fail("c_layer", "= " + fmt_double(s.c_layer) + " must be > 0");
+    }
+    s.comm_headroom = get_number_or(setup, "comm_headroom", 0.2);
+    if (!(s.comm_headroom >= 0.0)) {
+      fail("comm_headroom", "= " + fmt_double(s.comm_headroom) + " must be >= 0");
     }
     return s;
   }

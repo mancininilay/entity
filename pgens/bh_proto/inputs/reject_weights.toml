@@ -42,6 +42,7 @@
 [setup]
   hadronic.enabled    = true
   hadronic.species    = [1]
+  source              = "none"
   tau0                = 1.0
   physical_mass_ratio = 1836.15
   photon_field.type   = "mono"

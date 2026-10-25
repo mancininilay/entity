@@ -294,7 +294,8 @@ namespace {
     kh::LossLedger C {};
 
     void add(const kh::LossLedger& L) {
-      const auto po = L.pending_outstanding, sw = L.sum_wK;
+      const auto po = L.pending_outstanding;
+      const auto sw = L.sum_wK;
       const auto na = L.n_alive;
       C += L;
       C.pending_outstanding = po;
@@ -361,13 +362,14 @@ namespace {
   void closure_check(const std::string& name, double sum_wK_init, const Ions& ions,
                      const HostLedger& H) {
     const double arrays = sum_wK_init - ions.sum_wK();
-    const double rel    = H.C.E_drag != 0.0 ? std::abs(arrays - H.C.E_drag) / std::abs(H.C.E_drag)
-                                            : std::abs(arrays - H.C.E_drag);
+    const double E_drag = H.C.E_drag.value();
+    const double rel    = E_drag != 0.0 ? std::abs(arrays - E_drag) / std::abs(E_drag)
+                                        : std::abs(arrays - E_drag);
     verdict(rel <= 1.0e-9,
             "T11-lite closure [" + name + "]: |sum w (K_init - K_final) - E_drag| / E_drag",
             rel, 1.0e-9);
     diag("  " + name + ": arrays " + std::to_string(arrays) + " E_drag " +
-         std::to_string(H.C.E_drag) + " E_lost_nopairs " + std::to_string(H.C.E_lost_nopairs));
+         std::to_string(E_drag) + " E_lost_nopairs " + std::to_string(H.C.E_lost_nopairs.value()));
   }
 
   /* ------------------------------------------------------------------------ */
@@ -593,7 +595,7 @@ namespace {
     R.n_steps = n_steps;
     // closure uses the ions object: recompute here before it dies
     const double arrays = R.sum_wK_init - ions.sum_wK();
-    R.H.C.E_round       = arrays; // stash the array-based total in an unused (zero) field
+    R.H.C.E_round       = kh::dd { arrays }; // stash the array-based total in an unused (zero) field
     return R;
   }
 
@@ -662,7 +664,7 @@ namespace {
          "applications " + std::to_string(R.H.C.n_applied) + ", n_substeps " +
          std::to_string(R.H.C.n_substeps));
     {
-      const double rel = std::abs(R.H.C.E_round - R.H.C.E_drag) / R.H.C.E_drag;
+      const double rel = std::abs(R.H.C.E_round.value() - R.H.C.E_drag.value()) / R.H.C.E_drag.value();
       verdict(rel <= 1.0e-9, "T11-lite closure [T5 base]: |sum w (K_init - K_final) - E_drag| / E_drag",
               rel, 1.0e-9);
     }
@@ -976,7 +978,7 @@ namespace {
       const auto   L      = launch(ions, T, prm);
       const double K_fin  = ions.K()[0];
       const double d      = ions.delta()[0];
-      const bool   finite = std::isfinite(K_fin) && std::isfinite(d) && std::isfinite(L.E_drag);
+      const bool   finite = std::isfinite(K_fin) && std::isfinite(d) && std::isfinite(L.E_drag.value());
       verdict(finite && L.n_bounded == 1 && L.n_capped_loss == 1 && L.n_substeps == 64,
               std::string("R2 [") + c.name + "]: finite result, n_bounded = 1, n_capped_loss = 1, n_substeps = 64",
               static_cast<double>(L.n_substeps), 64.0);
@@ -985,7 +987,7 @@ namespace {
               std::string("R2 [") + c.name + "]: the applied loss is the cap f_max K (relative to f_max)",
               applied, prm.f_max);
       diag(std::string("R2 [") + c.name + "]: K " + std::to_string(K_init) + " -> " + std::to_string(K_fin) +
-           ", delta " + std::to_string(d) + ", E_drag " + std::to_string(L.E_drag));
+           ", delta " + std::to_string(d) + ", E_drag " + std::to_string(L.E_drag.value()));
     }
   }
 
@@ -1054,10 +1056,10 @@ namespace {
             static_cast<double>(H.C.n_above_table), 3.0 * n_steps);
     const double requested = (1.0 + 2.0 + 0.5) * n_steps * coeff * I_edge * dt;
     const double d        = ions.delta()[0] + 2.0 * ions.delta()[1] + 0.5 * ions.delta()[2];
-    const double rel      = std::abs((H.C.E_drag + d) / requested - 1.0);
+    const double rel      = std::abs((H.C.E_drag.value() + d) / requested - 1.0);
     verdict(rel <= 1.0e-12, "above-table: E_drag + pending equals 20 steps of the edge-value loss (sum w dK)",
             rel, 1.0e-12);
-    diag("above-table: E_drag " + std::to_string(H.C.E_drag) + " + pending " + std::to_string(d) +
+    diag("above-table: E_drag " + std::to_string(H.C.E_drag.value()) + " + pending " + std::to_string(d) +
          " vs requested " + std::to_string(requested) + "; final Gamma_p " +
          std::to_string(1.0 + ions.K()[0] / MU_R) + " (still above " + std::to_string(T.host.gamma_max) + ")");
     closure_check("above-table", sum0, ions, H);
@@ -1084,8 +1086,8 @@ namespace {
     verdict(H.C.n_applied == 0 && d_before[0] > 0.0,
             "tags: five requests below delta_th accumulate without application",
             d_before[0], 0.0);
-    verdict(std::abs(H.C.pending_outstanding - (d_before[0] + 3.0 * d_before[1])) <= 1e-12 * H.C.pending_outstanding,
-            "tags: pending_outstanding snapshot = sum w delta", H.C.pending_outstanding, 0.0);
+    verdict(std::abs(H.C.pending_outstanding.value() - (d_before[0] + 3.0 * d_before[1])) <= 1e-12 * H.C.pending_outstanding.value(),
+            "tags: pending_outstanding snapshot = sum w delta", H.C.pending_outstanding.value(), 0.0);
     // kill ion 1
     {
       auto ht = Kokkos::create_mirror_view(ions.arr.tag);
@@ -1095,9 +1097,9 @@ namespace {
     }
     const auto L = launch(ions, T, prm);
     const auto d_after = ions.delta();
-    verdict(std::abs(L.pending_discarded - 3.0 * d_before[1]) <= 1e-12 * L.pending_discarded && d_after[1] == 0.0,
+    verdict(std::abs(L.pending_discarded.value() - 3.0 * d_before[1]) <= 1e-12 * L.pending_discarded.value() && d_after[1] == 0.0,
             "tags: a dead ion's pending request is discarded (w delta) and zeroed",
-            L.pending_discarded, 3.0 * d_before[1]);
+            L.pending_discarded.value(), 3.0 * d_before[1]);
     verdict(L.n_alive == 1 && L.n_processed == 1, "tags: the dead ion is not processed", L.n_processed, 1);
   }
 
