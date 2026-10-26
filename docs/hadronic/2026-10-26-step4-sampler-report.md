@@ -18,8 +18,8 @@ or open question. No pre-registered tolerance is adjusted.
 | 0 | G3 fallout: the two float literals of `g3_asymmetric_capacity_2ranks.toml`; the T5 dt-convergence split into its own ctest entry with a timeout | done, `6348ba4` |
 | 1 | the rest-frame laws g, h, the recoil moment q_k by quadrature, anchors A1 to A5, the fixture `qk_table.txt` | done, `2893cfb` |
 | 2 | CDF tables, the two sampling chains on the host, A7, A9, the `moments_*` and `hist_*` fixtures | done (one registered failure, A7 weighted vs I/J, explained) |
-| 3 | the UR anchor (Kelner and Aharonian 2008 eqs. 58 to 64), A8, the `ka2008_*` fixtures | done (commit hash in the stage-4 entry) |
-| 4 | device tables, the device sampler, `spectrum = restframe` in the kernel, A11, A12 | not started |
+| 3 | the UR anchor (Kelner and Aharonian 2008 eqs. 58 to 64), A8, the `ka2008_*` fixtures | done, `21ae3a2` |
+| 4 | device tables, the device sampler, `spectrum = restframe` in the kernel, A11, A12 | in progress |
 | 5 | the reduction timing harness (G3 open item) | not started |
 | 6 | closure: full ctest single and double, the report completed | not started |
 
@@ -374,3 +374,7 @@ does not test the static-source approximation itself. Sample facts at Gamma_p =
 | --- | --- | --- | --- |
 | `ka2008_mono05_G100.txt` | 200 | `da7942cc3f220749fc8d201626d3e239846ad40717fd26befd21bfa735098c2a` | `6cd25034db80e232a9bfddbcb43807d8b77cd69319b4900bdf2a0e1dde155ef4` |
 | `ka2008_mono05_G1000.txt` | 200 | `c19c5ee715a85c0dfa7fcd7516deadc9beac4b90bd233f71374969bd2f687b7c` | `de2d328947a808a2993ee4a12da12597c3e186fae5ce9631e50b4031f372e079` |
+
+### Stage 4 (device tables and the kernel's `restframe` spectrum)
+
+- stage 3 done at commit `21ae3a2`; stage 4 started, HEAD `21ae3a2`.
