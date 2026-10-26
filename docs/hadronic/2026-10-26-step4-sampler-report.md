@@ -16,8 +16,8 @@ or open question. No pre-registered tolerance is adjusted.
 | stage | content | status |
 | --- | --- | --- |
 | 0 | G3 fallout: the two float literals of `g3_asymmetric_capacity_2ranks.toml`; the T5 dt-convergence split into its own ctest entry with a timeout | done, `6348ba4` |
-| 1 | the rest-frame laws g, h, the recoil moment q_k by quadrature, anchors A1 to A5, the fixture `qk_table.txt` | done (commit below) |
-| 2 | CDF tables, the two sampling chains on the host, A7, A9, the `moments_*` and `hist_*` fixtures | not started |
+| 1 | the rest-frame laws g, h, the recoil moment q_k by quadrature, anchors A1 to A5, the fixture `qk_table.txt` | done, `2893cfb` |
+| 2 | CDF tables, the two sampling chains on the host, A7, A9, the `moments_*` and `hist_*` fixtures | in progress |
 | 3 | the UR anchor (Kelner and Aharonian 2008 eqs. 58 to 64), A8, the `ka2008_*` fixtures | not started |
 | 4 | device tables, the device sampler, `spectrum = restframe` in the kernel, A11, A12 | not started |
 | 5 | the reduction timing harness (G3 open item) | not started |
@@ -151,3 +151,10 @@ Maximon's sigma~, A2, A4 against eq. 3.7, A5 against the phi fits), not
 against the printed formulas; (3) A6 (an external numerical table of the
 energy distribution) was not attempted here, since no literature table is
 available in the container: by the contract, A6 is then replaced by A1 plus A8.
+
+- stage 1 done, commit `2893cfb`, pushed (20 of 20 checks pass; log in
+  `docs/hadronic/logs-step4-stage1-bh_restframe.log`).
+
+### Stage 2 (CDF tables and the sampling chains, host)
+
+- stage 2 started, HEAD `2893cfb`.
