@@ -584,10 +584,17 @@ namespace arch::bh::rf {
       m.q_k = 2.0;
       return m;
     }
+    // the moments are normalised by the laws' own integrals (the Born cross
+    // section), not by Maximon's series, whose truncation (1.5e-4 at k = 4)
+    // would otherwise enter them; sigma_g and sigma_h are reported alongside
     m.sigma_g = integrate_energy(k, [k](double E) { return dsigma_dE(k, E); }, q);
     m.mean_E  = integrate_energy(k, [k](double E) { return E * dsigma_dE(k, E); }, q) /
-               m.sigma_maximon;
+               m.sigma_g;
     // <p+ cos theta+> and the angular-law total from the law 3
+    m.sigma_h = integrate_energy(
+      k,
+      [&](double E) { return dsigma_dE_from_angular_law(k, E, q); },
+      q);
     m.mean_pcos = integrate_energy(
                     k,
                     [&](double E) {
@@ -600,11 +607,7 @@ namespace arch::bh::rf {
                                     q);
                     },
                     q) /
-                  m.sigma_maximon;
-    m.sigma_h = integrate_energy(
-      k,
-      [&](double E) { return dsigma_dE_from_angular_law(k, E, q); },
-      q);
+                  m.sigma_h;
     m.q_k = k - 2.0 * m.mean_pcos;
     return m;
   }

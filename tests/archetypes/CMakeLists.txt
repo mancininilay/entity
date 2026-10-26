@@ -43,3 +43,11 @@ target_compile_definitions(
   PRIVATE BH_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data/hadronic")
 find_package(Threads REQUIRED)
 target_link_libraries(test-archetypes-bh_restframe.xc PRIVATE Threads::Threads)
+# [fork:hadronic/P2 step 4] the CDF tables and the two sampling chains (accuracy
+# budget, A5b, A7, A9); Monte Carlo at every rate-table node: its own timeout
+gen_test(bh_chain)
+target_compile_definitions(
+  test-archetypes-bh_chain.xc
+  PRIVATE BH_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data/hadronic")
+target_link_libraries(test-archetypes-bh_chain.xc PRIVATE Threads::Threads)
+set_tests_properties("ARCHETYPES::bh_chain" PROPERTIES TIMEOUT 7200)

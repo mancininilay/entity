@@ -158,3 +158,9 @@ available in the container: by the contract, A6 is then replaced by A1 plus A8.
 ### Stage 2 (CDF tables and the sampling chains, host)
 
 - stage 2 started, HEAD `2893cfb`.
+- stage 2 work in progress committed before its test finished (the chain
+  test runs about 15 minutes; its verdicts follow in the next entry). Stage-1
+  correction made here: the law moments are self-normalised (by the Born
+  integrals instead of Maximon's series), `qk_table.txt` regenerated
+  (`data_sha256` `71eb7856c4d2e4a8a760960aec7a1f28b9165af41d152e8c2fd941a889f65797`);
+  the stage-1 test still passes 20 of 20 with unchanged printed numbers.
