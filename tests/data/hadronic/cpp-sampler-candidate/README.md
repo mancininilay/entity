@@ -15,3 +15,19 @@ enter the fork under `tests/data/hadronic/bhref-0.2.0/` when frozen.
   `ARCHETYPES::bh_restframe` compares the file with the live computation
   (1e-10) when it is present. Regenerate with
   `build/tools/bh_sampler_dump qk_table --out tests/data/hadronic/cpp-sampler-candidate/qk_table.txt`.
+- `moments_<bath>.txt` (section 4 item 2), five baths: at every Gamma_p node
+  of the rate table, 1e6 unweighted draws (`Dmean_mc`, `Dmean_se`, `D2mean`,
+  `Emean_minus`, `Emean_plus`, `cos_minus_lab_mean`, `eps_mean_mc`, `D_min`,
+  `D_max`) and the weighted chain within a budget of 1e6 attempts
+  (`n_weighted_accepted`, `n_weighted_attempts`, `Einv_Dmean` = E_p[1/D] (I/J),
+  `Einv_Dmean_se`, `efficiency`, `inv_min_D_weighted`); `Dmean_table` = I/J of
+  the step-1 table. Seed 20261026 (header `rng`).
+- `hist_<bath>_G<Gamma>.txt` (item 3), mono05 and powerlaw at Gamma_p = 1.05
+  Gamma_th, 3, 10, 100: 200 log bins in E- and E+ (lab, [1, Gamma (E'_max +
+  beta p'_max)]), 200 linear bins in cos theta- and cos theta+ (lab, to u^),
+  200 linear bins in D over [D_min, D_max] of the bath; unweighted counts and
+  normalised 1/D weights of the weighted chain (1e6 accepted or 2e7 attempts,
+  header `n_weighted_accepted`).
+- Regenerate everything with `tools/bh_sampler_fixtures.sh build/tools/bh_sampler_dump tests/data/hadronic/cpp-sampler-candidate`
+  (about 25 minutes on 4 cores; add `--n-weighted-attempts 20000000` for the
+  histogram statistics used here).

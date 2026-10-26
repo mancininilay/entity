@@ -17,7 +17,7 @@ or open question. No pre-registered tolerance is adjusted.
 | --- | --- | --- |
 | 0 | G3 fallout: the two float literals of `g3_asymmetric_capacity_2ranks.toml`; the T5 dt-convergence split into its own ctest entry with a timeout | done, `6348ba4` |
 | 1 | the rest-frame laws g, h, the recoil moment q_k by quadrature, anchors A1 to A5, the fixture `qk_table.txt` | done, `2893cfb` |
-| 2 | CDF tables, the two sampling chains on the host, A7, A9, the `moments_*` and `hist_*` fixtures | in progress |
+| 2 | CDF tables, the two sampling chains on the host, A7, A9, the `moments_*` and `hist_*` fixtures | done (one registered failure, A7 weighted vs I/J, explained) |
 | 3 | the UR anchor (Kelner and Aharonian 2008 eqs. 58 to 64), A8, the `ka2008_*` fixtures | not started |
 | 4 | device tables, the device sampler, `spectrum = restframe` in the kernel, A11, A12 | not started |
 | 5 | the reduction timing harness (G3 open item) | not started |
@@ -290,3 +290,30 @@ MB per broad bath. The quadrature-level budget check does not probe the
 photon-energy table (it integrates over eps with the exact density): this is a
 gap of the budget check, stated; the Monte Carlo comparison against the chain's
 quadrature covers it at the 3 s.e. level.
+
+#### Fixtures written (stage 2; producer entity-cpp, version = git hash in each header)
+
+| file | rows | data_sha256 | sha256 of the file |
+| --- | --- | --- | --- |
+| `qk_table.txt` | 449 | `71eb7856c4d2e4a8a760960aec7a1f28b9165af41d152e8c2fd941a889f65797` | `a2bcdab1d18efbc32737feca52399819cfd85ce6df7095608bbae3338c577c66` |
+| `moments_blackbody.txt` | 406 | `850b15049756c3d3083e39fe5bcc9898d0c051654c6267047dc3af6d67456986` | `48f9227a36ca83d1d319ee6bdb7a2af62aa3583d22f50d5ce79fd88bc389ff7e` |
+| `moments_mono03.txt` | 465 | `598195bedb4c1e6e497ab5b6acc856b0fb2e3fa12c68218daa09c210df5b494d` | `986b637e48a05baa281ab42ad9df92444539b0066053cf91dc09ba3cc93a35a0` |
+| `moments_mono05.txt` | 466 | `c26b671171d433a6ac8552bce123376812ce5b919d748c9184a99742aba91da1` | `de93b999584d5232f06648efd8cbe36305e748acc1a1c3e672eddf41e61a5af3` |
+| `moments_mono05_mu100.txt` | 403 | `9db23120c8d4a3eeac05d808ba4ae7b153d7d0261480cbc262a2eca685b7dc7c` | `e79619c4dc4164f7c891fdf6369df5b215677192fbd88ed96c94f946d16045ee` |
+| `moments_powerlaw.txt` | 429 | `ed2c493b46cb50fa9592988d41341021580472e62dd373cbdfafc8191e032357` | `ba42273e42c72fc94cf7fceb5af816bf99b63697ab20aba1d21457318fc6b43f` |
+| `hist_mono05_G10.txt` | 200 | `3d711557b5e6c989cdfddaff5172ff3bb59f9ac0282b85cc5d7e1981baa0b0d1` | `ee7193e8b6208436988805f88982e8103d28233322fafb581c0a955632eed0e4` |
+| `hist_mono05_G100.txt` | 200 | `62b5b489bc63cc4f69b5946ef13922a1fe1eea51f1847ef9d566976af041e33e` | `52267af6ed4f5df6b46c5a2e274338c4c4f6d8cb86a7974700e6d3980a12aef6` |
+| `hist_mono05_G2.23125.txt` | 200 | `f304d0df9f3f6b93943a833e63c83c69d819703da5198791918ca8fa8b045497` | `5fb4cdfcf6191b8ee682d75ea7eeab45f85960e00e42ea7eae5c21d8e59a3e02` |
+| `hist_mono05_G3.txt` | 200 | `df5d8df954e132979cb0e6c5e98d5abc9bd8336a213b2d6cb1ae9124b8e082e1` | `b5e600ad7e1b1871c6ea32b2d6a32e823144f3434695338b38e725550e1f4159` |
+| `hist_powerlaw_G1.09375.txt` | 200 | `ef1ec730c0bba17aecb654a118f019d814626280ec4835ce76f7619756dbc703` | `212431a4b4cad83fd009bd249c62e42bee937a59ae835929a22b049b7cfd645d` |
+| `hist_powerlaw_G10.txt` | 200 | `0e7453ac689654de6f3b1412945c70a51a98146d223478146ce42a11344be0a1` | `c25f5ca54d430e5e305d2efa10abc48095f4750e57d52e59f7932fed371c2c69` |
+| `hist_powerlaw_G100.txt` | 200 | `460ede35ba6bac021098b9760a04b5fbbd0d6fa23c08bed5674867a42f058a87` | `c16cd735c01b261eaf24f7c5ed3193af8ad05387974b90cd29efe29e93c3cf7a` |
+| `hist_powerlaw_G3.txt` | 200 | `c46630c2ba301c1488610a02065fe500797f5d2129c0cc048feb1473e98ac821` | `49121664c01257fd68dc8d0ba7b259d6018591dcc958186dcd3ea9d75680058f` |
+
+Seeds: 20261026 (SplitMix64(seed + i) unweighted and SplitMix64(seed + 500000 + i) weighted at node i for the moments; SplitMix64(seed) and SplitMix64(seed + 500000) for the histograms). Histograms: 1e6 unweighted draws; weighted chain 1e6 accepted draws or 2e7 attempts, whichever first (accepted: mono05 1e6, 1e6, 1e6, 43050 at Gamma 2.23125, 3, 10, 100; powerlaw 1e6, 1e6, 935186, 83170 at 1.09375, 3, 10, 100). Moments: 1e6 unweighted draws and 1e6 weighted attempts per node. Commands: `tools/bh_sampler_fixtures.sh build/tools/bh_sampler_dump tests/data/hadronic/cpp-sampler-candidate --n-weighted-attempts 20000000` for the histograms (the moments were run with the default 1e6 attempts).
+
+- stage 2 done: ctest entries `ARCHETYPES::bh_chain_{budget,kinematics,efficiency,a9,a7w,a7}`;
+  verdicts: contract items 8 passed, 1 failed (A7 weighted identity against
+  I/J, 18.3 s.e.), implementation-chosen 8 passed, 0 failed (after the 2048-cell
+  correction); the stage-2 fixtures written and listed above; commit hash in the
+  stage-3 entry.
