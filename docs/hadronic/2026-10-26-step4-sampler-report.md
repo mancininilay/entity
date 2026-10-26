@@ -15,8 +15,8 @@ or open question. No pre-registered tolerance is adjusted.
 
 | stage | content | status |
 | --- | --- | --- |
-| 0 | G3 fallout: the two float literals of `g3_asymmetric_capacity_2ranks.toml`; the T5 dt-convergence split into its own ctest entry with a timeout | in progress |
-| 1 | the rest-frame laws g, h, the recoil moment q_k by quadrature, anchors A1 to A5, the fixture `qk_table.txt` | not started |
+| 0 | G3 fallout: the two float literals of `g3_asymmetric_capacity_2ranks.toml`; the T5 dt-convergence split into its own ctest entry with a timeout | done, `6348ba4` |
+| 1 | the rest-frame laws g, h, the recoil moment q_k by quadrature, anchors A1 to A5, the fixture `qk_table.txt` | in progress |
 | 2 | CDF tables, the two sampling chains on the host, A7, A9, the `moments_*` and `hist_*` fixtures | not started |
 | 3 | the UR anchor (Kelner and Aharonian 2008 eqs. 58 to 64), A8, the `ka2008_*` fixtures | not started |
 | 4 | device tables, the device sampler, `spectrum = restframe` in the kernel, A11, A12 | not started |
@@ -56,3 +56,9 @@ or open question. No pre-registered tolerance is adjusted.
   default). The executable without arguments still runs every group. Checked
   here by `-fsyntax-only` with the project's compile flags (the kernel test
   executable is not built before stage 4; the full ctest is stage 6).
+- stage 0 done, commit `6348ba4`, pushed; draft PR
+  https://github.com/mancininilay/entity/pull/4 opened against `dev/hadronic`.
+
+### Stage 1 (the rest-frame laws)
+
+- stage 1 started, HEAD `6348ba4`.
