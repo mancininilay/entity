@@ -36,3 +36,10 @@ gen_test(bh_fixtures)
 target_compile_definitions(
   test-archetypes-bh_fixtures.xc
   PRIVATE BH_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data/hadronic")
+# [fork:hadronic/P2 step 4] the rest-frame laws of the pair sampler (A1 to A5)
+gen_test(bh_restframe)
+target_compile_definitions(
+  test-archetypes-bh_restframe.xc
+  PRIVATE BH_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data/hadronic")
+find_package(Threads REQUIRED)
+target_link_libraries(test-archetypes-bh_restframe.xc PRIVATE Threads::Threads)
