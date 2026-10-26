@@ -174,7 +174,31 @@ production placement, 60 steps) is prepared, not run.
 
 ### 00.5 Suites with the round-3 HEAD
 
-{{R3_SUITES}}
+Builds A-D, the UBSan tree aside, were rebuilt from the round-3 HEAD; the MPI
+configuration (`build-mpi`, OpenMPI 4.1.6) compiles and links with the
+round-3 sources (exit 0, no warnings; the `MPI_Allreduce` of the failure
+flag and the `MPI_Gather` of the codes are compiled in).
+
+Single build A (`logs/ctest-single-r3.log`): **91 tests, 91 passed**, 628.7 s
+with `ctest -j1` (90 of round 2 plus `KERNELS::bh_pairs_cmpi1`). Driver
+summaries from the registered run: `reject.sh` 27 / 27; `t12.sh` 2 runs,
+every check passed (the C-MPI-2 checks included); `r2_tiny.sh` 2 runs
+(the derived `on_max_events = error` run included), every check passed;
+`t14b_placement.sh` 8 runs, every check passed; `t10det.sh` 3 runs and
+`texp.sh` 2 runs, every check passed; `bh_proto_params` 118 passed;
+`test-kernels-bh_pairs.xc` over the 12 groups 119 passed, 0 failed, 0
+expected failures. T13 in this run: 1.753 of the control level (pass at 2;
+the replicate distribution of 0.9 applies).
+
+Double build B (`logs/ctest-double-r3.log`): 91 tests, 88 passed, 3 skipped
+(`t5b_cross_build`, `t8_bit_identity`, `t10_poisson_determinism`: no second
+build given to the double tree), 502.6 s; `test-kernels-bh_pairs.xc` 119
+passed, 0 failed, 0 expected failures.
+
+Bounds-check build D (`logs/bounds-cmpi1.log`, diagnostic): `bh_pairs cmpi1
+texp` 16 passed, exit 0, no bounds error (the packer and receive kernels on
+the test arrays included); `texp_absorb.toml` at the production placement
+exit 0, E_exported_host = E_exported = 249.3964991569519, no bounds error.
 
 No test of rounds 1 and 2 changed in its criterion or its tolerance: the
 round-3 changes to the test tree are additive (the kernel group `cmpi1`, the
