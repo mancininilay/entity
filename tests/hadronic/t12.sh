@@ -14,6 +14,22 @@ else
   echo "PASS: T12 on_capacity = error: the run aborted (exit $rc)"
   "$CHECK" abort --log "$WD/error/run.log" --key "on_capacity: pair capacity exhausted" --step_min 600 --step_max 1400 || report_fail=1
   "$CHECK" ledger --file "$WD/error/hadronic_ledger_1.txt" --expect_dropped 1 --expect_npart 60 || report_fail=1
+  # C-MPI-2 (round 3): the failure is acted upon at the common point at the end of the stage: the log carries
+  # the gathered failure line of rank 0, the abort message names the policy, and the ledger row of the abort
+  # step is written exactly once (no local write before the collective one)
+  grep -q "bh_proto: failure on rank 0: on_capacity" "$WD/error/run.log" \
+    && echo "PASS: C-MPI-2: the gathered failure line of rank 0 is in the log" \
+    || { echo "FAIL: C-MPI-2: no gathered failure line in the log"; report_fail=1; }
+  grep -q "every rank wrote its ledger row; the run aborts" "$WD/error/run.log" \
+    && echo "PASS: C-MPI-2: the abort message states that every rank wrote its ledger row" \
+    || { echo "FAIL: C-MPI-2: the abort message is missing"; report_fail=1; }
+  last_step=$(grep -v '^#' "$WD/error/hadronic_ledger_1.txt" | tail -1 | awk '{print $1}')
+  n_last=$(grep -v '^#' "$WD/error/hadronic_ledger_1.txt" | awk -v s="$last_step" '$1 == s' | wc -l | tr -d ' ')
+  if [ "$n_last" -eq 1 ]; then
+    echo "PASS: C-MPI-2: the ledger row of the abort step $last_step is written exactly once"
+  else
+    echo "FAIL: C-MPI-2: the ledger row of the abort step $last_step appears $n_last times"; report_fail=1
+  fi
 fi
 run_entity "$EXE" "$INP/t12_capacity_warn.toml" "$WD/warn"; rc=$?; n_run=$((n_run + 1))
 check_rc $rc "T12 on_capacity = warn: the run completes"

@@ -475,6 +475,19 @@ namespace user {
     unsigned int  n_domains_total { 1 };
     unsigned long long spawned_at_previous_poststep { 0 }; // production placement: n_spawned at the previous post-step
 
+    // C-MPI-2: a rank-local failure under an "error" policy is recorded here and
+    // acted upon at the common point at the end of HadronicStage (every rank,
+    // every step): one MPI_Allreduce of the flag, then every rank writes its
+    // ledger row (collective, consistent), rank 0 prints the gathered codes and
+    // every rank aborts. The local branches never enter a collective.
+    struct FailRecord {
+      long long code { 0 };    // 0 none, 1 on_capacity, 2 on_max_events
+      long long step { -1 };
+      long long species { 0 };
+      long long count { 0 };   // n_dropped (1) or capped ion-steps (2) of the failing launch
+    };
+    FailRecord fail_local {};
+
     // tables
     std::shared_ptr<const arch::bh::PhotonBath> bath;
     arch::bh::Quadrature                        quadrature;
@@ -1291,14 +1304,20 @@ namespace user {
                 (unsigned)n_injected, L.n_dropped, (unsigned)spm.npart(), (unsigned)spm.maxnpart(),
                 (unsigned)spp.npart(), (unsigned)spp.maxnpart(), setup.on_capacity.c_str());
               if (setup.on_capacity == "error") {
-                write_ledger(sp, step, t_after);
+                // C-MPI-2: no collective and no abort here (rank-local path); the
+                // failure is recorded and acted upon at the end of the stage
+                std::printf("%s (error: the run aborts after every rank wrote its ledger row)\n", msg.c_str());
                 std::fflush(stdout);
-                raise::Error(msg, HERE);
+                if (fail_local.code == 0) {
+                  fail_local = FailRecord { 1, static_cast<long long>(step), static_cast<long long>(sp.index()),
+                                            static_cast<long long>(L.n_dropped) };
+                }
+              } else {
+                if (H.n_capacity_warnings < 5) {
+                  std::printf("%s (warning, continuing)\n", msg.c_str());
+                }
+                H.n_capacity_warnings += 1;
               }
-              if (H.n_capacity_warnings < 5) {
-                std::printf("%s (warning, continuing)\n", msg.c_str());
-              }
-              H.n_capacity_warnings += 1;
             }
             if (L.n_capped_events > 0) {
               const auto msg = fmt::format(
@@ -1307,17 +1326,66 @@ namespace user {
                 L.n_capped_events, setup.max_events_per_step, (unsigned)step, (int)sp.index(),
                 setup.on_max_events.c_str());
               if (setup.on_max_events == "error") {
-                write_ledger(sp, step, t_after);
+                std::printf("%s (error: the run aborts after every rank wrote its ledger row)\n", msg.c_str());
                 std::fflush(stdout);
-                raise::Error(msg, HERE);
+                if (fail_local.code == 0) {
+                  fail_local = FailRecord { 2, static_cast<long long>(step), static_cast<long long>(sp.index()),
+                                            static_cast<long long>(L.n_capped_events) };
+                }
+              } else {
+                if (H.n_max_events_warnings < 5) {
+                  std::printf("%s (warning, continuing)\n", msg.c_str());
+                }
+                H.n_max_events_warnings += 1;
               }
-              if (H.n_max_events_warnings < 5) {
-                std::printf("%s (warning, continuing)\n", msg.c_str());
-              }
-              H.n_max_events_warnings += 1;
             }
           } else {
             H.accumulate(L, step);
+          }
+        }
+        // ---- C-MPI-2: the common point, executed once per step by every rank in
+        // both placements (the species loop above may be skipped on a rank with no
+        // ions; this is not): reduce the failure flag, and if any rank failed,
+        // every rank writes its ledger row, rank 0 prints the gathered codes and
+        // every rank aborts
+        {
+          int any_failed = fail_local.code != 0 ? 1 : 0;
+#if defined(MPI_ENABLED)
+          MPI_Allreduce(MPI_IN_PLACE, &any_failed, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
+#endif
+          if (any_failed != 0) {
+            for (auto& sp : domain.species) {
+              if (ion_mass.count(sp.index()) != 0) {
+                write_ledger(sp, step, t_after); // collective under MPI, consistent on every rank
+              }
+            }
+            long long              local[4] = { fail_local.code, fail_local.step, fail_local.species, fail_local.count };
+            std::vector<long long> all(4 * static_cast<std::size_t>(mpi_size), 0);
+#if defined(MPI_ENABLED)
+            MPI_Gather(local, 4, MPI_LONG_LONG, all.data(), 4, MPI_LONG_LONG, 0, MPI_COMM_WORLD);
+#else
+            std::copy(local, local + 4, all.begin());
+#endif
+            if (mpi_rank == 0) {
+              for (int r = 0; r < mpi_size; ++r) {
+                const long long* rec = all.data() + 4 * r;
+                if (rec[0] != 0) {
+                  std::printf("bh_proto: failure on rank %d: %s at step %lld (species %lld), count %lld\n", r,
+                              rec[0] == 1 ? "on_capacity (pair capacity exhausted; n_dropped)"
+                                          : "on_max_events (ion-steps exceeding max_events_per_step)",
+                              rec[1], rec[2], rec[3]);
+                }
+              }
+              std::fflush(stdout);
+            }
+            raise::Error(fmt::format("bh_proto: %s on %s at step %u: every rank wrote its ledger row; the run aborts "
+                                     "[setup.on_capacity = %s, setup.on_max_events = %s]",
+                                     fail_local.code == 1   ? "on_capacity: pair capacity exhausted"
+                                     : fail_local.code == 2 ? "on_max_events: max_events_per_step exceeded"
+                                                            : "a failure on another rank",
+                                     fail_local.code != 0 ? "this rank" : "another rank", (unsigned)step,
+                                     setup.on_capacity.c_str(), setup.on_max_events.c_str()),
+                         HERE);
           }
         }
       }

@@ -1,0 +1,107 @@
+# bh_proto input (MPI, 2 ranks; Rusty G3; not run in the cloud rounds): C-MPI-2 asymmetric capacity failure.
+# Two domains in x, absorbing x walls, production placement, 16 ions per domain at Gamma_p = 6 drifting at c along
+# +x, dK/K = 1e-3 per step, budget source, pair maxnpart = 40 per species per domain. Rank 1 receives rank 0's
+# ions after ~16 steps in addition to its own, so its pair capacity is exhausted (about 56 pairs due) while rank 0's
+# (about 28 pairs due) is not. Expected with on_capacity = error: the run aborts through the common point at the end
+# of the stage; both ranks write the ledger row of the abort step, the log has one "failure on rank 1: on_capacity"
+# line, no hang. Run as: timeout 300 mpirun -np 2 entity.xc -input g3_asymmetric_capacity_2ranks.toml
+[simulation]
+  name    = "g3_asymmetric_capacity_2ranks"
+  engine  = "srpic"
+  runtime = 30.0
+  [simulation.domain]
+    number        = 2
+    decomposition = [2]
+
+[grid]
+  resolution = [16]
+  extent     = [[0.0, 16.0]]
+  [grid.metric]
+    metric = "minkowski"
+  [grid.boundaries]
+    fields    = [["MATCH", "MATCH"]]
+    particles = [["ABSORB", "ABSORB"]]
+    [grid.boundaries.match]
+      ds = [[2.0]]
+
+[scales]
+  larmor0    = 1.0
+  skindepth0 = 1.0
+
+[algorithms]
+  [algorithms.timestep]
+    CFL = 0.5
+  [algorithms.fieldsolver]
+    enable = false
+  [algorithms.deposit]
+    enable = false
+
+[particles]
+  ppc0        = 1.0
+  use_weights = true
+  [[particles.species]]
+    label                    = "ion"
+    mass                     = 1.0
+    charge                   = 1.0
+    maxnpart                 = 1e3
+    pusher                   = "Boris"
+    n_payloads_real          = 3
+    deposit                  = false
+    clear_interval           = 0
+    spatial_sorting_interval = 0
+  [[particles.species]]
+    label                    = "e-"
+    mass                     = 1.0
+    charge                   = -1.0
+    maxnpart                 = 40
+    pusher                   = "Boris"
+    n_payloads_real          = 3
+    deposit                  = false
+    clear_interval           = 0
+    spatial_sorting_interval = 0
+  [[particles.species]]
+    label                    = "e+"
+    mass                     = 1.0
+    charge                   = 1.0
+    maxnpart                 = 40
+    pusher                   = "Boris"
+    n_payloads_real          = 3
+    deposit                  = false
+    clear_interval           = 0
+    spatial_sorting_interval = 0
+
+[setup]
+  hadronic.enabled     = true
+  hadronic.species     = [1]
+  hadronic.placement   = "production"
+  tau0                 = 5.62960
+  physical_mass_ratio  = 1836.15
+  photon_field.type    = "mono"
+  photon_field.eps0    = 0.5
+  source               = "budget"
+  spectrum             = "delta"
+  pair_species         = [2, 3]
+  r_th_factor          = 10.0
+  f_r                  = 0.02
+  t_latency            = "auto"
+  gamma_p_typical      = 6.0
+  ions.K               = [9180.75]
+  ions.per_K           = 16
+  ions.direction       = "+x"
+  ledger.every         = 10
+  on_capacity          = "error"
+  on_capacity_estimate = "warn"
+
+[output]
+  interval = 100000000
+  [output.fields]
+    enable = false
+  [output.particles]
+    enable = false
+  [output.spectra]
+    enable = false
+  [output.stats]
+    enable = false
+
+[checkpoint]
+  interval = 100000000

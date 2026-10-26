@@ -14,6 +14,32 @@ if [ $rc -eq 0 ]; then
   grep -c "on_max_events" "$WD/tiny/run.log" | sed 's/^/(diag) on_max_events warnings in the log: /'
   if grep -q "runtime error" "$WD/tiny/run.log"; then echo "FAIL: the sanitizer reported a runtime error"; report_fail=1; grep -m3 "runtime error" "$WD/tiny/run.log"; else echo "ok: no sanitizer runtime error in the log"; fi
 fi
+# C-MPI-2 (round 3): the same input with on_max_events = error aborts at the first step through the common
+# point at the end of the stage: the ledger row of step 0 is written exactly once (n_capped_events = 16), the
+# gathered failure line of rank 0 and the abort message are in the log
+mkdir -p "$WD/inputs" || exit 2
+sed 's/^  on_max_events *= *"warn"/  on_max_events        = "error"/' "$INP/r2_pairweight_tiny.toml" > "$WD/inputs/tiny_error.toml"
+if [ "$(grep -c 'on_max_events *= *"error"' "$WD/inputs/tiny_error.toml")" -ne 1 ]; then
+  echo "FAIL: the derived on_max_events = error input was not produced"; report_fail=1
+else
+  run_entity "$EXE" "$WD/inputs/tiny_error.toml" "$WD/tiny_error"; rc=$?; n_run=$((n_run + 1))
+  if [ $rc -eq 0 ]; then
+    echo "FAIL: on_max_events = error: the run did not abort (exit 0)"; report_fail=1
+  else
+    echo "PASS: on_max_events = error: the run aborted (exit $rc)"
+    "$CHECK" abort --log "$WD/tiny_error/run.log" --key "on_max_events:" --step_min 0 --step_max 0 || report_fail=1
+    "$CHECK" ledger --file "$WD/tiny_error/hadronic_ledger_1.txt" --expect_capped_events 16 --expect_events 128 || report_fail=1
+    grep -q "bh_proto: failure on rank 0: on_max_events" "$WD/tiny_error/run.log" \
+      && echo "PASS: C-MPI-2: the gathered failure line of rank 0 is in the log" \
+      || { echo "FAIL: C-MPI-2: no gathered failure line in the log"; report_fail=1; }
+    n_rows=$(grep -v '^#' "$WD/tiny_error/hadronic_ledger_1.txt" | wc -l | tr -d ' ')
+    if [ "$n_rows" -eq 1 ]; then
+      echo "PASS: C-MPI-2: exactly one ledger row (the abort step) was written"
+    else
+      echo "FAIL: C-MPI-2: $n_rows ledger rows written for an abort at step 0"; report_fail=1
+    fi
+  fi
+fi
 if [ $n_run -eq 0 ]; then echo "FAIL: r2_tiny.sh executed no run"; report_fail=1; fi
 echo "r2_tiny.sh summary: $n_run runs executed, $([ $report_fail -eq 0 ] && echo "all checks passed" || echo "at least one check FAILED")"
 exit $report_fail
