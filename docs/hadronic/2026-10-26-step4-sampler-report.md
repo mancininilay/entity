@@ -20,8 +20,8 @@ or open question. No pre-registered tolerance is adjusted.
 | 2 | CDF tables, the two sampling chains on the host, A7, A9, the `moments_*` and `hist_*` fixtures | done (one registered failure, A7 weighted vs I/J, explained) |
 | 3 | the UR anchor (Kelner and Aharonian 2008 eqs. 58 to 64), A8, the `ka2008_*` fixtures | done, `21ae3a2` |
 | 4 | device tables, the device sampler, `spectrum = restframe` in the kernel, A11, A12 | done, `a689d45` |
-| 5 | the reduction timing harness (G3 open item) | done (commit hash in the stage-6 entry) |
-| 6 | closure: full ctest single and double, the report completed | in progress |
+| 5 | the reduction timing harness (G3 open item) | done, `48d77ce` |
+| 6 | closure: full ctest single and double, the report completed | done (this commit) |
 
 ## 1. Environment (facts, measured in the cloud container)
 
@@ -475,3 +475,107 @@ the chunking (0 difference), while the atomic sum is order-dependent at the
 ### Stage 6 (closure)
 
 - stage 6 started after the stage-5 commit.
+
+- stage 5 done at commit `48d77ce`.
+
+#### Full test suites (facts; summaries in `logs-step4-stage6-ctest-single.log`, `-double.log`)
+
+| build | configuration | ctest | failure |
+| --- | --- | --- | --- |
+| `build` (single) | `-D TESTS=ON -D output=ON -D precision=single -D mpi=OFF`, GCC 13.3, OpenMP + Serial Kokkos, 4 cores | 93 of 94 passed (ctest -j 3, about 45 min, the two builds run concurrently) | `ARCHETYPES::bh_chain_a7w`: the registered A7 weighted identity against I/J, 18.6 s.e. (stage 2); every other check of that group passes |
+| `build-double` (double) | the same with `-D precision=double` | 93 of 94 passed (ctest -j 2) | the same single failure, identical numbers (the sampler and the tests are double-precision code; `real_t` enters only the stored pair momenta and payloads) |
+| `build-bhproto` (single, `-D pgen=bh_proto`, TESTS off) | the engine with the generator plumbing | builds; smoke run with `spectrum = restframe` exit 0 (stage 4) | |
+
+Test entries added by step 4 (12 of the 94): `ARCHETYPES::bh_restframe`,
+`ARCHETYPES::bh_chain_{budget,kinematics,efficiency,a9,a7w,a7}`,
+`ARCHETYPES::bh_ka2008`, `KERNELS::bh_sampler_{tables,a11,identity,a12,spectrum}`,
+`KERNELS::bh_reduction_timing`; the stage-0 split adds `KERNELS::bh_loss_t5fine`
+(the step-2 and step-3 entries `bh_loss_*` and `bh_pairs_*` pass unchanged in
+both builds, with `spectrum = delta`). Run times (single build, under the
+concurrent load): `bh_chain_a7` 1131 s, `bh_ka2008` 663 s, `bh_sampler_a12`
+516 s, `bh_chain_a7w` 363 s, `bh_sampler_tables` 221 s, `bh_sampler_spectrum`
+111 s, the rest under 100 s.
+
+## 3. Closure: every anchor of contract section 5 with its verdict
+
+| anchor | registered | measured (worst) | verdict | where |
+| --- | --- | --- | --- | --- |
+| A1 | int g = sigma~ Maximon, <= 1e-3 at every eps' node in [2.001, 1000] | 1.005e-4 (eps' = 3.98, the eq.-10 side of the Maximon junction) | pass | stage 1 |
+| A2 | int h dcos = g, <= 1e-3 at every (eps', E') node; e-/e+ symmetry exact | 2.33e-5; bitwise at complementary energies | pass | stage 1 |
+| A3 | eps' -> 2: E'- -> 1, q_k -> 2 to 1e-3 at eps' - 2 = 1e-3; asymptotic form reported | 2.5e-4, 5e-4; q_k eps'/(4 ln eps') = 1.06 (10) ... 1.60 (1000), not constant below 1000 | pass | stage 1 |
+| A4 | q_k vs eq. 3.7 <= 2% on [2.05, 1000]; vs phi_fit'/(kappa sigma~) <= 2% | 5.47e-3; 4.04e-3 | pass | stage 1 |
+| A5 | phi by int eps' sigma~ q_k vs the step-1 fit <= 2%; direct-boost I vs I_exact <= 0.5% | 3.11e-3; 4.83e-3 | pass (the second with little margin: the eq. 3.7 fit error) | stages 1, 2 |
+| A6 | an external numerical table of the energy distribution, 1% | no literature table in the container; replaced by A1 plus A8 as the contract provides | replaced | stage 1 |
+| A7 | <D>_MC = I/J at every rate-table node, max(1%, 4 s.e.), N = 1e6 | 0 of 2169 nodes fail; max 0.95% | pass | stage 2 |
+| A7 | E_p[1/D] <D> = 1 within 4 s.e., weighted chain, Gamma_p in {1.05 Gamma_th, 3, 10} | 18.6 s.e. with <D> = I/J; 1.8 s.e. with <D> the chain's own quadrature | **fail as registered**; the eq. 3.7 fit of step 1 against the Born laws (0.1 to 0.4%), not a sampler defect | stage 2 |
+| A8 | KS <= 0.02 vs the KA2008 lab e- spectrum at Gamma_p = 100 and 1000, mono05, N = 1e6 | 1.07e-3, 8.6e-4 | pass | stage 3 |
+| A9 | D >= 2 - eps_max over 1e7 draws per bath, zero violations; 1/min D | 0 violations in 5e7 draws; 1/min D 0.49, 0.30, 1.99, 9.10, 0.48 | pass | stage 2 |
+| A10 | `bhref` 0.2 vs C++ | the `bhref` 0.2 fixtures are not in the fork; the C++ fixtures of section 4 items 1 to 4 are written for the comparison | not run here | |
+| A11 | mu_d independence, bitwise at equal K with the same seed | bitwise for the sampler proper; the kernel-level spectra agree (KS 6e-5) with the energies differing in the last bits through the real_t rounding of u (7e-8 in K) | pass (sampler); stated (kernel) | stage 4 |
+| A12 | cost = I/J to 1% (T17); number and energy per paid energy to 2%; pair spectrum vs the chain by a two-sample test | 0 nodes fail max(1%, 4 s.e.), max 2.36% at s.e. 1.07%; 0 nodes fail max(2%, 4 s.e.), max 2.06%; energy 5.3e-4; KS 1.7e-3 and 2.1e-3 vs the 99% critical value 5.6e-3 | pass in the T17 form (stated) | stage 4 |
+| budget | <E'->, <p cos>, q_k from the interpolated CDFs vs quadrature <= 1e-3 at every eps' node; <D> at every Gamma node <= 1e-3 | 2.7e-15, 1.6e-5, 6.0e-4; 9.6e-4 | pass | stage 2 |
+
+Grids (conventions): eps' 16 per decade in log10(eps' - 2) from 1e-4 plus the
+cap (113 nodes); s with E' = 1 + (eps' - 2) sin^2(pi s/2), 256 cells; tau with
+t = ln(1 - cos theta' + (E' - p')/p'), 256 cells; the cumulatives on t = ln(k -
+2) with h = 0.005 (5067 nodes); the photon-energy tables on ln eps with 2048
+cells at every Gamma node of the rate table; single-precision CDFs on the
+device, 30.1 MB for a mono bath, plus 7.0 MB per broad bath (both chains).
+Acceptance efficiency of the weighted chain: 0.3 to 0.9 near threshold, 0.1
+at eps'_hi ~ 7, 0.02 at ~25, 0.0025 at the envelope edge 92 (stage 2 table).
+
+## 4. Not reached, deviations and open questions (for the mastermind)
+
+1. **The registered failure.** A7's weighted identity against I/J fails at 13
+   to 19 s.e. for every bath near threshold because the step-1 loss rate uses
+   the Chodorowski eq. 3.7 fit for q_k while the sampler uses the Born laws,
+   which give q_k lower by 0.3 to 0.55% on eps' in [2.3, 60] (A4). The sampler
+   is self-consistent (1.8 s.e.); the inconsistency is between the kernel's
+   loss (step 1) and the pairs it creates. Options: (a) rebuild the step-1 rate
+   tables with the Born-law q_k (the machinery's phi, psi; `QkCumulatives` with
+   the 449-node q_k is the drop-in), after which A5b reads ~1e-3 and the
+   identity holds; (b) accept the 0.1 to 0.5% mismatch between the pair number
+   and the paid energy in the budget source. Not decided here.
+2. **Efficiency of the weighted chain** at high Gamma_p (0.25% at the envelope
+   edge; 400 rejected draws per pair). The chain is as registered; a tighter
+   envelope than D_max or a direct sampling of the longitudinal-momentum-weighted
+   angular law would change the registered chain. The device loop is bounded
+   (default 1e5 attempts) and counted; no overflow was seen in 1.7e8 attempts.
+3. **Literature PDFs unavailable**: the formula numbers (Blumenthal eq. 10 and
+   11, MOK 3D-1000/2000/3000, Heitler 26.6 and 26.14, KA2008 eqs. 58 to 64) are
+   quoted from the brief or memory; the laws are verified numerically (A1 against
+   Maximon, A2, the sign resolution of the closed form against the fully
+   differential law, A4, A5, A8 by independent quadrature). The referee should
+   compare the code comments with the printed equations.
+4. **A6** replaced by A1 plus A8 (contract provision). **A10** needs the `bhref`
+   0.2 fixtures (not in the fork); the C++ fixtures (section 4 items 1 to 4) are
+   in `tests/data/hadronic/cpp-sampler-candidate/` with their hashes above.
+5. **Deviations stated**: the moments fixtures' weighted columns use a budget of
+   1e6 attempts per node instead of 1e6 accepted draws; the histogram fixtures'
+   weighted chain at Gamma_p = 100 has 43050 (mono05) and 83170 (powerlaw)
+   accepted draws within 2e7 attempts; A12's "to 1%" and "to 2%" are applied in
+   the T17 form max(tol, 4 s.e.) with the numbers of nodes beyond the strict
+   tolerance reported; A11 at the kernel level is statistical (the sampler-level
+   identity is bitwise); the self-normalisation of the law moments (Born
+   integrals instead of Maximon's series) adopted in stage 2 and applied to the
+   stage-1 fixture.
+6. **The quadrature-level budget check does not probe the photon-energy table**
+   (it integrates over eps exactly); the Monte Carlo against the chain's
+   quadrature does (3.5 s.e. with 2048 cells, 7.9 s.e. with 512).
+7. **No core change** was needed: `src/kernels/hadronic/bethe_heitler.hpp` and
+   the `bh_proto` generator are fork code of this module; `srpic.hpp`, pushers,
+   injectors, stats and the parameter schema are untouched. No GPU, no MPI run.
+8. **Not reached**: nothing of the stage list; `bhref` 0.2 comparison (A10) and
+   the Rusty validation are outside this session by construction.
+
+## 5. Reproduction
+
+```
+cmake -S . -B build -G Ninja -D TESTS=ON -D output=ON -D precision=single -D mpi=OFF \
+      -D CMAKE_PREFIX_PATH="$HOME/.entity/kokkos;$HOME/.entity/adios2"
+cmake --build build
+ctest --test-dir build -R "bh_restframe|bh_chain|bh_ka2008|bh_sampler|bh_reduction" --output-on-failure
+tools/bh_sampler_fixtures.sh build/tools/bh_sampler_dump tests/data/hadronic/cpp-sampler-candidate --n-weighted-attempts 20000000
+cmake -S . -B build-bhproto -G Ninja -D TESTS=OFF -D output=ON -D precision=single -D mpi=OFF -D pgen=bh_proto \
+      -D CMAKE_PREFIX_PATH="$HOME/.entity/kokkos;$HOME/.entity/adios2" && cmake --build build-bhproto --target entity.xc
+```
