@@ -1,0 +1,11 @@
+[DIAG] tables built in 7.4 s; mono05 eps0 = 0.5, mu_r = 1836.15
+[DIAG] Gamma_p = 100: eps'_hi = 99.9975, eps'_hi Gamma/mu_r = 5.4, E- lab range [1.000, 19798.5]; quadrature 4.6 s (refined 92.3 s, max |dF| = 4.46e-05); <E->_quad = 15.55854 (refined 15.55854), <E->_MC = 15.57903 +- 0.07493 (0.3 s.e.); KS = 0.00107 at E = 4.6342 (F = 0.5379); sampling 0.8 s; sample quantiles: median 4.1699, 90% 26.443, 99% 194.25, max 10515.9
+[DIAG] fixture /home/user/entity/tests/data/hadronic/cpp-sampler-candidate/ka2008_mono05_G100.txt: producer "entity-cpp", version "5f2ae81d5616615288175fc8236b8a7103e6f4ae", data_sha256 da7942cc3f220749fc8d201626d3e239846ad40717fd26befd21bfa735098c2a; max deviation from the live quadrature 4.67e-13
+[DIAG] Gamma_p = 1000: eps'_hi = 999.9997, eps'_hi Gamma/mu_r = 544.6, E- lab range [1.000, 1997998.5]; quadrature 8.0 s (refined 161.9 s, max |dF| = 3.49e-05); <E->_quad = 32.85330 (refined 32.85330), <E->_MC = 33.25619 +- 0.77319 (0.5 s.e.); KS = 0.00086 at E = 19.5714 (F = 0.8376); sampling 0.8 s; sample quantiles: median 4.4502, 90% 34.715, 99% 379.89, max 431380.5
+[DIAG] fixture /home/user/entity/tests/data/hadronic/cpp-sampler-candidate/ka2008_mono05_G1000.txt: producer "entity-cpp", version "5f2ae81d5616615288175fc8236b8a7103e6f4ae", data_sha256 c19c5ee715a85c0dfa7fcd7516deadc9beac4b90bd233f71374969bd2f687b7c; max deviation from the live quadrature 4.22e-13
+[PASS] A8: KS statistic between the sampled e- lab spectrum (N = 1e6) and the KA2008 CDF, Gamma_p = 100 and 1000, mono05: max KS = 1.069743e-03 (tol 2.000e-02)
+[PASS] (impl) A8 quadrature self-convergence (order + 4, panels / 2): max |dF| over the edges: max |dF| = 4.456976e-05 (tol 1.000e-03)
+[PASS] (impl) A8: mean lab e- energy, sample vs quadrature: max |dev| / s.e. = 5.210788e-01 (tol 4.000e+00)
+[PASS] (impl) A8 fixtures vs the live quadrature (edges relative, CDF absolute): max deviation = 4.669598e-13 (tol 1.000e-10)
+
+bh_ka2008 summary: contract items 1 passed, 0 failed; implementation-chosen checks 3 passed, 0 failed; 276 s

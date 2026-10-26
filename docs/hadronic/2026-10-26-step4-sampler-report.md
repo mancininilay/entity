@@ -18,7 +18,7 @@ or open question. No pre-registered tolerance is adjusted.
 | 0 | G3 fallout: the two float literals of `g3_asymmetric_capacity_2ranks.toml`; the T5 dt-convergence split into its own ctest entry with a timeout | done, `6348ba4` |
 | 1 | the rest-frame laws g, h, the recoil moment q_k by quadrature, anchors A1 to A5, the fixture `qk_table.txt` | done, `2893cfb` |
 | 2 | CDF tables, the two sampling chains on the host, A7, A9, the `moments_*` and `hist_*` fixtures | done (one registered failure, A7 weighted vs I/J, explained) |
-| 3 | the UR anchor (Kelner and Aharonian 2008 eqs. 58 to 64), A8, the `ka2008_*` fixtures | in progress |
+| 3 | the UR anchor (Kelner and Aharonian 2008 eqs. 58 to 64), A8, the `ka2008_*` fixtures | done (commit hash in the stage-4 entry) |
 | 4 | device tables, the device sampler, `spectrum = restframe` in the kernel, A11, A12 | not started |
 | 5 | the reduction timing harness (G3 open item) | not started |
 | 6 | closure: full ctest single and double, the report completed | not started |
@@ -321,3 +321,56 @@ Seeds: 20261026 (SplitMix64(seed + i) unweighted and SplitMix64(seed + 500000 + 
 ### Stage 3 (the UR anchor)
 
 - stage 2 done at commit `29f0d48`; stage 3 started, HEAD `29f0d48`.
+
+#### Stage 3: what was implemented and measured
+
+`src/archetypes/hadronic/bh_lab_spectrum.h` (`rf::lab_electron_cdf`,
+`rf::LabSpectrumQuadrature`, `rf::lab_energy_range`): the CDF of the lab e-
+energy for an ion of Lorentz factor Gamma in a mono bath, by quadrature over
+eps' (t = ln(eps' - 2), panels of 0.125, GL 10), the lepton rest-frame energy
+(s, 24 panels) and angle (t = ln(1 - cos theta' + w), panels of 0.5), with the
+azimuth about the photon direction integrated in closed form (the fraction of
+phi with E_lab <= E is arccos((a - c)/b)/pi); weight eps' d^2sigma, normalised
+by Phi(eps'_hi); the exact (Gamma, beta) boost, no UR approximation. This is
+the content of Kelner and Aharonian 2008 eqs. (58) to (64) as recalled (the
+Sauter-Gluckstern-Hull law of Blumenthal 1970 eq. 11 for the lepton in the
+proton rest frame, the photon's rest-frame energy eps' = Gamma eps (1 - beta cos
+theta), the Lorentz transformation of the lepton energy); **the PDF was not
+available: the equation numbers are those of the brief and the structure is
+from memory; the referee should compare with the printed equations.** The
+recalled sign pattern of Blumenthal's eq. 11 agrees with the signs that the
+numerical integral of the fully differential law fixed in stage 1.
+
+`tools/bh_sampler_dump ka2008 --bath mono05 --gamma G` writes the fixture
+(item 4); `tests/archetypes/bh_ka2008.cpp` (`ARCHETYPES::bh_ka2008`, 276 s,
+of which 254 s is the refined quadrature of the convergence check) is A8.
+
+| item | quantity | measured | tolerance | verdict |
+| --- | --- | --- | --- | --- |
+| A8 | KS between the sampled e- lab spectrum (N = 1e6, unweighted chain) and the quadrature CDF at Gamma_p = 100, mono05 | 1.07e-3 (at E = 4.63, F = 0.538) | 0.02 | pass |
+| A8 | the same at Gamma_p = 1000 | 8.6e-4 (at E = 19.6, F = 0.838) | 0.02 | pass |
+| A8 (impl) | quadrature CDF change under refinement (order + 4, panels / 2) | 4.5e-5 (100), 3.5e-5 (1000) | 1e-3 | pass |
+| A8 (impl) | mean lab e- energy, sample vs quadrature | 15.579 +- 0.075 vs 15.5585 (0.3 s.e.); 33.26 +- 0.77 vs 32.853 (0.5 s.e.) | 4 s.e. | pass |
+| A8 (impl) | fixtures vs the live quadrature | 4.7e-13 | 1e-10 | pass |
+
+Convention for the KS statistic (stated): the largest |F_MC - F_quad| over
+the 201 log-spaced bin edges on which the reference CDF is tabulated; the sup
+over all energies exceeds it by at most the largest bin probability (0.5% of
+the mass at the mode, where the measured KS is 1e-3), so the registered 0.02
+is met with a factor 20 margin either way.
+
+Applicability (fact): eps'_hi Gamma/mu_r = 5.4 at Gamma_p = 100 and 545 at
+1000 for mono05, i.e. both anchor points are outside the condition eps' Gamma
+<< mu_r of the brief, and eps'_hi = 100 is just above the production envelope
+0.05 mu_r = 91.8 (1000 is the kernel cap). Both the sampler and the quadrature
+use the static-source Born law, so A8 validates the chain (energy law, angular
+law, rotation, boost) against an independent integration of the same law; it
+does not test the static-source approximation itself. Sample facts at Gamma_p =
+100: median E- = 4.17, 90% quantile 26.4, 99% 194, maximum of 1e6 draws 10516
+(E_hi = 19798); at 1000: median 4.45, 90% 34.7, 99% 380, max 431380 (E_hi =
+2.0e6).
+
+| file | rows | data_sha256 | sha256 of the file |
+| --- | --- | --- | --- |
+| `ka2008_mono05_G100.txt` | 200 | `da7942cc3f220749fc8d201626d3e239846ad40717fd26befd21bfa735098c2a` | `6cd25034db80e232a9bfddbcb43807d8b77cd69319b4900bdf2a0e1dde155ef4` |
+| `ka2008_mono05_G1000.txt` | 200 | `c19c5ee715a85c0dfa7fcd7516deadc9beac4b90bd233f71374969bd2f687b7c` | `de2d328947a808a2993ee4a12da12597c3e186fae5ce9631e50b4031f372e079` |

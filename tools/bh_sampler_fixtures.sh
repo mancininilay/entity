@@ -2,7 +2,8 @@
 # Produce the step-4 sampler fixtures of contract section 4 (items 1 to 3) with
 # bh_sampler_dump: qk_table.txt, moments_<bath>.txt for the five step-1 baths,
 # hist_<bath>_G<Gamma>.txt for mono05 and powerlaw at Gamma_p in
-# {1.05 Gamma_th, 3, 10, 100}. Bash 3.2 compatible; fails when nothing runs.
+# {1.05 Gamma_th, 3, 10, 100}, ka2008_mono05_G<Gamma>.txt at 100 and 1000 (item 4).
+# Bash 3.2 compatible; fails when nothing runs.
 #
 # Usage: bh_sampler_fixtures.sh <bh_sampler_dump> <outdir> [--n N] [--n-weighted-attempts N] [--seed S]
 set -u
@@ -35,6 +36,9 @@ done
 for g in 1.09375 3 10 100; do
   # shellcheck disable=SC2086
   run "$DUMP" hist --bath powerlaw --gamma "$g" --out "$OUT/hist_powerlaw_G$g.txt" $EXTRA
+done
+for g in 100 1000; do
+  run "$DUMP" ka2008 --bath mono05 --gamma "$g" --out "$OUT/ka2008_mono05_G$g.txt"
 done
 echo "bh_sampler_fixtures.sh: $n_run commands succeeded, $n_fail failed"
 if [ "$n_run" -eq 0 ] || [ "$n_fail" -ne 0 ]; then

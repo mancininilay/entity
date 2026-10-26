@@ -31,3 +31,9 @@ enter the fork under `tests/data/hadronic/bhref-0.2.0/` when frozen.
 - Regenerate everything with `tools/bh_sampler_fixtures.sh build/tools/bh_sampler_dump tests/data/hadronic/cpp-sampler-candidate`
   (about 25 minutes on 4 cores; add `--n-weighted-attempts 20000000` for the
   histogram statistics used here).
+- `ka2008_mono05_G100.txt`, `ka2008_mono05_G1000.txt` (item 4): the lab e-
+  spectrum of the UR anchor (Kelner and Aharonian 2008 eqs. 58 to 64, as the
+  exact boost of the rest-frame laws by quadrature, `bh_lab_spectrum.h`) as a
+  CDF at the upper edges of the 200 log-spaced E- bins of the `hist` files at
+  the same Gamma_p (`cdf_at_hi`, `probability_in_bin`); the header carries the
+  quadrature parameters, the change under refinement and the mean lab energy.

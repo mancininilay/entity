@@ -57,3 +57,10 @@ endforeach()
 set_tests_properties("ARCHETYPES::bh_chain_a7" PROPERTIES TIMEOUT 7200)
 set_tests_properties("ARCHETYPES::bh_chain_a7w" PROPERTIES TIMEOUT 3600)
 set_tests_properties("ARCHETYPES::bh_chain_a9" PROPERTIES TIMEOUT 3600)
+# [fork:hadronic/P2 step 4] the UR lab electron spectrum anchor (A8)
+gen_test(bh_ka2008)
+target_compile_definitions(
+  test-archetypes-bh_ka2008.xc
+  PRIVATE BH_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data/hadronic")
+target_link_libraries(test-archetypes-bh_ka2008.xc PRIVATE Threads::Threads)
+set_tests_properties("ARCHETYPES::bh_ka2008" PROPERTIES TIMEOUT 1800)

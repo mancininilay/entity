@@ -9,6 +9,7 @@
  *                            [--n-weighted-attempts N] [--status STATUS] [--threads N]
  *   bh_sampler_dump hist     --bath NAME --gamma G --out FILE [--seed S] [--n N]
  *                            [--n-weighted-attempts N] [--status STATUS]
+ *   bh_sampler_dump ka2008   --bath NAME --gamma G --out FILE [--status STATUS]
  *
  * `qk_table` (section 4 item 1): the eps' nodes of the step-1 grid (64 per
  * decade in log10(eps' - 2) from 1e-4 while eps' <= 1000, then eps' = 1000),
@@ -33,11 +34,17 @@
  * [D_min, D_max] of the bath at this Gamma_p; counts of the unweighted chain
  * and 1/D-weighted, normalised weights of the weighted chain.
  *
+ * `ka2008` (item 4): the lab e- spectrum of the UR anchor (bh_lab_spectrum.h,
+ * Kelner and Aharonian 2008 eqs. 58 to 64 as the exact boost of the
+ * rest-frame laws, by quadrature) as a CDF on the 200 log-spaced E- bins of
+ * the `hist` files at the same Gamma_p (mono baths only).
+ *
  * Bath names: mono05, mono03, powerlaw, blackbody, mono05_mu100 (the five
  * step-1 acceptance baths). Option errors exit with 2, runtime errors with 1.
  */
 
 #include "archetypes/hadronic/bh_restframe.h"
+#include "archetypes/hadronic/bh_lab_spectrum.h"
 #include "archetypes/hadronic/bh_sampler_host.h"
 #include "archetypes/hadronic/bh_sampler_io.h"
 
@@ -79,7 +86,7 @@ namespace {
       throw std::invalid_argument("missing command (qk_table | moments | hist)");
     }
     o.command = t[0];
-    if (o.command != "qk_table" && o.command != "moments" && o.command != "hist") {
+    if (o.command != "qk_table" && o.command != "moments" && o.command != "hist" && o.command != "ka2008") {
       throw std::invalid_argument("unknown command '" + o.command + "'");
     }
     for (std::size_t i = 1; i < t.size(); ++i) {
@@ -118,7 +125,7 @@ namespace {
     if (o.command != "qk_table" && o.bath.empty()) {
       throw std::invalid_argument("--bath is required");
     }
-    if (o.command == "hist" && !(o.gamma > 1.0)) {
+    if ((o.command == "hist" || o.command == "ka2008") && !(o.gamma > 1.0)) {
       throw std::invalid_argument("--gamma is required");
     }
     return o;
@@ -332,6 +339,68 @@ namespace {
     return 0;
   }
 
+  int run_ka2008(const Options& o) {
+    using namespace arch::bh;
+    const auto t0 = std::chrono::steady_clock::now();
+    const auto cb = rf::canonical_bath(o.bath);
+    if (cb.spec.type != "mono") {
+      throw std::runtime_error("ka2008: mono baths only");
+    }
+    const double g = o.gamma, eps0 = cb.spec.eps0;
+    double       E_lo, E_hi;
+    rf::lab_energy_range(g, eps0, E_lo, E_hi);
+    const int           NB = 200;
+    std::vector<double> edges(NB + 1);
+    for (int i = 0; i <= NB; ++i) {
+      edges[i] = E_lo * std::pow(E_hi / E_lo, static_cast<double>(i) / NB);
+    }
+    const rf::LabSpectrumQuadrature q;
+    double                          mean = 0.0, mean_r = 0.0;
+    const std::vector<double>       F  = rf::lab_electron_cdf(g, eps0, edges, q, &mean);
+    const std::vector<double>       Fr = rf::lab_electron_cdf(g, eps0, edges, q.refined(), &mean_r);
+    double                          conv = 0.0;
+    for (std::size_t i = 0; i < F.size(); ++i) {
+      conv = std::max(conv, std::abs(F[i] - Fr[i]));
+    }
+    const double gb = std::sqrt((g - 1.0) * (g + 1.0));
+    FixtureTable t;
+    t.header = common_header("bh-ka2008-cdf", o);
+    t.header.push_back({ "bath", json_string(o.bath) });
+    t.header.push_back({ "photon_field", "{\"type\": \"mono\", \"eps0\": " + json_number(eps0) + "}" });
+    t.header.push_back({ "physical_mass_ratio", json_number(cb.mu_r) });
+    t.header.push_back({ "gamma_p", json_number(g) });
+    t.header.push_back({ "beta_p", json_number(gb / g) });
+    t.header.push_back({ "eps_prime_hi", json_number(eps0 * (g + gb)) });
+    t.header.push_back({ "applicability_eps_prime_hi_gamma_over_mu_r", json_number(eps0 * (g + gb) * g / cb.mu_r) });
+    t.header.push_back(
+      { "law", json_string("Kelner and Aharonian 2008 eqs. 58-64 (equation numbers from the brief): the "
+                           "Sauter-Gluckstern-Hull single-lepton law (Blumenthal 1970 eq. 11) in the proton rest "
+                           "frame, photon energy eps' = Gamma eps (1 - beta cos theta), lepton boosted with the exact "
+                           "(Gamma, beta); CDF of the lab e- energy by quadrature (bh_lab_spectrum.h)") });
+    t.header.push_back({ "quadrature",
+                         "{\"gl_order\": " + std::to_string(q.gl_order) + ", \"h_t_k\": " + json_number(q.h_t_k) +
+                           ", \"s_panels\": " + std::to_string(q.s_panels) + ", \"h_t_angle\": " +
+                           json_number(q.h_t_angle) + ", \"delta_min\": " + json_number(q.delta_min) +
+                           ", \"max_cdf_change_under_refinement\": " + json_number(conv) + "}" });
+    t.header.push_back({ "mean_E_minus_lab", json_number(mean) });
+    t.header.push_back({ "mean_E_minus_lab_refined", json_number(mean_r) });
+    t.header.push_back({ "bins", "{\"E\": {\"n\": 200, \"spacing\": \"log\", \"lo\": " + json_number(E_lo) +
+                                   ", \"hi\": " + json_number(E_hi) + "}}" });
+    t.header.push_back({ "node_count", std::to_string(NB) });
+    t.columns = { "E_minus_lo", "E_minus_hi", "cdf_at_hi", "probability_in_bin" };
+    for (int i = 0; i < NB; ++i) {
+      t.rows.push_back({ edges[i], edges[i + 1], F[i + 1], F[i + 1] - F[i] });
+    }
+    write_fixture_file(o.out, t);
+    const FixtureContents c = read_fixture_file(o.out);
+    std::printf("bh_sampler_dump ka2008 %s Gamma %g: %zu bins written to %s in %.0f s; <E-> = %.6f, refinement change "
+                "%.2e (data_sha256 %s)\n",
+                o.bath.c_str(), g, c.rows.size(), o.out.c_str(),
+                std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count(), mean, conv,
+                c.data_sha256.c_str());
+    return 0;
+  }
+
   int run_hist(const Options& o) {
     using namespace arch::bh;
     const auto          t0 = std::chrono::steady_clock::now();
@@ -481,7 +550,8 @@ int main(int argc, char** argv) {
                  "usage: bh_sampler_dump qk_table --out FILE [--status S] [--threads N]\n"
                  "       bh_sampler_dump moments --bath NAME --out FILE [--seed S] [--n N] [--n-weighted-attempts N]\n"
                  "       bh_sampler_dump hist --bath NAME --gamma G --out FILE [--seed S] [--n N] "
-                 "[--n-weighted-attempts N]\n");
+                 "[--n-weighted-attempts N]\n"
+                 "       bh_sampler_dump ka2008 --bath NAME --gamma G --out FILE\n");
     return 2;
   }
   try {
@@ -490,6 +560,9 @@ int main(int argc, char** argv) {
     }
     if (o.command == "moments") {
       return run_moments(o);
+    }
+    if (o.command == "ka2008") {
+      return run_ka2008(o);
     }
     return run_hist(o);
   } catch (const std::exception& e) {
