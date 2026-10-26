@@ -711,10 +711,17 @@ namespace user {
 #if defined(MPI_ENABLED)
       MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
       MPI_Comm_size(MPI_COMM_WORLD, &mpi_size);
-      raise::ErrorIf(any_absorbing && metadomain.ndomains() > 1,
-                     "bh_proto: absorbing particle boundaries with more than one domain are refused in an MPI "
-                     "build: the dead-ion harvest of the prototype is valid only at the production placement "
-                     "under MPI (decision (e)); the post-step harvest sees refilled slots",
+      // C-MPI-3: the guard is restricted to the post-step placement (the unsafe
+      // harvest), for any rank count (a one-rank periodic self-exchange can refill
+      // a dead slot too); the production placement is allowed with absorbing
+      // boundaries and any number of domains (C-MPI-1 clears the remnants)
+      raise::ErrorIf(bhproto::poststep_harvest_refused(any_absorbing, true, metadomain.ndomains(), setup.placement),
+                     fmt::format("bh_proto: absorbing particle boundaries with hadronic.placement = \"poststep\" are "
+                                 "refused in an MPI build (%u domain%s, %d rank%s): the particle exchange can refill "
+                                 "a dead slot before the post-step hook harvests it (decision (e)); use "
+                                 "hadronic.placement = \"production\"",
+                                 metadomain.ndomains(), metadomain.ndomains() == 1 ? "" : "s", mpi_size,
+                                 mpi_size == 1 ? "" : "s"),
                      HERE);
 #endif
       n_domains_total = metadomain.ndomains();

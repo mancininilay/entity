@@ -103,7 +103,8 @@ gamma_p_typical = 6.0
 
 } // namespace
 
-int main() {
+int main(int argc, char** argv) {
+  const std::string mpi_inputs = argc > 1 ? argv[1] : "";
   try {
     // the valid setup parses with the given values
     {
@@ -351,6 +352,61 @@ int main() {
                   replace_line(replace_line(VALID, "photon_field.type", "photon_field.type = \"powerlaw\""),
                                "photon_field.eps0", "photon_field.eps_min = 0.1\nphoton_field.eps_max = 2.0\nphoton_field.index = 2.0"),
                   "photon_field.eps_max");
+    // C-MPI-3 (round 3): the construction-time guard predicate on every combination of
+    // (absorbing, MPI build, domain count, placement): refused only for absorbing boundaries
+    // at the post-step placement in an MPI build, for any domain count
+    {
+      int n_refused = 0, n_checked = 0;
+      for (const bool absorbing : { false, true }) {
+        for (const bool mpi : { false, true }) {
+          for (const unsigned int nd : { 1u, 4u }) {
+            for (const std::string placement : { "poststep", "production" }) {
+              const bool refused = user::bhproto::poststep_harvest_refused(absorbing, mpi, nd, placement);
+              const bool expect  = absorbing && mpi && placement == "poststep";
+              ++n_checked;
+              n_refused += refused ? 1 : 0;
+              if (refused == expect) {
+                ++n_pass;
+              } else {
+                ++n_fail;
+                std::printf("FAIL: guard predicate (absorbing %d, mpi %d, ndomains %u, %s): refused %d, expected %d\n",
+                            (int)absorbing, (int)mpi, nd, placement.c_str(), (int)refused, (int)expect);
+              }
+            }
+          }
+        }
+      }
+      std::printf("PASS: guard predicate: %d combinations checked, %d refused (absorbing + MPI + poststep, ndomains 1 "
+                  "and 4), production placement never refused\n", n_checked, n_refused);
+    }
+    // the prepared MPI inputs (pgens/bh_proto/inputs/mpi/) are accepted at parse time with the
+    // production placement
+    if (!mpi_inputs.empty()) {
+      for (const std::string name : { "g3_asymmetric_capacity_2ranks", "t14b_absorb_production_4ranks" }) {
+        const std::string path = mpi_inputs + "/" + name + ".toml";
+        try {
+          const auto  file  = toml::parse(path);
+          const auto& setup = toml::find(file, "setup");
+          const auto  s     = user::bhproto::parse_setup(setup);
+          const auto  nd    = toml::find<unsigned int>(file, "simulation", "domain", "number");
+          const bool  ok    = s.placement == "production" && s.enabled && s.pairs_enabled() && nd >= 2 &&
+                           !user::bhproto::poststep_harvest_refused(true, true, nd, s.placement);
+          if (ok) {
+            ++n_pass;
+            std::printf("PASS: MPI input %s accepted at parse time (production placement, %u domains, source %s)\n",
+                        name.c_str(), nd, s.source.c_str());
+          } else {
+            ++n_fail;
+            std::printf("FAIL: MPI input %s parsed but is not a production-placement multi-domain setup\n", name.c_str());
+          }
+        } catch (const std::exception& e) {
+          ++n_fail;
+          std::printf("FAIL: MPI input %s rejected: %s\n", name.c_str(), e.what());
+        }
+      }
+    } else {
+      std::printf("(no inputs directory given: the prepared MPI inputs are not parsed)\n");
+    }
   } catch (const std::exception& e) {
     std::printf("FAIL: unexpected exception: %s\n", e.what());
     ++n_fail;

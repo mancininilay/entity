@@ -429,6 +429,31 @@ namespace user::bhproto {
    * @param setup the `setup` table of the input (may be an empty table)
    * @throws std::invalid_argument with a message naming `setup.<key>`
    */
+  /**
+   * @brief C-MPI-3: whether the construction-time guard refuses the run.
+   *        The dead-ion harvest of the post-step placement (host sums over the
+   *        dead-tagged ions in the post-step hook, and the kernel's dead branch
+   *        there) is unsafe wherever a receive can refill a dead slot before the
+   *        hook runs: that is any MPI build, with one rank too (the periodic
+   *        self-exchange goes through the same send and receive buffers), for
+   *        any domain count; the non-MPI exchange never receives, so it is safe
+   *        at any domain count. The production placement harvests before the
+   *        exchange and is safe everywhere (C-MPI-1 clears the remnants of the
+   *        transported particles).
+   * @param absorbing any particle boundary absorbing
+   * @param mpi_build compiled with MPI_ENABLED
+   * @param ndomains the number of domains (reported in the message; not part
+   *                 of the predicate, see above)
+   * @param placement "poststep" | "production"
+   */
+  inline auto poststep_harvest_refused(bool               absorbing,
+                                       bool               mpi_build,
+                                       unsigned int       ndomains,
+                                       const std::string& placement) -> bool {
+    (void)ndomains;
+    return absorbing && mpi_build && placement == "poststep";
+  }
+
   inline auto parse_setup(const toml::value& setup) -> Setup {
     using namespace detail;
     if (!setup.is_table()) {

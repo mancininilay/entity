@@ -26,7 +26,8 @@ add_executable(test-hadronic-bh_proto_params.xc bh_proto_params.cpp)
 target_include_directories(test-hadronic-bh_proto_params.xc
                            PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/include)
 set_property(TARGET test-hadronic-bh_proto_params.xc PROPERTY LINK_LIBRARIES "")
-add_test(NAME "HADRONIC::bh_proto_params" COMMAND test-hadronic-bh_proto_params.xc)
+add_test(NAME "HADRONIC::bh_proto_params" COMMAND test-hadronic-bh_proto_params.xc
+                                              ${CMAKE_SOURCE_DIR}/pgens/bh_proto/inputs/mpi)
 
 if("${pgen}" STREQUAL "bh_proto")
   set(BH_SINGLE_ENTITY $<TARGET_FILE:entity.xc>)
