@@ -10,7 +10,10 @@ degenerate-control convention, the report; round-1 HEAD `974be5f`).
 Round-2 commits (section 0): `ec938aa` (R1-R6, spec v3.3 semantics, the
 re-registered tests), `6dcf658` (`core(hadronic):` production placement
 adapter), `d6ea582` (MPI-capable prototype, placement switch and tests),
-and the report commit. Line numbers in sections 1-10 refer to the round-1
+and the report commits (round-2 HEAD `62c725e`). Round-3 commits (section
+00): `4acf6a5` (`core(hadronic):` the send-buffer packer clears the
+sender's payloads), `9e60fd0` (alive-only final-array sums), `9c3dbc0`
+(C-MPI-2 failure flag), `7b55468` (C-MPI-3 guard), and the report commit. Line numbers in sections 1-10 refer to the round-1
 HEAD unless a round-2 line number is given explicitly in section 0; the
 round-2 HEAD is named in the final message.
 
@@ -21,6 +24,167 @@ an expected failure before it runs (section 4.5) and reported with its number
 and mechanism. Implementation-chosen checks are marked `(impl)`; `(diag)`
 lines are reported only.
 
+
+## 00. Round 3: the three MPI-readiness defects (C-MPI-1, C-MPI-2, C-MPI-3)
+
+The referee's closure of round 2 closed every original finding and every
+decided semantics, verified the production placement and held the merge for
+three defects in the MPI-readiness code, found by reading the sources. This
+round fixes those three and nothing else; the accepted physics, the tests of
+rounds 1 and 2 and the placement adapter are untouched except where C-MPI-3
+needs the guard. Labelling as before (**fact**, **convention**, `(impl)`,
+`(diag)`); the suite counts in 00.5 are measured with the round-3 HEAD.
+
+### 00.1 C-MPI-1 (blocking): a sent particle's dead remnant was harvested as absorbed debt
+
+Mechanism (fact, verified in the tree): `PopulatePrtlSendBuffer_kernel`
+(`src/kernels/comm.hpp`) copied every real and integer payload of a particle
+leaving the subdomain into the send buffer and then set the sender's tag to
+dead without clearing the slot; the receive path (`ExtractReceivedPrtls_kernel`,
+`containers/comm/particles.cpp`) overwrites only the holes it fills; the
+Bethe-Heitler dead branch treats every dead payload as absorbed (`E_exported
++= w r`, `pending_discarded += w delta`). So a transported debt, owned by
+the receiver, was exported again from the sender's remnant: right after the
+exchange at the post-step placement, at the next stage at the production
+placement unless the hole had been reused.
+
+Fix, the one core change of the round (`4acf6a5`, `src/kernels/comm.hpp:
+223-241`): after the payloads have been copied into the buffer, the packer
+zeroes every `pld_r` slot **and** every `pld_i` slot of the sender, then tags
+it dead. Zeroing `pld_i` is safe (fact): the tracking ids travel in the send
+buffer and the receiver writes `pld_i` from the buffer (`comm.hpp:363-367`),
+nothing reads the sender's slot afterwards. The receiver side is unchanged.
+Kernel comment of the dead branch (`bethe_heitler.hpp:678-681`): "absorbed
+this step, or a cleared remnant (zero payloads)". Generator (`9e60fd0`): the
+final-array sums (`sum_wK_from_arrays`, `sum_w_payload_from_arrays`, the
+pair-side sums of `finish`, `pgen.hpp:1916`) count alive particles only, so
+a transported copy's remnant or a send-tagged copy is never counted twice
+(before: dead slots were skipped, send-tagged ones counted; the pair loop
+had no tag check at all).
+
+Test `KERNELS::bh_pairs_cmpi1` (`bh_pairs.cpp:1784`; no MPI, the real
+packer and receive kernels `kernel::comm::PopulatePrtlSendBuffer_kernel
+<Dim::_1D, Coord::Cartesian>` and `ExtractReceivedPrtls_kernel` on the
+kernel test's arrays, 3 real and 1 integer payload slot). Facts:
+
+| scenario | check | measured | verdict |
+| --- | --- | --- | --- |
+| the referee's: ion 0 with pending 0.25, debt 10, send tag; ion 3 with pending 0.125, debt 7 tagged dead by the host (absorbed, the control) | after packing: sender slot tagged dead | dead | pass |
+| | every real and integer payload of the sender slot zero | 0 (pld_i 777 -> 0) | pass |
+| | the send buffer carries pending 0.25, debt 10 and the integer payload 777 | yes | pass |
+| | the absorbed ion's payloads untouched by the packer | 0.125, 7 | pass |
+| | the next Bethe-Heitler call exports exactly the absorbed ion's debt w 7 = 17.5 and nothing for the remnant | E_exported 17.5 (relative 0) | pass |
+| | and discards exactly the absorbed ion's request w 0.125 = 0.3125 | 0.3125 (relative 0) | pass |
+| `(diag)` before the fix the same call would have exported w (10 + 7) = 27.5 and discarded 0.5625 | | | reported |
+| three sends (debts 10, 11, 12), one receive into the first hole (the first packed particle, weight 2) | received particle alive in the first hole with pending 0.25 and debt 10 | yes | pass |
+| | the two unfilled holes dead with zero debt, pending and K0 | 0 | pass |
+| | the next call exports nothing and discards nothing | 0, 0 | pass |
+| | the received ion and the three untouched ions processed | 4 | pass |
+
+10 checks, 10 passed. The rest of the kernel groups are unchanged (109 checks
+of rounds 1 and 2 pass as before; the suite is 119 with this group).
+
+### 00.2 C-MPI-2 (blocking): rank-local error paths entered collectives before the abort
+
+Mechanism (fact): the `on_capacity = error` and `on_max_events = error`
+branches called `write_ledger` (which enters `MPI_Allreduce` through
+`reduce_ledger`) and `raise::Error` on the rank that detected the failure
+only; another rank proceeding to the exchange would not match the
+collectives (a hang, not a crash).
+
+Fix (`9c3dbc0`, `pgen.hpp`): the local branches print their message, record
+a fixed-size failure code (`FailRecord {code, step, species, count}`,
+`pgen.hpp:483-489`) and continue without any collective or abort; at the
+common point at the end of `HadronicStage` (`pgen.hpp:1353-1396`), which
+every rank executes once per step in both placements (also a rank with no
+ions, since the species loop that may skip is above it), the flag is reduced
+with one `MPI_Allreduce` of an `int` (`MPI_MAX`); if any rank failed, every
+rank writes its ledger row (collective, consistent), the codes are gathered
+to rank 0 as 4 `long long` per rank (`MPI_Gather`, not strings), rank 0
+prints one line per failing rank (`bh_proto: failure on rank r: <policy> at
+step s (species i), count c`) and every rank calls `raise::Error` ->
+`MPI_Abort`. Under the warn policies the record is informational and the run
+continues (nothing changed there).
+
+Tests (non-MPI build: the asymmetric case cannot be produced, so the
+mechanism is tested by its code path on the existing inputs, outcomes
+unchanged). Facts: `HADRONIC::t12_capacity` (`t12.sh`): `on_capacity =
+error` aborts at step 1239 as in rounds 1 and 2 with the same message, the
+gathered failure line of rank 0 and the abort message ("every rank wrote its
+ledger row; the run aborts") are in the log, the ledger row of the abort
+step is written exactly once (no local write before the collective one),
+n_dropped 4, npart 60 / 60, identity 0; the warn run is unchanged (n_dropped
+3044). `HADRONIC::r2_tiny_pair_weight` (`r2_tiny.sh`) gains a derived
+`on_max_events = error` run: abort at step 0, exactly one ledger row
+(n_capped_events 16, n_events = n_spawned = 128 = 16 x 8), identity 3.1e-35,
+the failure line in the log: 3 runs, every check passed. The asymmetric
+two-rank negative test (one rank at capacity, the other not, under a
+timeout) belongs to the Rusty G3 job: its input
+`pgens/bh_proto/inputs/mpi/g3_asymmetric_capacity_2ranks.toml` is prepared
+(two domains in x, absorbing walls, production placement, 16 ions per domain
+drifting at c along +x; rank 1 receives rank 0's ions in addition to its own
+and exhausts a pair capacity of 40 while rank 0, with about 28 pairs due,
+does not), with the expected outcome in its header and in `inputs/mpi/README.md`.
+Convention: the asymmetry comes from the transport (the generator injects
+the same ions on every domain; a key confining ions to one domain was not
+added).
+
+### 00.3 C-MPI-3 (should fix): the absorbing guard refused the production placement
+
+Mechanism (fact): the construction-time refusal tested `any_absorbing &&
+ndomains > 1` regardless of the placement.
+
+Fix (`7b55468`): the guard is the predicate
+`bhproto::poststep_harvest_refused(absorbing, mpi_build, ndomains, placement)`
+(`bh_proto_params.h:449`): refused only for absorbing boundaries at the
+**post-step** placement in an MPI build, for **any** domain count (the
+referee's qualification: a one-rank periodic self-exchange goes through the
+same send and receive buffers and can refill a dead slot before the hook; the
+non-MPI exchange never receives, `containers/comm/particles.cpp` is
+MPI-only, so the non-MPI build is safe at any domain count); the production
+placement is allowed with absorbing boundaries and any number of domains
+now that C-MPI-1 clears the remnants of the transported particles. The
+message names the placement switch (`pgen.hpp:714-725`).
+
+Tests: `HADRONIC::bh_proto_params` checks the predicate on the 16
+combinations of (absorbing, MPI build, 1 or 4 domains, placement): 2 refused
+(absorbing + MPI + poststep at 1 and 4 domains), the production placement
+never refused (16 checks); it parses the two prepared MPI inputs under
+`pgens/bh_proto/inputs/mpi/` (accepted, production placement, 2 and 4
+domains): the parser test is now 118 checks (100 + 16 + 2). The four-rank
+absorbing production input for T14b-lite
+(`t14b_absorb_production_4ranks.toml`: four domains in x, absorbing walls,
+production placement, 60 steps) is prepared, not run.
+
+### 00.4 Documentation items
+
+- The production-placement Gauss "before" sample (round 2, R6) is the
+  sample taken at the end of the previous post-step, which is a full push
+  and field update earlier than the stage that spawns; so the exact bracket
+  claim of 0.1 R6 ("max|R - R0| unchanged across the births to the printed
+  16 digits") holds for the registered **post-step** run only. At the
+  production placement the registered check is the weaker one (the
+  depositing count increased across the first-birth step); the before and
+  after residuals of that run differ by the plasma's own evolution over one
+  step.
+- Kernel header comment of the dead branch: "absorbed this step, or a
+  cleared remnant (zero payloads)" (00.1).
+- `inputs/mpi/README.md` lists the prepared MPI inputs with their expected
+  outcomes.
+
+### 00.5 Suites with the round-3 HEAD
+
+{{R3_SUITES}}
+
+No test of rounds 1 and 2 changed in its criterion or its tolerance: the
+round-3 changes to the test tree are additive (the kernel group `cmpi1`, the
+C-MPI-2 checks appended to `t12.sh` and the derived `on_max_events = error`
+run appended to `r2_tiny.sh`, the predicate and input checks appended to
+the parser test). Fact: `git diff 62c725e..HEAD --stat -- tests/` lists
+`tests/kernels/bh_pairs.cpp`, `tests/kernels/CMakeLists.txt`,
+`tests/hadronic/t12.sh`, `tests/hadronic/r2_tiny.sh`,
+`tests/hadronic/bh_proto_params.cpp`, `tests/hadronic/CMakeLists.txt`, with
+insertions only in the drivers and the parser test (280 insertions, 3 deletions; the 3 deletions are the one-line registrations rewritten in the two CMake files, the `foreach` group list and the parser test's argument; the drivers and the parser test have insertions only).
 
 ## 0. Round 2: resolution log, re-registered results, MPI readiness, production placement
 
