@@ -1,0 +1,8 @@
+bh_reduction_timing: execution space OpenMP, concurrency 4
+PASS: npart 100000: reducer (double-double) vs atomic double sums agree, max |rel. diff| = 6.661e-16 (tolerance 1e-12)
+(diag) npart 100000: median wall time over 20 repetitions: reducer 0.554 ms, atomic_add 13.368 ms (ratio reducer/atomic 0.04); min reducer 0.459 ms, min atomic 11.439 ms; sums E_drag 1.498406272008e+05 (atomic 1.498406272008e+05), n_processed 100000
+PASS: npart 100000: reducer value independent of the chunking, |rel. diff| = 0.000e+00 (tolerance 1e-15)
+PASS: npart 1000000: reducer (double-double) vs atomic double sums agree, max |rel. diff| = 1.843e-14 (tolerance 1e-12)
+(diag) npart 1000000: median wall time over 20 repetitions: reducer 5.275 ms, atomic_add 124.690 ms (ratio reducer/atomic 0.04); min reducer 4.729 ms, min atomic 102.185 ms; sums E_drag 1.499131121848e+06 (atomic 1.499131121848e+06), n_processed 1000000
+PASS: npart 1000000: reducer value independent of the chunking, |rel. diff| = 0.000e+00 (tolerance 1e-15)
+bh_reduction_timing summary: sums agree

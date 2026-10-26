@@ -19,9 +19,9 @@ or open question. No pre-registered tolerance is adjusted.
 | 1 | the rest-frame laws g, h, the recoil moment q_k by quadrature, anchors A1 to A5, the fixture `qk_table.txt` | done, `2893cfb` |
 | 2 | CDF tables, the two sampling chains on the host, A7, A9, the `moments_*` and `hist_*` fixtures | done (one registered failure, A7 weighted vs I/J, explained) |
 | 3 | the UR anchor (Kelner and Aharonian 2008 eqs. 58 to 64), A8, the `ka2008_*` fixtures | done, `21ae3a2` |
-| 4 | device tables, the device sampler, `spectrum = restframe` in the kernel, A11, A12 | done (commit hash in the stage-5 entry) |
-| 5 | the reduction timing harness (G3 open item) | not started |
-| 6 | closure: full ctest single and double, the report completed | not started |
+| 4 | device tables, the device sampler, `spectrum = restframe` in the kernel, A11, A12 | done, `a689d45` |
+| 5 | the reduction timing harness (G3 open item) | done (commit hash in the stage-6 entry) |
+| 6 | closure: full ctest single and double, the report completed | in progress |
 
 ## 1. Environment (facts, measured in the cloud container)
 
@@ -433,3 +433,45 @@ The step-3 suites with `spectrum = delta` (`KERNELS::bh_pairs_*`,
 Build check of the generator plumbing (fact): `cmake -S . -B build-bhproto -G
 Ninja -D TESTS=OFF -D output=ON -D precision=single -D mpi=OFF -D pgen=bh_proto`
 and `cmake --build build-bhproto --target entity.xc`: no errors.
+
+Engine smoke run (fact): `pgens/bh_proto/inputs/pairs_smoke.toml` with
+`spectrum = "restframe"` on the `build-bhproto` engine (single precision, OpenMP):
+exit 0; "rest-frame sampler tables: 113 eps' nodes, 256 x 256 cells, 5067
+cumulative nodes, no photon-energy table, 30.1 MB on the device"; 244
+kernel-born pairs, E_drag 266.4219, E_pairs 278.4935, E_absorbed 15.8412,
+E_round -6.6e-7, identity residual at the ledger's round-off, 1806 sampler
+attempts (7.40 per pair), 0 overflow, 0 NaN payload entries. No engine test
+input was added (the step-3 run-based tests keep `spectrum = delta`).
+
+- stage 4 done, commit `a689d45`, pushed.
+
+### Stage 5 (the reduction timing harness)
+
+- stage 5 started, HEAD `a689d45`.
+
+`tests/kernels/bh_reduction_timing.cpp` (`KERNELS::bh_reduction_timing`, log
+`logs-step4-stage5-bh_reduction_timing.log`): the per-ion contribution is a
+deterministic pseudo-random (weight, value) pair from splitmix64 of the index,
+accumulated into three ledger entries by the kernel's double-double reducer
+(`Kokkos::parallel_reduce` with the `LossLedger` value type) and into three
+plain doubles by `Kokkos::atomic_add`; 20 repetitions after one warm-up, wall
+times around fenced launches. Facts (OpenMP, 4 threads, this container):
+
+| npart | reducer median | atomic_add median | ratio | min reducer / min atomic | sums agree | chunking independence |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1e5 | 0.554 ms | 13.368 ms | 0.04 | 0.459 / 11.439 ms | 6.7e-16 (tol 1e-12), pass | 0, pass |
+| 1e6 | 5.275 ms | 124.690 ms | 0.04 | 4.729 / 102.185 ms | 1.8e-14, pass | 0, pass |
+
+Interpretation (diagnostic, no pass/fail on time): on the OpenMP backend the
+atomic adds on three shared doubles serialise the threads (contention), and the
+reducer is 24 times faster; on a GPU the comparison would differ (hardware
+atomics on double, warp-level reductions), so the G3 question is settled for
+the CPU builds only. The double-double reducer gives the same value whatever
+the chunking (0 difference), while the atomic sum is order-dependent at the
+1e-14 level seen in the comparison.
+
+- stage 5 done (commit hash in the stage-6 entry).
+
+### Stage 6 (closure)
+
+- stage 6 started after the stage-5 commit.

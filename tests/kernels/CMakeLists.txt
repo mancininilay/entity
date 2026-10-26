@@ -81,3 +81,6 @@ foreach(grp tables a11 identity a12 spectrum)
   add_test(NAME "KERNELS::bh_sampler_${grp}" COMMAND test-kernels-bh_sampler.xc ${grp})
 endforeach()
 set_tests_properties("KERNELS::bh_sampler_a12" PROPERTIES TIMEOUT 3600)
+# Bethe-Heitler ledger reduction timing harness (P2 step 4, stage 5; G3 open item):
+# the double-double reducer vs Kokkos::atomic_add on double, a diagnostic
+gen_test(bh_reduction_timing)
