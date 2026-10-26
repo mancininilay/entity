@@ -487,8 +487,24 @@ namespace {
 
 } // namespace
 
-auto main() -> int {
+auto main(int argc, char* argv[]) -> int {
+  // optional group selection (ctest registers one entry per group): budget,
+  // kinematics, efficiency, a9, a7w (weighted chain), a7 (Monte Carlo at every node)
+  // a bath name among the arguments restricts the run to that bath
+  std::vector<std::string> groups, bath_filter;
+  for (int i = 1; i < argc; ++i) {
+    const std::string a(argv[i]);
+    if (a == "mono05" || a == "mono03" || a == "powerlaw" || a == "blackbody" || a == "mono05_mu100") {
+      bath_filter.push_back(a);
+    } else {
+      groups.emplace_back(a);
+    }
+  }
+  auto want = [&groups](const char* g) {
+    return groups.empty() || std::find(groups.begin(), groups.end(), std::string(g)) != groups.end();
+  };
   try {
+    std::setvbuf(stdout, nullptr, _IOLBF, 0);
     const auto t_start = std::chrono::steady_clock::now();
     auto       t0      = std::chrono::steady_clock::now();
     auto       T       = std::make_shared<const rf::RestFrameTables>(rf::RestFrameTables::build());
@@ -520,6 +536,10 @@ auto main() -> int {
 
     std::vector<BathSetup> setups;
     for (const auto& cb : rf::canonical_baths()) {
+      if (!bath_filter.empty() &&
+          std::find(bath_filter.begin(), bath_filter.end(), cb.name) == bath_filter.end()) {
+        continue;
+      }
       setups.push_back(make_setup(cb, T, cum));
       const auto& S = setups.back();
       diag("bath %s: %zu Gamma nodes in [%.6f, %.6f], Gamma_th %.6f; eps tables %s", cb.name.c_str(), S.H.size(),
@@ -527,13 +547,31 @@ auto main() -> int {
            S.eps_tables->mono ? "mono (none)" : (std::to_string(S.eps_tables->n_eps) + " cells in ln eps").c_str());
     }
 
-    test_budget_nodes(*T);
-    test_budget_gamma(setups, cum_laws, cum_tab);
-    test_kinematics(setups[2]);
-    report_efficiency(setups);
-    test_A9(setups);
-    test_A7_weighted(setups, cum_tab);
-    test_A7(setups, cum_tab);
+    if (want("budget")) {
+      test_budget_nodes(*T);
+      test_budget_gamma(setups, cum_laws, cum_tab);
+    }
+    if (want("kinematics")) {
+      std::size_t ib = 0;
+      for (std::size_t i = 0; i < setups.size(); ++i) {
+        if (setups[i].cb.name == "powerlaw") {
+          ib = i;
+        }
+      }
+      test_kinematics(setups[ib]);
+    }
+    if (want("efficiency")) {
+      report_efficiency(setups);
+    }
+    if (want("a9")) {
+      test_A9(setups);
+    }
+    if (want("a7w")) {
+      test_A7_weighted(setups, cum_tab);
+    }
+    if (want("a7")) {
+      test_A7(setups, cum_tab);
+    }
 
     std::printf("\nbh_chain summary: contract items %d passed, %d failed; implementation-chosen checks %d passed, %d "
                 "failed; %.0f s\n",

@@ -222,7 +222,7 @@ namespace {
       // the eps tables at the requested Gamma (and a neighbour) only
       s.B = std::make_shared<rf::BathEpsTables>(rf::BathEpsTables::build_at(*s.bath, *extra_gammas, *s.cum));
     } else {
-      s.B = std::make_shared<rf::BathEpsTables>(rf::BathEpsTables::build(*s.bath, s.H, *s.cum, 512, 8, o.threads));
+      s.B = std::make_shared<rf::BathEpsTables>(rf::BathEpsTables::build(*s.bath, s.H, *s.cum, 2048, 8, o.threads));
     }
     s.S = std::make_shared<rf::HostSampler>(s.bath, s.H, s.T, s.cum, s.B);
     return s;

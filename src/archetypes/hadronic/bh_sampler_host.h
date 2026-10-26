@@ -707,7 +707,7 @@ namespace arch::bh::rf {
     std::vector<double> y;      // log10(Gamma - Gamma_th) at the rate-table nodes
     std::vector<double> gamma;  // the nodes
     std::vector<double> ln_eps; // n_eps + 1 edges
-    int                 n_eps { 512 };
+    int                 n_eps { 2048 };
     std::vector<double> cdf_u; // [n_gamma][n_eps + 1] unweighted chain
     std::vector<double> cdf_w; // [n_gamma][n_eps + 1] D_max-weighted chain
 
@@ -749,13 +749,13 @@ namespace arch::bh::rf {
     }
 
     static BathEpsTables build(const PhotonBath& bath, const HadronicTablesHost& H, const SamplerCumulatives& cum,
-                               int n_eps = 512, int gl_cell = 8, unsigned n_threads = 0) {
+                               int n_eps = 2048, int gl_cell = 8, unsigned n_threads = 0) {
       return build_at(bath, H.gamma, cum, n_eps, gl_cell, n_threads);
     }
 
     /// the same at an explicit, increasing list of Gamma nodes (> Gamma_th)
     static BathEpsTables build_at(const PhotonBath& bath, const std::vector<double>& gammas,
-                                  const SamplerCumulatives& cum, int n_eps = 512, int gl_cell = 8,
+                                  const SamplerCumulatives& cum, int n_eps = 2048, int gl_cell = 8,
                                   unsigned n_threads = 0) {
       BathEpsTables B;
       B.gamma_th = bath.gamma_th();

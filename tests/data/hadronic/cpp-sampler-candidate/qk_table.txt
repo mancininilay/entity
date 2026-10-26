@@ -1,10 +1,10 @@
 # format: "bh-qk-table"
 # format_revision: 1
 # producer: "entity-cpp"
-# version: "4b2f1291581f1f48b8b8d999c59a6227d1af1bd1"
+# version: "95a319d00e25b62edf803252e04999eacd63ce8d-mod"
 # status: "cpp_sampler_candidate"
 # grid: {"variable": "log10(eps_prime - 2)", "nodes_per_decade": 64, "delta_min": 1e-4, "eps_prime_max": 1000, "endpoint_appended": true}
-# laws: {"energy": "Blumenthal 1970 eq. 10 (= MOK 1969 3D-1000), Z = 1 unscreened", "angular": "Sauter-Gluckstern-Hull, MOK 1969 3D-2000, Z = 1 unscreened; signs and normalisation fixed against the numerical integral of Heitler 1954 eq. 26.6", "q_k": "eps_prime - 2 <p cos theta>_h", "normalisation": "Maximon 1968 sigma~"}
+# laws: {"energy": "Blumenthal 1970 eq. 10 (= MOK 1969 3D-1000), Z = 1 unscreened", "angular": "Sauter-Gluckstern-Hull, MOK 1969 3D-2000, Z = 1 unscreened; signs and normalisation fixed against the numerical integral of Heitler 1954 eq. 26.6", "q_k": "eps_prime - 2 <p cos theta>_h", "normalisation": "the laws' own integrals (sigma_from_g, int h); Maximon's sigma~ reported in sigma_maximon"}
 # quadrature: {"gl_order": 16, "energy_panels": 16, "energy_variable": "E = 1 + (eps_prime - 2) sin^2(pi s / 2)", "h_t_angle": 0.5, "angle_variable": "t = ln(1 - cos theta + (E - p)/p)", "columns_format": "%.12e"}
 # node_count: 449
 # columns: ["eps_prime", "q_k", "q_k_eq37", "mean_E_minus", "mean_p_cos_theta", "sigma_from_g", "sigma_maximon"]

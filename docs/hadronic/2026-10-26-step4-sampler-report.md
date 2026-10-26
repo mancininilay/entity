@@ -164,3 +164,129 @@ available in the container: by the contract, A6 is then replaced by A1 plus A8.
   integrals instead of Maximon's series), `qk_table.txt` regenerated
   (`data_sha256` `71eb7856c4d2e4a8a760960aec7a1f28b9165af41d152e8c2fd941a889f65797`);
   the stage-1 test still passes 20 of 20 with unchanged printed numbers.
+
+#### What was implemented (stage 2)
+
+`src/archetypes/hadronic/bh_sampler_host.h` (namespace `arch::bh::rf`, host-only,
+Kokkos-free):
+
+| content | class / function |
+| --- | --- |
+| SplitMix64 generator, uniform in (0, 1) as (53 bits + 1/2) 2^-53 | `SplitMix64` |
+| inversion of a mixture of tabulated CDFs (bisection over the edges, linear inside a cell) | `invert_mixture` |
+| ln Phi, ln Psi2 = ln int k^2 sigma~, ln Psir = ln int k sigma~ sqrt(k^2 - 4) on a fine grid in t = ln(k - 2), h = 0.005 from k - 2 = 1e-8 to 998 (5067 nodes), linear in t; inversions for both chains (`invert_Phi`, `invert_F` with F = Gamma Psi2 - eps Phi + Gamma beta Psir, the D_max-weighted cumulative) | `SamplerCumulatives` |
+| the CDF tables of the rest-frame laws: eps' nodes 16 per decade in log10(eps' - 2) from 1e-4 plus the cap (113 nodes); energy CDF on s in [0, 1] with E' = 1 + (eps' - 2) sin^2(pi s/2), 256 cells; angular CDF on tau in [0, 1] with t = ln(1 - cos theta' + w) = ln w + tau (ln(2 + w) - ln w), w = (E' - p')/p', 256 cells, at every s node (end nodes evaluated half a cell inside); the law-2 integral replaces the closed form where p' < 1e-3; mixture interpolation in ln(eps' - 2) and in s; the table-defined moments by quadrature (`moments_at`) | `RestFrameTables` |
+| the table-defined q_k on a fine eps' grid (8 per interval) and cumulatives phi, psi with an arbitrary q_k; the direct-boost loss rate I(Gamma) with the step-1 outer quadrature (spec T3b) | `QkFineGrid`, `QkCumulatives`, `direct_boost_I` |
+| photon-energy CDFs of a broad bath at every Gamma node of the rate table (or at an explicit Gamma list), common grid in ln eps (512 cells) from max(eps_min, 2/(Gamma_max (1 + beta_max))) to eps_max, both chains; mixture in y = log10(Gamma - Gamma_th) | `BathEpsTables` |
+| the five step-1 acceptance baths by name | `canonical_baths`, `canonical_bath` |
+| rotation (orthonormal basis about k^', then about u^ = z) and boost along u^ | `perpendicular_basis`, `direction_about`, `boost_along` |
+| the two chains of contract section 2, D in double from the lab energies, D_min and D_max per event, the attempt counter and the rejection loop (bounded, 1e5 attempts) | `HostSampler::draw(Gamma, weighted, rng)`, `PairEvent` |
+
+Sizes (facts): 29041 + 7463537 table entries = 30.0 MB in single precision
+(the device budget is 64 MB); build 8 to 25 s on 4 threads depending on the
+load; 5067 cumulative nodes; 512 x 466 photon-energy entries per chain for a
+broad bath. Cost per draw (fact, one core): 0.65 to 1.0 us for the unweighted
+chain; the weighted chain costs 1/efficiency times that.
+
+`tools/bh_sampler_dump`: `moments --bath NAME` (section 4 item 2) and `hist
+--bath NAME --gamma G` (item 3), `tools/bh_sampler_fixtures.sh` drives the
+whole set (Bash 3.2, fails when nothing runs). `tests/archetypes/bh_chain.cpp`
+(`ARCHETYPES::bh_chain_{budget,kinematics,efficiency,a9,a7w,a7}`, one ctest
+entry per group, `a7` with TIMEOUT 7200): the accuracy budget, A5b, A7, A9,
+kinematics, determinism, efficiency.
+
+#### Anchors and budget (facts, measured; logs `docs/hadronic/logs-step4-stage2-*.log`)
+
+| item | quantity | measured | tolerance | verdict |
+| --- | --- | --- | --- | --- |
+| budget | <E'-> tables vs laws, every eps' node | 2.7e-15 | 1e-3 | pass |
+| budget | <p' cos theta'> tables vs laws, every node | 1.64e-5 (at eps' = 2.00012) | 1e-3 | pass |
+| budget | q_k tables vs laws, every node | 5.98e-4 (at eps' = 1000: 0.0443249 vs 0.0442984; 7.3e-5 at 19.8, 3.1e-6 at 2.32) | 1e-3 | pass |
+| budget | <D> tables vs laws by quadrature over the chain, every Gamma node of the five tables | 9.64e-4 (mono03 at Gamma = 146, the top of the table; mono05 9.63e-4 at Gamma = 85; powerlaw 4.9e-4; blackbody 4.6e-4; mu100 4.4e-5) | 1e-3 | pass (little margin at the upper edges: the q_k budget at eps' ~ 1000 is the driver) |
+| A5b | direct-boost loss table I (laws' q_k) vs I_exact of step 1 (eq. 3.7 q_k), every node | 4.83e-3 (mono05 at Gamma = 44.0 and mono03 at 75.4; powerlaw 3.9e-3, blackbody 3.8e-3, mu100 4.0e-3); I_tables vs I_exact 4.06e-3 | 0.5% | pass (little margin: this is the fit error of eq. 3.7, see below) |
+| A7 | E_p[1/D] (I/J) = 1, weighted chain, Gamma_p in {1.05 Gamma_th, 3, 10}, five baths, N = 1e6 accepted | **18.3 s.e.** (powerlaw at 1.05 Gamma_th: 1.00309; mono05 1.00166 / 1.00398 / 0.99899 at 2.23 / 3 / 10, i.e. 15.6 / 13.1 / 1.3 s.e.; mono03 13.5 s.e. at 3.58; blackbody 12.7 s.e. at 1.05; mu100 15.5 s.e.) | 4 s.e. | **FAIL as registered** |
+| A7 (impl) | E_p[1/D] <D>_chain = 1 with <D>_chain the chain's own quadrature | 1.76 s.e. max | 4 s.e. | pass |
+| A9 | D >= 2 - eps_max over 1e7 draws per bath (10 Gamma each) | 0 violations in 5e7 draws; min D 2.0288 (mono05), 3.3793 (mono03), 0.5028 (powerlaw, bound 0.5), 0.1098 (blackbody, bound 0.1), 2.0956 (mu100); 1/min D 0.49, 0.30, 1.99, 9.10, 0.48 | 0 | pass |
+| A9 (impl) | D inside [D_min, D_max](eps, eps') | 0 outside | 0 | pass |
+| kinematics (impl) | lab leptons on shell 1.6e-14; inverse boost returns E'-, E'+ 6.6e-15; photon |k| = eps and eps' under the inverse boost 4.4e-16; D as stored 0 | | 1e-9 | pass |
+| determinism (impl) | same seed, 1000 weighted draws | bitwise identical | | pass |
+
+**The registered A7 failure (fact and interpretation).** E_p[1/D] is the
+weighted chain's estimate of 1/<D>_true, where <D>_true is the mean loss of the
+Born laws (the chain's own quadrature reproduces it to 1e-3, and the unweighted
+Monte Carlo agrees with that quadrature within 1.8 s.e.). The step-1 ratio I/J
+uses the Chodorowski eq. 3.7 fit for q_k, which the Born laws undershoot by 0.3
+to 0.55% for eps' between 2.3 and 60 (A4 of stage 1), so I/J exceeds <D>_true by
+0.1 to 0.4% near threshold and the product E_p[1/D] (I/J) sits 0.1 to 0.4% above
+1: with N = 1e6 that is 13 to 18 standard errors. The spec's T16 identity is an
+internal consistency of the weighted sampler and holds (1.8 s.e.); the failure
+measures the inconsistency between the step-1 loss rate (fit) and the sampler's
+Born law. It is reported as a registered failure, not reinterpreted. Decision
+for the mastermind: either (a) rebuild the step-1 rate tables with the
+machinery's q_k (phi and psi from the Born laws; the sampler and the kernel's
+loss would then agree to the 1e-3 budget, and A5b would read ~1e-3), or (b)
+keep eq. 3.7 in the tables and accept a 0.1 to 0.5% mismatch between the pair
+number and the paid energy in the budget source (the T11 identity is unaffected,
+it is an identity of the ledger). The same mismatch shows up in the A7
+unweighted check as |<D>_MC - I/J| up to 0.5% (inside the registered 1%).
+
+**Acceptance efficiency of the weighted chain (fact, 1e6 attempts per point):**
+
+| bath | Gamma_p: efficiency |
+| --- | --- |
+| mono05 | 2.130: 0.936; 2.207: 0.762; 2.458: 0.573; 3.474: 0.320; 7.59: 0.107; 24.3: 0.0195; 91.8: 0.0025 (1850 us per accepted draw) |
+| mono03 | 3.417: 0.937; 3.974: 0.576; 5.689: 0.322; 12.6: 0.107; 40.5: 0.0195; 153: 0.0025 |
+| powerlaw | 1.048: 0.848; 1.274: 0.406; 1.823: 0.240; 3.665: 0.115; 9.85: 0.0475; 30.6: 0.0177 |
+| blackbody | 1.012: 0.664; 1.292: 0.394; 1.870: 0.306; 3.596: 0.195; 8.75: 0.090; 24.2: 0.0297 |
+| mono05_mu100 | 2.127: 0.965; 2.463: 0.572; 3.119: 0.377; 5.05: 0.188 |
+
+Interpretation: efficiency = <D>/<D_max> under the weighted marginal; D_max =
+Gamma eps' - eps + Gamma beta sqrt(eps'^2 - 4) is of order 2 Gamma eps' while
+<D | eps'> = q_k (Gamma - eps/eps') is of order Gamma q_k ~ 4 Gamma ln eps'/eps',
+so the efficiency falls like 2 ln eps'/eps'^2 with the upper edge of the eps'
+range: 0.3 to 0.9 near threshold (the spec's 0.3 to 0.5 at eps' = 2 to 3), 0.1
+at eps'_hi ~ 7, 0.02 at eps'_hi ~ 25, 0.0025 at the envelope edge eps'_hi = 92.
+Open question for the mastermind: at Gamma_p near the envelope edge the budget
+source will spend ~400 rejected draws per pair; a tighter envelope than D_max
+(for instance Gamma (eps' + beta sqrt(eps'^2 - 4) q-weighted) or a direct
+sampling of the longitudinal-momentum-weighted angular law) would raise it, but
+changes the registered chain; not done here. Stage 4 must bound the device loop
+at >= 1e4 attempts and count the overflow.
+
+Deviation from contract section 4 item 2 (stated): the moments fixtures give
+the weighted-chain columns from a budget of 1e6 *attempts* per node (N_accepted
+and N_attempts are columns), not 1e6 accepted draws, because at the upper edges
+1e6 accepted draws would cost 500 to 2000 s per node; the unweighted columns use
+N = 1e6 as registered.
+
+**A7, unweighted chain at every node (fact, N = 1e6 per node, logs
+`logs-step4-stage2-bh_chain-a7-neps512.log` and `-a7-broad-neps2048.log`):**
+
+| bath | nodes | max \|<D>_MC/(I/J) - 1\| | nodes failing max(1%, 4 s.e.) | max \|dev\|/s.e. vs I/J | max \|dev\|/s.e. vs the chain's quadrature |
+| --- | --- | --- | --- | --- | --- |
+| mono05 | 466 | 8.05e-3 (Gamma 50.4) | 0 | 19.8 | 3.2 |
+| mono03 | 465 | 9.47e-3 (Gamma 118.4) | 0 | 20.5 | 3.6 |
+| powerlaw | 429 | 4.43e-3 (Gamma 1.22) | 0 | 19.1 | 3.5 (7.9 with 512 photon-energy cells, see below) |
+| blackbody | 406 | 4.55e-3 (Gamma 1.08) | 0 | 17.2 | 3.5 (3.2 with 512 cells) |
+| mono05_mu100 | 403 | 4.44e-3 (Gamma 3.02) | 0 | 20.6 | 3.0 |
+
+Verdict A7 (unweighted): pass at every one of the 2169 nodes against the
+registered max(1%, 4 s.e.); the worst relative deviation 0.95% is at the upper
+edge of mono03 where the standard error is 0.1 to 0.2 (the D distribution is
+heavy-tailed, D_max ~ 2 Gamma eps'_hi), i.e. it passes through the 1% branch
+of the criterion by a small margin and through the 4 s.e. branch comfortably.
+The 17 to 21 s.e. significance of the deviations from I/J (near threshold,
+where the standard error is small) is the eq. 3.7 fit discrepancy discussed
+above; against the chain's own quadrature every node is within 3.6 s.e. (2169
+trials, consistent with sampling noise).
+
+Correction made during stage 2 (fact): with 512 cells in ln eps the photon-energy
+CDF of the broad baths left a bias of 2.4e-3 in <D> near the powerlaw threshold
+(7.9 s.e. at Gamma = 1.14 against the chain's quadrature, which integrates
+over eps exactly: the density rises like (eps - eps_th)^4 within a few cells of
+the onset and a piecewise-constant density per cell misplaces it); with 2048
+cells the deviation is 3.5 s.e. and the table is 2048 x 429 x 2 x 4 bytes = 7.0
+MB per broad bath. The quadrature-level budget check does not probe the
+photon-energy table (it integrates over eps with the exact density): this is a
+gap of the budget check, stated; the Monte Carlo comparison against the chain's
+quadrature covers it at the 3 s.e. level.

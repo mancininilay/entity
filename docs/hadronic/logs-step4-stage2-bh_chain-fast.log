@@ -1,0 +1,73 @@
+[DIAG] tables: 113 eps' nodes (16 per decade), n_s = 256, n_tau = 256; 29041 + 7463537 entries (30.0 MB in single precision); built in 24.6 s
+[DIAG] cumulatives: 5067 nodes in t = ln(eps' - 2), h = 0.0050; Phi(1000) = 7.0107780549e+06 (step-1 Cumulatives: 7.0107780549e+06)
+[DIAG] q_k grids: laws at 449 nodes, tables at 897 fine nodes (8 per interval), 12.9 s
+[DIAG] bath mono05: 466 Gamma nodes in [2.130009, 91.810223], Gamma_th 2.125000; eps tables mono (none)
+[DIAG] bath mono03: 465 Gamma nodes in [3.416954, 153.014134], Gamma_th 3.408333; eps tables mono (none)
+[DIAG] bath powerlaw: 429 Gamma nodes in [1.047817, 30.610669], Gamma_th 1.041667; eps tables 512 cells in ln eps
+[DIAG] bath blackbody: 406 Gamma nodes in [1.012206, 24.170216], Gamma_th 1.001316; eps tables 512 cells in ln eps
+[DIAG] bath mono05_mu100: 403 Gamma nodes in [2.126533, 5.050000], Gamma_th 2.125000; eps tables mono (none)
+
+== accuracy budget: table moments vs the laws at every eps' node ==
+[PASS] budget: <E'-> from the interpolated CDFs vs quadrature of the laws, every eps' node: max |rel. dev.| = 2.664535e-15 (tol 1.000e-03)
+[PASS] budget: <p' cos theta'> from the interpolated CDFs vs quadrature, every eps' node: max |rel. dev.| = 1.644538e-05 (tol 1.000e-03)
+[PASS] budget: q_k from the interpolated CDFs vs quadrature, every eps' node: max |rel. dev.| = 5.978786e-04 (tol 1.000e-03)
+[DIAG] budget: worst nodes eps' = 2.36517 (<E>), 2.00012 (<p cos>), 1000 (q_k); 113 nodes in 2.5 s
+[DIAG] budget: eps' =    2.00010  q_k table 1.99997500  laws 1.99997500  (+1.03e-09); <p cos> -1.64e-05; <E> +1.11e-15
+[DIAG] budget: eps' =    2.00562  q_k table 1.99859407  laws 1.99859395  (+5.77e-08); <p cos> -1.64e-05; <E> +8.88e-16
+[DIAG] budget: eps' =    2.31623  q_k table 1.92109078  laws 1.92108488  (+3.07e-06); <p cos> -1.49e-05; <E> +6.66e-16
+[DIAG] budget: eps' =   19.78279  q_k table 0.64763013  laws 0.64758280  (+7.31e-05); <p cos> -2.47e-06; <E> +0.00e+00
+[DIAG] budget: eps' = 1000.00000  q_k table 0.04432492  laws 0.04429843  (+5.98e-04); <p cos> -2.65e-08; <E> +0.00e+00
+
+== accuracy budget: <D> at every Gamma_p node by quadrature over the chain; A5b ==
+[DIAG] mono05: 466 nodes; <D>_tables/<D>_laws - 1 max 9.632e-04 at Gamma 85.01161; I_laws/I_exact - 1 max 4.833e-03 at Gamma 43.96670; I_tables/I_exact - 1 max 4.058e-03; samples: Gamma 2.1334 -5.70e-07 / -1.48e-04, Gamma 2.1657 -2.71e-06 / -6.73e-04, Gamma 91.8102 +9.37e-04 / -3.59e-03
+[DIAG] mono03: 465 nodes; <D>_tables/<D>_laws - 1 max 9.638e-04 at Gamma 146.05991; I_laws/I_exact - 1 max 4.833e-03 at Gamma 75.41979; I_tables/I_exact - 1 max 4.059e-03; samples: Gamma 3.4229 -5.57e-07 / -1.46e-04, Gamma 3.4778 -2.76e-06 / -6.62e-04, Gamma 153.0141 +9.37e-04 / -3.59e-03
+[DIAG] powerlaw: 429 nodes; <D>_tables/<D>_laws - 1 max 4.899e-04 at Gamma 30.61067; I_laws/I_exact - 1 max 3.927e-03 at Gamma 1.21625; I_tables/I_exact - 1 max 3.963e-03; samples: Gamma 1.0516 -3.78e-06 / -8.24e-04, Gamma 1.0838 -1.38e-05 / -2.46e-03, Gamma 30.6107 +4.90e-04 / -2.01e-03
+[DIAG] blackbody: 406 nodes; <D>_tables/<D>_laws - 1 max 4.580e-04 at Gamma 24.17022; I_laws/I_exact - 1 max 3.763e-03 at Gamma 1.11835; I_tables/I_exact - 1 max 3.796e-03; samples: Gamma 1.0184 -1.55e-05 / -2.64e-03, Gamma 1.0689 -2.89e-05 / -3.67e-03, Gamma 24.1702 +4.58e-04 / -1.91e-03
+[DIAG] mono05_mu100: 403 nodes; <D>_tables/<D>_laws - 1 max 4.439e-05 at Gamma 3.19495; I_laws/I_exact - 1 max 4.019e-03 at Gamma 2.79525; I_tables/I_exact - 1 max 4.057e-03; samples: Gamma 2.1274 -1.82e-07 / -4.25e-05, Gamma 2.1343 -6.87e-07 / -1.63e-04, Gamma 5.0500 +3.38e-05 / -3.21e-04
+[PASS] budget: <D> from the tables vs <D> from the laws by quadrature over the chain, every Gamma_p node of the five rate tables: max |rel. dev.| = 9.638096e-04 (tol 1.000e-03)
+[PASS] A5b: direct-boost loss table I (laws' q_k) vs I_exact of step 1, every node of the five tables: max |rel. dev.| = 4.833295e-03 (tol 5.000e-03)
+[DIAG] budget worst bath mono03; A5b worst bath mono03; I_tables vs I_exact worst 4.059e-03
+
+== kinematics (impl) ==
+[PASS] (impl) kinematics: lab leptons on shell, |E^2 - p^2 - 1|/E^2, 1e5 draws at Gamma_p = 3 (powerlaw): max |rel. dev.| = 1.580499e-14 (tol 1.000e-09)
+[PASS] (impl) kinematics: inverse boost of the lab leptons returns E'-, E'+: max |rel. dev.| = 6.550316e-15 (tol 1.000e-09)
+[PASS] (impl) kinematics: the absorbed photon has |k| = eps and rest-frame energy eps' under the inverse boost: max |rel. dev.| = 4.440892e-16 (tol 1.000e-09)
+[PASS] (impl) kinematics: D = E- + E+ - eps as stored: max |rel. dev.| = 0.000000e+00 (tol 1.000e-12)
+[PASS] (impl) determinism: the same seed gives bitwise-identical events (1000 weighted draws): identical
+
+== acceptance efficiency of the weighted chain vs Gamma_p (diag) ==
+[DIAG] mono05: Gamma 2.1300: 0.9364 (5.5 us/accepted); Gamma 2.1453: 0.8755 (5.8 us/accepted); Gamma 2.2072: 0.7620 (7.1 us/accepted); Gamma 2.4580: 0.5729 (9.9 us/accepted); Gamma 3.4740: 0.3202 (15.5 us/accepted); Gamma 7.5899: 0.1070 (44.5 us/accepted); Gamma 24.2637: 0.0195 (239.3 us/accepted); Gamma 91.8102: 0.0025 (1852.8 us/accepted);
+[DIAG] mono03: Gamma 3.4170: 0.9367 (5.7 us/accepted); Gamma 3.4431: 0.8763 (6.4 us/accepted); Gamma 3.5485: 0.7640 (6.8 us/accepted); Gamma 3.9738: 0.5760 (9.1 us/accepted); Gamma 5.6890: 0.3224 (19.1 us/accepted); Gamma 12.6062: 0.1072 (56.3 us/accepted); Gamma 40.5034: 0.0195 (306.7 us/accepted); Gamma 153.0141: 0.0025 (2137.5 us/accepted);
+[DIAG] powerlaw: Gamma 1.0478: 0.8477 (9.4 us/accepted); Gamma 1.0623: 0.7360 (9.9 us/accepted); Gamma 1.1110: 0.5824 (13.0 us/accepted); Gamma 1.2744: 0.4063 (18.9 us/accepted); Gamma 1.8230: 0.2397 (28.7 us/accepted); Gamma 3.6650: 0.1148 (61.6 us/accepted); Gamma 9.8490: 0.0475 (148.1 us/accepted); Gamma 30.6107: 0.0177 (399.6 us/accepted);
+[DIAG] blackbody: Gamma 1.0122: 0.6635 (9.7 us/accepted); Gamma 1.0339: 0.5631 (11.8 us/accepted); Gamma 1.0986: 0.4714 (13.4 us/accepted); Gamma 1.2919: 0.3943 (17.2 us/accepted); Gamma 1.8696: 0.3064 (22.7 us/accepted); Gamma 3.5960: 0.1947 (34.6 us/accepted); Gamma 8.7548: 0.0901 (74.4 us/accepted); Gamma 24.1702: 0.0297 (220.3 us/accepted);
+[DIAG] mono05_mu100: Gamma 2.1265: 0.9648 (4.9 us/accepted); Gamma 2.1295: 0.9396 (5.4 us/accepted); Gamma 2.1383: 0.8979 (5.6 us/accepted); Gamma 2.1640: 0.8307 (5.7 us/accepted); Gamma 2.2399: 0.7245 (6.7 us/accepted); Gamma 2.4629: 0.5717 (8.3 us/accepted); Gamma 3.1192: 0.3770 (12.8 us/accepted); Gamma 5.0500: 0.1878 (24.6 us/accepted);
+
+== A9: D >= 2 - eps_max over 1e7 draws per bath ==
+[DIAG] A9 mono05: 1e7 draws over 10 Gamma in [2.1300, 91.8102] in 8 s: 0 violations of D >= 1.500, 0 outside [D_min, D_max]; min D = 2.028805, 1/min D = 0.4929
+[DIAG] A9 mono03: 1e7 draws over 10 Gamma in [3.4170, 153.0141] in 9 s: 0 violations of D >= 1.700, 0 outside [D_min, D_max]; min D = 3.379332, 1/min D = 0.2959
+[DIAG] A9 powerlaw: 1e7 draws over 10 Gamma in [1.0478, 30.6107] in 12 s: 0 violations of D >= 0.500, 0 outside [D_min, D_max]; min D = 0.502840, 1/min D = 1.9887
+[DIAG] A9 blackbody: 1e7 draws over 10 Gamma in [1.0122, 24.1702] in 11 s: 0 violations of D >= 0.100, 0 outside [D_min, D_max]; min D = 0.109836, 1/min D = 9.1045
+[DIAG] A9 mono05_mu100: 1e7 draws over 10 Gamma in [2.1265, 5.0500] in 8 s: 0 violations of D >= 1.500, 0 outside [D_min, D_max]; min D = 2.095625, 1/min D = 0.4772
+[PASS] A9: every sampled D >= 2 - eps_max (1e7 draws per bath, five baths): 0 violations
+[PASS] (impl) A9: every sampled D inside [D_min, D_max](eps, eps') (relative slack 1e-9): 0 outside
+
+== A7: the weighted chain, E_p[1/D] <D> = 1 at Gamma_p in {1.05 Gamma_th, 3, 10} ==
+[DIAG] A7 weighted mono05 Gamma 2.23125: N_acc 1000000, E_p[1/D] (I/J) = 1.00166 (15.6 s.e.), E_p[1/D] <D>_chain = 1.00009 (0.8 s.e.), efficiency 0.7345, 1/min D = 0.3486
+[DIAG] A7 weighted mono05 Gamma 3.00000: N_acc 1000000, E_p[1/D] (I/J) = 1.00398 (13.1 s.e.), E_p[1/D] <D>_chain = 1.00005 (0.2 s.e.), efficiency 0.4010, 1/min D = 0.4382
+[DIAG] A7 weighted mono05 Gamma 10.00000: N_acc 1000000, E_p[1/D] (I/J) = 0.99899 (1.3 s.e.), E_p[1/D] <D>_chain = 0.99936 (0.8 s.e.), efficiency 0.0721, 1/min D = 0.4888
+[DIAG] A7 weighted mono03: Gamma_p = 3 outside the table [3.41695, 153.014], skipped
+[DIAG] A7 weighted mono03 Gamma 3.57875: N_acc 1000000, E_p[1/D] (I/J) = 1.00138 (13.5 s.e.), E_p[1/D] <D>_chain = 0.99991 (0.9 s.e.), efficiency 0.7425, 1/min D = 0.1998
+[DIAG] A7 weighted mono03 Gamma 10.00000: N_acc 1000000, E_p[1/D] (I/J) = 0.99925 (1.3 s.e.), E_p[1/D] <D>_chain = 0.99975 (0.4 s.e.), efficiency 0.1473, 1/min D = 0.2827
+[DIAG] A7 weighted powerlaw Gamma 1.09375: N_acc 1000000, E_p[1/D] (I/J) = 1.00309 (18.3 s.e.), E_p[1/D] <D>_chain = 1.00030 (1.8 s.e.), efficiency 0.6216, 1/min D = 1.9751
+[DIAG] A7 weighted powerlaw Gamma 3.00000: N_acc 1000000, E_p[1/D] (I/J) = 0.99944 (0.9 s.e.), E_p[1/D] <D>_chain = 0.99944 (0.9 s.e.), efficiency 0.1391, 1/min D = 1.6471
+[DIAG] A7 weighted powerlaw Gamma 10.00000: N_acc 1000000, E_p[1/D] (I/J) = 1.00060 (0.6 s.e.), E_p[1/D] <D>_chain = 0.99976 (0.2 s.e.), efficiency 0.0468, 1/min D = 1.6400
+[DIAG] A7 weighted blackbody Gamma 1.05138: N_acc 1000000, E_p[1/D] (I/J) = 1.00329 (12.7 s.e.), E_p[1/D] <D>_chain = 0.99972 (1.1 s.e.), efficiency 0.5259, 1/min D = 7.7750
+[DIAG] A7 weighted blackbody Gamma 3.00000: N_acc 1000000, E_p[1/D] (I/J) = 1.00096 (1.9 s.e.), E_p[1/D] <D>_chain = 0.99945 (1.1 s.e.), efficiency 0.2218, 1/min D = 1.7765
+[DIAG] A7 weighted blackbody Gamma 10.00000: N_acc 1000000, E_p[1/D] (I/J) = 1.00064 (0.8 s.e.), E_p[1/D] <D>_chain = 1.00066 (0.8 s.e.), efficiency 0.0790, 1/min D = 1.5052
+[DIAG] A7 weighted mono05_mu100: Gamma_p = 10 outside the table [2.12653, 5.05], skipped
+[DIAG] A7 weighted mono05_mu100 Gamma 2.23125: N_acc 1000000, E_p[1/D] (I/J) = 1.00165 (15.5 s.e.), E_p[1/D] <D>_chain = 1.00008 (0.7 s.e.), efficiency 0.7341, 1/min D = 0.3475
+[DIAG] A7 weighted mono05_mu100 Gamma 3.00000: N_acc 1000000, E_p[1/D] (I/J) = 1.00412 (13.5 s.e.), E_p[1/D] <D>_chain = 1.00019 (0.6 s.e.), efficiency 0.4009, 1/min D = 0.4416
+[FAIL] A7: E_p[1/D] (I/J) = 1 within 4 s.e., weighted chain, Gamma_p in {1.05 Gamma_th, 3, 10}, five baths: max |dev| / s.e. = 1.831695e+01 (tol 4.000e+00)
+[PASS] (impl) A7: E_p[1/D] <D>_chain = 1 within 4 s.e. (the chain's own quadrature): max |dev| / s.e. = 1.755608e+00 (tol 4.000e+00)
+
+bh_chain summary: contract items 6 passed, 1 failed; implementation-chosen checks 7 passed, 0 failed; 283 s

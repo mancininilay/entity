@@ -1,0 +1,22 @@
+[DIAG] tables: 113 eps' nodes (16 per decade), n_s = 256, n_tau = 256; 29041 + 7463537 entries (30.0 MB in single precision); built in 23.6 s
+[DIAG] cumulatives: 5067 nodes in t = ln(eps' - 2), h = 0.0050; Phi(1000) = 7.0107780549e+06 (step-1 Cumulatives: 7.0107780549e+06)
+[DIAG] q_k grids: laws at 449 nodes, tables at 897 fine nodes (8 per interval), 12.1 s
+[DIAG] bath mono05: 466 Gamma nodes in [2.130009, 91.810223], Gamma_th 2.125000; eps tables mono (none)
+[DIAG] bath mono03: 465 Gamma nodes in [3.416954, 153.014134], Gamma_th 3.408333; eps tables mono (none)
+[DIAG] bath powerlaw: 429 Gamma nodes in [1.047817, 30.610669], Gamma_th 1.041667; eps tables 512 cells in ln eps
+[DIAG] bath blackbody: 406 Gamma nodes in [1.012206, 24.170216], Gamma_th 1.001316; eps tables 512 cells in ln eps
+[DIAG] bath mono05_mu100: 403 Gamma nodes in [2.126533, 5.050000], Gamma_th 2.125000; eps tables mono (none)
+
+== A7: <D>_MC at every rate-table node, N = 1e6 ==
+[DIAG] A7 mono05: 466 nodes x 1e6 draws in 324 s; max |<D>_MC/(I/J) - 1| = 8.048e-03 at Gamma 50.44305; max |dev|/s.e. vs I/J 19.8, vs the chain's quadrature 3.2; nodes failing max(1%, 4 s.e.): 0; samples (Gamma, <D>_MC, I/J, <D>_chain): 2.1301 3.75907 3.75949 3.75915 | 2.1657 3.82304 3.82589 3.82330 | 91.8102 29.6838 29.7596 29.6804
+[DIAG] A7 mono03: 465 nodes x 1e6 draws in 205 s; max |<D>_MC/(I/J) - 1| = 9.472e-03 at Gamma 118.36299; max |dev|/s.e. vs I/J 20.5, vs the chain's quadrature 3.6; nodes failing max(1%, 4 s.e.): 0; samples (Gamma, <D>_MC, I/J, <D>_chain): 3.4170 6.53103 6.53179 6.53121 | 3.4778 6.63205 6.63663 6.63222 | 153.0141 49.3574 49.6020 49.4700
+[DIAG] A7 powerlaw: 429 nodes x 1e6 draws in 253 s; max |<D>_MC/(I/J) - 1| = 4.282e-03 at Gamma 1.14344; max |dev|/s.e. vs I/J 19.0, vs the chain's quadrature 7.9; nodes failing max(1%, 4 s.e.): 0; samples (Gamma, <D>_MC, I/J, <D>_chain): 1.0479 0.61920 0.61938 0.61904 | 1.0838 0.79269 0.79465 0.79268 | 30.6107 23.7408 23.7576 23.7215
+[DIAG] A7 blackbody: 406 nodes x 1e6 draws in 163 s; max |<D>_MC/(I/J) - 1| = 4.382e-03 at Gamma 1.26903; max |dev|/s.e. vs I/J 16.4, vs the chain's quadrature 3.2; nodes failing max(1%, 4 s.e.): 0; samples (Gamma, <D>_MC, I/J, <D>_chain): 1.0123 0.28099 0.28156 0.28094 | 1.0689 0.65962 0.66214 0.65969 | 24.1702 21.0485 21.0548 21.0242
+[DIAG] A7 mono05_mu100: 403 nodes x 1e6 draws in 84 s; max |<D>_MC/(I/J) - 1| = 4.439e-03 at Gamma 3.01880; max |dev|/s.e. vs I/J 20.6, vs the chain's quadrature 3.0; nodes failing max(1%, 4 s.e.): 0; samples (Gamma, <D>_MC, I/J, <D>_chain): 2.1265 3.75276 3.75291 3.75280 | 2.1343 3.76694 3.76754 3.76692 | 5.0500 7.5014 7.5066 7.5044
+[PASS] A7: |<D>_MC - I/J| <= max(1%, 4 s.e.) at every rate-table node of the five baths (N = 1e6): see the per-bath failing-node counts
+[PASS] A7: max |<D>_MC/(I/J) - 1| over the 2169 nodes (bath mono03, Gamma 118.362994): max |rel. dev.| = 9.471831e-03 (tol 1.000e-02)
+[FAIL] (impl) A7: max |<D>_MC - <D>_chain| / s.e. over all nodes (the chain's own quadrature): max |dev| / s.e. = 7.853151e+00 (tol 5.000e+00)
+[DIAG] A7: max |<D>_MC - I/J| / s.e. over all nodes = 20.6 (the eq. 3.7 fit of step 1 vs the Born laws, not a sampling error; see A5b)
+
+bh_chain summary: contract items 2 passed, 0 failed; implementation-chosen checks 0 passed, 1 failed; 1066 s
+exit 1

@@ -45,9 +45,15 @@ find_package(Threads REQUIRED)
 target_link_libraries(test-archetypes-bh_restframe.xc PRIVATE Threads::Threads)
 # [fork:hadronic/P2 step 4] the CDF tables and the two sampling chains (accuracy
 # budget, A5b, A7, A9); Monte Carlo at every rate-table node: its own timeout
-gen_test(bh_chain)
+add_executable(test-archetypes-bh_chain.xc bh_chain.cpp)
+add_dependencies(test-archetypes-bh_chain.xc ntt_archetypes ntt_global ntt_metrics)
+target_link_libraries(test-archetypes-bh_chain.xc PRIVATE ntt_archetypes ntt_global ntt_metrics Threads::Threads)
 target_compile_definitions(
   test-archetypes-bh_chain.xc
   PRIVATE BH_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data/hadronic")
-target_link_libraries(test-archetypes-bh_chain.xc PRIVATE Threads::Threads)
-set_tests_properties("ARCHETYPES::bh_chain" PROPERTIES TIMEOUT 7200)
+foreach(grp budget kinematics efficiency a9 a7w a7)
+  add_test(NAME "ARCHETYPES::bh_chain_${grp}" COMMAND test-archetypes-bh_chain.xc ${grp})
+endforeach()
+set_tests_properties("ARCHETYPES::bh_chain_a7" PROPERTIES TIMEOUT 7200)
+set_tests_properties("ARCHETYPES::bh_chain_a7w" PROPERTIES TIMEOUT 3600)
+set_tests_properties("ARCHETYPES::bh_chain_a9" PROPERTIES TIMEOUT 3600)
