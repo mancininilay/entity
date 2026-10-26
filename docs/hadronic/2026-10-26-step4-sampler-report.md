@@ -18,7 +18,7 @@ or open question. No pre-registered tolerance is adjusted.
 | 0 | G3 fallout: the two float literals of `g3_asymmetric_capacity_2ranks.toml`; the T5 dt-convergence split into its own ctest entry with a timeout | done, `6348ba4` |
 | 1 | the rest-frame laws g, h, the recoil moment q_k by quadrature, anchors A1 to A5, the fixture `qk_table.txt` | done, `2893cfb` |
 | 2 | CDF tables, the two sampling chains on the host, A7, A9, the `moments_*` and `hist_*` fixtures | done (one registered failure, A7 weighted vs I/J, explained) |
-| 3 | the UR anchor (Kelner and Aharonian 2008 eqs. 58 to 64), A8, the `ka2008_*` fixtures | not started |
+| 3 | the UR anchor (Kelner and Aharonian 2008 eqs. 58 to 64), A8, the `ka2008_*` fixtures | in progress |
 | 4 | device tables, the device sampler, `spectrum = restframe` in the kernel, A11, A12 | not started |
 | 5 | the reduction timing harness (G3 open item) | not started |
 | 6 | closure: full ctest single and double, the report completed | not started |
@@ -317,3 +317,7 @@ Seeds: 20261026 (SplitMix64(seed + i) unweighted and SplitMix64(seed + 500000 + 
   I/J, 18.3 s.e.), implementation-chosen 8 passed, 0 failed (after the 2048-cell
   correction); the stage-2 fixtures written and listed above; commit hash in the
   stage-3 entry.
+
+### Stage 3 (the UR anchor)
+
+- stage 2 done at commit `29f0d48`; stage 3 started, HEAD `29f0d48`.
