@@ -5,8 +5,14 @@
  *        tables with the precision-safe pending-loss application of III.3
  *        (step 2), the per-ion debt and packet mechanism of III.4 with the
  *        three sources `budget`, `poisson`, `none`, pair creation with the
- *        mean-energy spectra `delta` and `threshold` (III.4; no rest-frame
- *        sampler here), pair insertion into two dedicated species with atomic
+ *        mean-energy spectra `delta` and `threshold` (III.4) and with the
+ *        rest-frame sampler `restframe` (III.6, step 4: sampled lab photon
+ *        energy, rest-frame photon energy, lepton energies and angles, exact
+ *        rotation and boost; the D_max-weighted chain in the budget source,
+ *        the unweighted chain in the poisson source; the pair momenta are no
+ *        longer collinear, the absorbed photon's lab momentum enters
+ *        P_absorbed and the sampled eps the pair payload slot 2), pair
+ *        insertion into two dedicated species with atomic
  *        tickets (II.3), the hadronic RNG pool (II.4) and the full
  *        double-precision ledger with its identity (II.2 step 6).
  *
@@ -78,6 +84,7 @@
 
 #include "arch/kokkos_aliases.h"
 
+#include "archetypes/hadronic/bh_sampler_device.h"
 #include "archetypes/hadronic/bh_tables_device.h"
 #include "framework/containers/particles.h"
 #include "kernels/injectors.hpp"
@@ -105,7 +112,8 @@ namespace kernel::hadronic {
 
   enum class PairSpectrum : int {
     Delta     = 0,
-    Threshold = 1
+    Threshold = 1,
+    RestFrame = 2 // the rest-frame sampler (step 4): sampled eps, eps', energies and angles
   };
 
   /**
@@ -225,6 +233,10 @@ namespace kernel::hadronic {
     // +k u-hat, e+ gets -k u-hat with k = kick * (2 h - 1), h a hash of the
     // ticket in [0, 1); the kick energy is not rounding and lands in E_round
     double kick { 0.0 };
+    // restframe: bound of the weighted chain's rejection loop per packet; an
+    // exhausted loop falls back to the mean-energy law for that packet and is
+    // counted in n_sampler_overflow
+    int max_sampler_attempts { 100000 };
   };
 
   /**
@@ -291,6 +303,8 @@ namespace kernel::hadronic {
     unsigned long long n_applied { 0 };       // applications to u this launch
     unsigned long long n_rng { 0 };           // random numbers drawn from the hadronic pool
     unsigned long long n_k0_trigger { 0 };    // packets spawned on the K0 trigger
+    unsigned long long n_sampler_attempts { 0 }; // restframe: trials of the chains (accepted + rejected)
+    unsigned long long n_sampler_overflow { 0 }; // restframe: packets whose rejection loop hit the bound
 
     KOKKOS_INLINE_FUNCTION
     LossLedger() = default;
@@ -332,6 +346,8 @@ namespace kernel::hadronic {
       n_applied           += o.n_applied;
       n_rng               += o.n_rng;
       n_k0_trigger        += o.n_k0_trigger;
+      n_sampler_attempts  += o.n_sampler_attempts;
+      n_sampler_overflow  += o.n_sampler_overflow;
       return *this;
     }
   };
@@ -463,6 +479,7 @@ namespace kernel::hadronic {
     const HadronicParams           prm;
     PairTargets                    pairs;
     random_number_pool_t           pool;
+    arch::bh::SamplerTables        sampler; // restframe spectrum (valid only when provided)
 
     /**
      * @brief Loss-only construction (source = none; no pair destinations)
@@ -476,7 +493,8 @@ namespace kernel::hadronic {
       , tables { tbl }
       , prm { params }
       , pairs {}
-      , pool { 0x9E3779B97F4A7C15ULL } {}
+      , pool { 0x9E3779B97F4A7C15ULL }
+      , sampler {} {}
 
     /**
      * @brief Full construction with the pair destinations and the hadronic pool
@@ -492,7 +510,78 @@ namespace kernel::hadronic {
       , tables { tbl }
       , prm { params }
       , pairs { targets }
-      , pool { hadronic_pool } {}
+      , pool { hadronic_pool }
+      , sampler {} {}
+
+    /**
+     * @brief Full construction with the rest-frame sampler tables (spectrum = restframe)
+     */
+    BetheHeitler_kernel(const ParticleArrays&           arrays,
+                        double                          ion_mass,
+                        const arch::bh::HadronicTables& tbl,
+                        const HadronicParams&           params,
+                        const PairTargets&              targets,
+                        const random_number_pool_t&     hadronic_pool,
+                        const arch::bh::SamplerTables&  sampler_tables)
+      : prtls { arrays }
+      , mu_d { ion_mass }
+      , tables { tbl }
+      , prm { params }
+      , pairs { targets }
+      , pool { hadronic_pool }
+      , sampler { sampler_tables } {}
+
+    Inline auto restframe() const -> bool {
+      return prm.spectrum == static_cast<int>(PairSpectrum::RestFrame) && sampler.valid;
+    }
+
+    /**
+     * @brief One outcome of the rest-frame sampler for an ion moving along the
+     *        unit vector d (simulation frame): the lab momenta of the two leptons
+     *        and of the absorbed photon, rotated from the sampler's frame (z along
+     *        d) with an orthonormal basis about d, the sampled lab photon energy
+     *        and the ion loss D = E- + E+ - eps in double
+     * @return false when the weighted chain did not accept within the bound
+     */
+    template <class Gen>
+    Inline auto sample_restframe(double Gp, bool weighted, Gen& gen, LossLedger& L, double d1, double d2,
+                                 double d3, double* vm, double* vp, double* kph, double& D, double& eps) const
+      -> bool {
+      arch::bh::SampledPair ev;
+      const bool ok = sampler.draw(Gp, weighted, gen, L.n_rng, prm.max_sampler_attempts, ev);
+      L.n_sampler_attempts += static_cast<unsigned long long>(ev.attempts);
+      if (!ok) {
+        return false;
+      }
+      // basis about d: e1 in the plane least aligned with d, e2 = d x e1
+      double e1x, e1y, e1z;
+      if (math::abs(d1) < 0.9) {
+        e1x = 1.0 - d1 * d1;
+        e1y = -d1 * d2;
+        e1z = -d1 * d3;
+      } else {
+        e1x = -d2 * d1;
+        e1y = 1.0 - d2 * d2;
+        e1z = -d2 * d3;
+      }
+      const double l = math::sqrt(e1x * e1x + e1y * e1y + e1z * e1z);
+      e1x /= l;
+      e1y /= l;
+      e1z /= l;
+      const double e2x = d2 * e1z - d3 * e1y, e2y = d3 * e1x - d1 * e1z, e2z = d1 * e1y - d2 * e1x;
+      vm[0] = ev.pm[0] * e1x + ev.pm[1] * e2x + ev.pm[2] * d1;
+      vm[1] = ev.pm[0] * e1y + ev.pm[1] * e2y + ev.pm[2] * d2;
+      vm[2] = ev.pm[0] * e1z + ev.pm[1] * e2z + ev.pm[2] * d3;
+      vp[0] = ev.pp[0] * e1x + ev.pp[1] * e2x + ev.pp[2] * d1;
+      vp[1] = ev.pp[0] * e1y + ev.pp[1] * e2y + ev.pp[2] * d2;
+      vp[2] = ev.pp[0] * e1z + ev.pp[1] * e2z + ev.pp[2] * d3;
+      kph[0] = ev.kph[0] * e1x + ev.kph[1] * e2x + ev.kph[2] * d1;
+      kph[1] = ev.kph[0] * e1y + ev.kph[1] * e2y + ev.kph[2] * d2;
+      kph[2] = ev.kph[0] * e1z + ev.kph[1] * e2z + ev.kph[2] * d3;
+      D   = ev.D;
+      eps = ev.eps;
+      return true;
+    }
 
     /**
      * @brief I(Gamma_p(K)) with the edge conventions (0 below, edge value above)
@@ -606,6 +695,34 @@ namespace kernel::hadronic {
                            double      g_m,
                            double      g_p,
                            short       tag) const -> bool {
+      // collinear momenta along d (mean-energy spectra); the T13 kick is applied
+      // in spawn_pair_vec from the ticket (kick_dir = d)
+      const double um = math::sqrt((g_m > 1.0) ? (g_m - 1.0) * (g_m + 1.0) : 0.0);
+      const double up = math::sqrt((g_p > 1.0) ? (g_p - 1.0) * (g_p + 1.0) : 0.0);
+      const double vm[3]  = { um * d1, um * d2, um * d3 };
+      const double vp[3]  = { up * d1, up * d2, up * d3 };
+      const double kph[3] = { eps * d1, eps * d2, eps * d3 };
+      const double dir[3] = { d1, d2, d3 };
+      return spawn_pair_vec(p, L, w_pair, intended, vm, vp, kph, Gp, eps, tag, dir);
+    }
+
+    /**
+     * @brief Spawn one pair with explicit lab momenta of the two leptons (double,
+     *        simulation frame) and the absorbed photon's lab momentum kph; the
+     *        ledger uses the stored (real_t) lepton momenta and the stored eps
+     *        payload, P_absorbed the photon momentum in double
+     */
+    Inline auto spawn_pair_vec(prtlidx_t     p,
+                               LossLedger&   L,
+                               double        w_pair,
+                               const dd&     intended,
+                               const double* vm_d,
+                               const double* vp_d,
+                               const double* kph,
+                               double        Gp,
+                               double        eps,
+                               short         tag,
+                               const double* kick_dir = nullptr) const -> bool {
       L.n_events += 1;
       if (!pairs.valid) {
         L.n_dropped += 1;
@@ -621,19 +738,21 @@ namespace kernel::hadronic {
       const npart_t ip = pairs.offset_p + ticket;
 
       const real_t w_s = static_cast<real_t>(w_pair);
-      const double um  = math::sqrt((g_m > 1.0) ? (g_m - 1.0) * (g_m + 1.0) : 0.0);
-      const double up  = math::sqrt((g_p > 1.0) ? (g_p - 1.0) * (g_p + 1.0) : 0.0);
-      double       k   = 0.0;
-      if (prm.kick != 0.0) {
+      // T13 kick (mean-energy spectra only): antisymmetric along kick_dir,
+      // deterministic from the ticket
+      double k = 0.0;
+      if (kick_dir != nullptr && prm.kick != 0.0) {
         const double h = static_cast<double>(splitmix64_dev(static_cast<std::uint64_t>(ticket) ^
                                                             0xD1B54A32D192ED03ULL) >> 11) *
                          0x1.0p-53;
         k = prm.kick * (2.0 * h - 1.0);
       }
-      vec_t<Dim::_3D> vm { static_cast<real_t>((um + k) * d1), static_cast<real_t>((um + k) * d2),
-                           static_cast<real_t>((um + k) * d3) };
-      vec_t<Dim::_3D> vp { static_cast<real_t>((up - k) * d1), static_cast<real_t>((up - k) * d2),
-                           static_cast<real_t>((up - k) * d3) };
+      const double kd[3] = { kick_dir ? kick_dir[0] : 0.0, kick_dir ? kick_dir[1] : 0.0,
+                             kick_dir ? kick_dir[2] : 0.0 };
+      vec_t<Dim::_3D> vm { static_cast<real_t>(vm_d[0] + k * kd[0]), static_cast<real_t>(vm_d[1] + k * kd[1]),
+                           static_cast<real_t>(vm_d[2] + k * kd[2]) };
+      vec_t<Dim::_3D> vp { static_cast<real_t>(vp_d[0] - k * kd[0]), static_cast<real_t>(vp_d[1] - k * kd[1]),
+                           static_cast<real_t>(vp_d[2] - k * kd[2]) };
       ParticleArrays mm = pairs.minus;
       ParticleArrays pp = pairs.plus;
       write_lepton(mm, pairs.tracking_m, im, pairs.counter_m + ticket, p, vm, w_s, tag, Gp, eps);
@@ -653,9 +772,11 @@ namespace kernel::hadronic {
       for (int c = 0; c < 3; ++c) {
         L.P_pairs[c] += wd * (static_cast<double>(vm[c]) + static_cast<double>(vp[c]));
       }
-      L.P_absorbed[0] += wd * eps_s * d1;
-      L.P_absorbed[1] += wd * eps_s * d2;
-      L.P_absorbed[2] += wd * eps_s * d3;
+      // the absorbed photon's lab momentum (eps along d for the mean-energy
+      // spectra, the sampled direction for restframe)
+      L.P_absorbed[0] += wd * kph[0];
+      L.P_absorbed[1] += wd * kph[1];
+      L.P_absorbed[2] += wd * kph[2];
       // E_round += intended - w_s (E_s - eps_s)
       L.E_round.add(intended);
       L.E_round.add_prod(-wd, E_s);
@@ -721,8 +842,7 @@ namespace kernel::hadronic {
         if (budget && r_in > 0.0) {
           double Dv, eps, g_m, g_p;
           outcome_law(tables.gamma_min, Dv, eps, g_m, g_p);
-          const double w_pair = w * r_in / Dv;
-          dd           intended;
+          dd intended;
           intended.add_prod(w, r_in);
           // R4: an ion stopped exactly at u = 0 has no direction; the newborn pair is
           // emitted along +x (convention) so that the debt does not wait indefinitely
@@ -732,7 +852,23 @@ namespace kernel::hadronic {
           if (u == 0.0) {
             L.n_closing_at_rest += 1;
           }
-          if (spawn_pair(p, L, w_pair, intended, c1, c2, c3, Gp, eps, g_m, g_p, tag)) {
+          bool spawned = false;
+          if (restframe()) {
+            // the weighted chain at the lower table edge
+            auto   gen = pool.get_state();
+            double vm[3], vp[3], kph[3], Ds, eps_s;
+            const bool ok = sample_restframe(tables.gamma_min, true, gen, L, c1, c2, c3, vm, vp, kph, Ds, eps_s);
+            pool.free_state(gen);
+            if (ok) {
+              spawned = spawn_pair_vec(p, L, w * r_in / Ds, intended, vm, vp, kph, Gp, eps_s, tag);
+            } else {
+              L.n_sampler_overflow += 1;
+              spawned = spawn_pair(p, L, w * r_in / Dv, intended, c1, c2, c3, Gp, eps, g_m, g_p, tag);
+            }
+          } else {
+            spawned = spawn_pair(p, L, w * r_in / Dv, intended, c1, c2, c3, Gp, eps, g_m, g_p, tag);
+          }
+          if (spawned) {
             r = dd {};
             K0 = 0.0;
             L.n_closing += 1;
@@ -920,6 +1056,10 @@ namespace kernel::hadronic {
           }
           bool k0_trigger = (K0 > 0.0) && (math::abs(K_cur - K0) > prm.f_r * K0);
           int  n_pk       = 0;
+          const bool rf   = restframe();
+          // a generator state for the restframe draws (no number is drawn from it
+          // by the mean-energy spectra: acquiring it leaves the pool unchanged)
+          auto gen = pool.get_state();
           if (r_th > 0.0) {
             while (true) {
               const double rv = r.value();
@@ -944,10 +1084,22 @@ namespace kernel::hadronic {
               } else {
                 break;
               }
-              const double w_pair = w * r_packet / Dv;
-              dd           intended;
+              dd intended;
               intended.add_prod(w, r_packet);
-              if (!spawn_pair(p, L, w_pair, intended, d1, d2, d3, Gp_cur, eps, g_m, g_p, tag)) {
+              bool spawned;
+              if (rf) {
+                // the D_max-weighted chain: w_pair = w r_packet / D(z), D from the lab values
+                double vm[3], vp[3], kph[3], Ds, eps_s;
+                if (sample_restframe(Gp_cur, true, gen, L, d1, d2, d3, vm, vp, kph, Ds, eps_s)) {
+                  spawned = spawn_pair_vec(p, L, w * r_packet / Ds, intended, vm, vp, kph, Gp_cur, eps_s, tag);
+                } else {
+                  L.n_sampler_overflow += 1;
+                  spawned = spawn_pair(p, L, w * r_packet / Dv, intended, d1, d2, d3, Gp_cur, eps, g_m, g_p, tag);
+                }
+              } else {
+                spawned = spawn_pair(p, L, w * r_packet / Dv, intended, d1, d2, d3, Gp_cur, eps, g_m, g_p, tag);
+              }
+              if (!spawned) {
                 break; // capacity: keep the debt
               }
               r.add(-r_packet);
@@ -957,6 +1109,7 @@ namespace kernel::hadronic {
               ++n_pk;
             }
           }
+          pool.free_state(gen);
         }
         // store the debt; its rounding to real_t goes to E_round
         double rv = r.value();
@@ -980,7 +1133,6 @@ namespace kernel::hadronic {
           if (lambda > 0.0 || !math::isfinite(lambda)) {
             auto gen = pool.get_state();
             int  n   = poisson_sample(gen, lambda, prm.max_events_per_step, L.n_rng);
-            pool.free_state(gen);
             if (n > prm.max_events_per_step) {
               n = prm.max_events_per_step; // the draw exceeded the cap: clamped and counted (on_max_events)
               L.n_capped_events += 1;
@@ -989,16 +1141,33 @@ namespace kernel::hadronic {
               double Dv, eps, g_m, g_p;
               outcome_law(Gp_cur, Dv, eps, g_m, g_p);
               const double w_pair = prm.pair_weight * w;
+              const bool   rf     = restframe();
               for (int e = 0; e < n; ++e) {
-                dd intended;
-                intended.add_prod(w_pair, Dv);
-                if (!spawn_pair(p, L, w_pair, intended, d1, d2, d3, Gp_cur, eps, g_m, g_p, tag)) {
+                dd   intended;
+                bool spawned;
+                if (rf) {
+                  // the unweighted chain: the event's own D is the energy this pair costs
+                  double vm[3], vp[3], kph[3], Ds, eps_s;
+                  if (sample_restframe(Gp_cur, false, gen, L, d1, d2, d3, vm, vp, kph, Ds, eps_s)) {
+                    intended.add_prod(w_pair, Ds);
+                    spawned = spawn_pair_vec(p, L, w_pair, intended, vm, vp, kph, Gp_cur, eps_s, tag);
+                  } else {
+                    L.n_sampler_overflow += 1;
+                    intended.add_prod(w_pair, Dv);
+                    spawned = spawn_pair(p, L, w_pair, intended, d1, d2, d3, Gp_cur, eps, g_m, g_p, tag);
+                  }
+                } else {
+                  intended.add_prod(w_pair, Dv);
+                  spawned = spawn_pair(p, L, w_pair, intended, d1, d2, d3, Gp_cur, eps, g_m, g_p, tag);
+                }
+                if (!spawned) {
                   break;
                 }
                 // the drag not matched by this pair (signed, expectation zero)
                 L.E_stochastic.sub(intended);
               }
             }
+            pool.free_state(gen);
           }
         }
       }

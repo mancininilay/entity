@@ -31,7 +31,8 @@
  *   allow_unsafe_application    bool (default false); required true when eta_u = 0 or pending_floor_ulp = 0
  *   payload_pending / payload_debt / payload_debt_k0   int in [0, 65534], distinct (default 0, 1, 2)
  *   source                      "budget" | "poisson" | "none" (default budget)
- *   spectrum                    "delta" | "threshold" (default delta)
+ *   spectrum                    "delta" | "threshold" | "restframe" (default delta; restframe = the
+ *                               rest-frame sampler of step 4, both sources)
  *   pair_species                array [i_minus, i_plus] of int in [1, 255], distinct, not an ion
  *                               species; required unless source = none
  *   r_th_factor                 float > 0 (default 10)
@@ -707,8 +708,8 @@ namespace user::bhproto {
       fail("source", "= '" + s.source + "' must be \"budget\", \"poisson\" or \"none\"");
     }
     s.spectrum = get_string_or(setup, "spectrum", "delta");
-    if (s.spectrum != "delta" && s.spectrum != "threshold") {
-      fail("spectrum", "= '" + s.spectrum + "' must be \"delta\" or \"threshold\"");
+    if (s.spectrum != "delta" && s.spectrum != "threshold" && s.spectrum != "restframe") {
+      fail("spectrum", "= '" + s.spectrum + "' must be \"delta\", \"threshold\" or \"restframe\"");
     }
     {
       const auto* v = find_path(setup, "pair_species");

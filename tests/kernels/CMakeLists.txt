@@ -70,3 +70,14 @@ endforeach()
 if("${pgen}" STREQUAL "rec_mix")
   gen_test(rec_mix_segments)
 endif()
+# Bethe-Heitler rest-frame sampler in the kernel (P2 step 4, stage 4): device
+# tables, A11 (mu_d independence), A12 (cost, number and energy per paid energy,
+# the ledger identity, the pair spectrum vs the host chain); one entry per group
+add_executable(test-kernels-bh_sampler.xc bh_sampler.cpp)
+add_dependencies(test-kernels-bh_sampler.xc ntt_kernels ntt_metrics ntt_framework)
+target_link_libraries(test-kernels-bh_sampler.xc PRIVATE ntt_kernels ntt_metrics ntt_framework)
+target_compile_definitions(test-kernels-bh_sampler.xc PRIVATE BH_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data/hadronic")
+foreach(grp tables a11 identity a12 spectrum)
+  add_test(NAME "KERNELS::bh_sampler_${grp}" COMMAND test-kernels-bh_sampler.xc ${grp})
+endforeach()
+set_tests_properties("KERNELS::bh_sampler_a12" PROPERTIES TIMEOUT 3600)
