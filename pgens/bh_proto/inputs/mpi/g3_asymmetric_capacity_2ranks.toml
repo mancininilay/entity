@@ -53,7 +53,7 @@
     label                    = "e-"
     mass                     = 1.0
     charge                   = -1.0
-    maxnpart                 = 40
+    maxnpart                 = 40.0
     pusher                   = "Boris"
     n_payloads_real          = 3
     deposit                  = false
@@ -63,7 +63,7 @@
     label                    = "e+"
     mass                     = 1.0
     charge                   = 1.0
-    maxnpart                 = 40
+    maxnpart                 = 40.0
     pusher                   = "Boris"
     n_payloads_real          = 3
     deposit                  = false
