@@ -25,9 +25,9 @@
  *                   rest-frame direction cos theta'_k = (eps/(Gamma eps') - 1)/beta
  *                   and a uniform azimuth about it (exact beta, exact p');
  *   LabMap::HeadOn: E = Gamma (E' - p' cos theta'_gamma), theta'_gamma the
- *                   lepton's angle to the photon direction, the photon taken
- *                   head-on (the paper's approximation; E < 1 is possible and
- *                   is counted below the first edge).
+ *                   lepton's angle to the photon direction: the KA UR map,
+ *                   head-on photon and V_p = 1 (the paper's approximation;
+ *                   E < 1 is possible and is counted below the first edge).
  *
  *   F(E) = (1/Phi(eps'_hi)) int_2^{eps'_hi} deps' eps' int dE' int dcos theta'
  *          d^2sigma/(dE' dcos theta') (eps', E', cos theta') P(E_lab <= E),
@@ -35,12 +35,16 @@
  * with, for the exact map, P the fraction of the uniform azimuth phi about the
  * photon direction for which Gamma (E' + beta p' (a - b cos phi)) <= E,
  * a = cos theta' cos theta'_k, b = sin theta' sin theta'_k: P =
- * arccos(clamp((a - c)/b))/pi with c = (E/Gamma - E')/(beta p'). The mean
- * difference of the two maps is eps <p' cos theta'_gamma / eps'>, which tends
- * to eps/2 when eps' >> 1 (the mechanism of the failed reading of round 1).
- * Both the sampler and this quadrature use the static-source Born law; the
- * applicability of that model to a finite ion mass is eps' << mu_r,
- * equivalently eps Gamma << mu_r (corrected in round 2).
+ * arccos(clamp((a - c)/b))/pi with c = (E/Gamma - E')/(beta p'). After
+ * azimuth averaging the two maps differ on average by
+ * eps <p' cos theta'_gamma / eps'>, which tends to eps/2 when eps' >> 1; this
+ * identity is for the total map difference and does not separate its two
+ * parts (round 3): in sup-norm the photon direction accounts for about 0.010
+ * and the V_p = 1 substitution for about 0.07 of the exact-versus-KA
+ * difference at mono05 Gamma_p = 100 and 1000. Both the sampler and this
+ * quadrature use the static-source Born law; its applicability is
+ * eps' << mu_r, equivalently eps Gamma_p << mu_r (Kelner and Aharonian 2008
+ * p. 11), and the UR map additionally needs E_e >> m_e c^2.
  *
  * Host-only, double precision, Kokkos-free.
  *

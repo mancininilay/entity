@@ -894,8 +894,8 @@ threshold error). A3 asymptotic diagnostic unchanged (stage 0).
     exact photon direction and the exact boost. Its CDF agrees with the
     sampler's exact lab events to KS 0.001.
   - It is therefore a self-check of the sampling chain, not the paper's CDF.
-    Kelner and Aharonian 2008 (eqs. 58 to 64) take the photon head-on in the
-    proton rest frame.
+    Kelner and Aharonian 2008 (eqs. 58 to 64) use the UR map: the photon
+    head-on in the proton rest frame and V_p = 1. [Round 3 wording.]
   - Renamed `bh_exact_chain_cdf.h`. In it, `lab_electron_cdf` is now
     `exact_chain_lab_cdf` and `LabSpectrumQuadrature` is now
     `ExactChainQuadrature`. The header states the distinction.
@@ -918,26 +918,44 @@ threshold error). A3 asymptotic diagnostic unchanged (stage 0).
   | case | eps'_hi/mu_r | eps Gamma_p/mu_r | KS (tol 0.02) |
   | --- | --- | --- | --- |
   | mono05, Gamma_p = 100 | 0.0545 | 0.0272 | **1.32e-3** |
-  | mono05, Gamma_p = 1000 | 0.5446 (outside the small-eps' regime: a formal mathematical comparison only) | 0.2723 | **7.98e-4** |
+  | mono05, Gamma_p = 1000 | 0.5446 | 0.2723 | **7.98e-4** |
   | mono005, Gamma_p = 1000 | 0.0545 | 0.0272 | **5.79e-4** |
 
-- **Original reading (labelled failed diagnostic).**
+- **Original reading (labelled failed diagnostic).** [Round 3: the
+  attribution below replaces round 2's, which credited the whole difference to
+  the photon direction.]
   - Exact-chain events against the KA2008 CDF give KS 0.0734 (mono05,
     Gamma_p = 100) and 0.0727 (Gamma_p = 1000). The referee measured 0.073.
     For mono005 the value is 0.0013.
-  - Mechanism (verified): the head-on map drops the photon's rest-frame
-    direction cos theta'_k = (eps/(Gamma eps') - 1)/beta. Averaged over the
-    azimuth, the two maps differ by eps p' cos theta'_gamma / eps' per event,
-    which tends to eps/2 when eps' >> 1.
-  - Measured mean differences 0.2497, 0.2499, 0.0266. The per-event
-    prediction gives 0.2484, 0.2499, 0.0248, and eps/2 gives 0.25, 0.25,
-    0.025.
-  - The exact map also never gives E < 1, while the paper CDF has 5.7% there.
-    That is where the KS of the failed reading peaks (E = 1.28).
-- **Applicability (corrected).**
-  - The static-source law holds for eps' << mu_r, equivalently
-    eps Gamma_p << mu_r. Round 1 wrote eps' Gamma_p << mu_r.
-  - Both ratios are printed for each case (table above) and written in the
+  - The KA UR map is E_lab = Gamma_p (E' - p' cos theta'_gamma). It makes two
+    substitutions: the photon taken head-on, and V_p = 1. The exact chain
+    keeps the photon's rest-frame direction,
+    cos theta'_k = (eps/(Gamma eps') - 1)/beta, and the exact beta.
+  - In sup-norm, the photon direction accounts for about 0.010 of the
+    exact-versus-KA difference and the V_p = 1 substitution for about 0.07.
+  - Measured from the sampler's own events through the intermediate map
+    (head-on photon with the exact beta, E = Gamma_p (E' - beta p' cos theta'_gamma),
+    R3 stage 3), at the reference's edges:
+    - Photon direction: 0.0100 (Gamma_p = 100) and 0.0103 (Gamma_p = 1000).
+    - V_p = 1: 0.0702 and 0.0705.
+    - Total: 0.0731 and 0.0729.
+    - mono005: 0.0002, 0.0007 and 0.0007.
+  - The mean-shift identity holds for the total map difference after azimuth
+    averaging, but it does not separate the two parts: <E_exact - E_KA> =
+    eps <p' cos theta'_gamma / eps'>, which tends to eps/2 for eps' >> 1.
+    Measured 0.2497, 0.2499 and 0.0266; per-event prediction 0.2484, 0.2499
+    and 0.0248; eps/2 gives 0.25, 0.25 and 0.025.
+- **Applicability (corrected; round 3 wording).**
+  - The static source requires eps' << mu_r, equivalently eps Gamma_p << mu_r
+    in the lab (Kelner and Aharonian 2008, p. 11). Round 1 wrote
+    eps' Gamma_p << mu_r.
+  - The UR map additionally needs E_e >> m_e c^2. That fails for about 6% of
+    the mono05 spectrum, the events with E < 1 after the map: 5.66% at
+    Gamma_p = 100 and 5.84% at 1000, against the reference CDF's 0.0567 and
+    0.0584 at E = 1.
+  - Both mono05 A8 points, Gamma_p = 100 and 1000, are formal static-source
+    benchmarks outside the production envelope.
+  - The ratios are printed for each case (table above) and written in the
     exact-chain fixture headers (`eps_prime_hi_over_mu_r`,
     `eps_gamma_over_mu_r`).
 - **Implementation-chosen checks (all pass).**
@@ -1188,7 +1206,7 @@ three items, resolved here in four stages. Same staging discipline.
 | --- | --- | --- |
 | 1 | the generic-symmetry tolerance selected by significand width | done, `cf0363d` |
 | 2 | Claude 3's F8: the calibrated weighted two-sample test of `COMPARISON.md`; C++ log-D histograms; A10 and the source spectra | done, `50ffb6f` |
-| 3 | A8 wording | in progress |
+| 3 | A8 wording | done (this commit) |
 | 4 | closure: full ctest single and double, the A10 table | not started |
 
 ## R3.1 Stage log
@@ -1337,3 +1355,29 @@ three items, resolved here in four stages. Same staging discipline.
 ### R3 stage 3 (A8 wording)
 
 - stage 3 started, HEAD `50ffb6f`.
+- **What changed.** `tests/archetypes/bh_ka2008.cpp` (its header and the
+  failed-reading diagnostic), the `bh_exact_chain_cdf.h` header, and the R2
+  stage 3 entry above now use the decided attribution:
+  - The KA UR map is the head-on photon and V_p = 1,
+    E_lab = Gamma_p (E' - p' cos theta'_gamma).
+  - In sup-norm, the photon direction accounts for about 0.010 and V_p = 1
+    for about 0.07 of the exact-versus-KA difference.
+  - The mean-shift identity is valid for the total map difference after
+    azimuth averaging but does not separate the two parts.
+  - Applicability: the static source needs eps' << mu_r, equivalently lab
+    eps Gamma_p << mu_r (KA2008 p. 11). The UR map additionally needs
+    E_e >> m_e c^2, which is violated for about 6% of the mono05 spectrum.
+  - Both mono05 A8 points are formal static-source benchmarks outside the
+    production envelope.
+- **Measured support.** The test now prints the decomposition from the same
+  events through the intermediate map (head-on photon, exact beta).
+  - Photon direction 0.0100 and 0.0103, V_p = 1 0.0702 and 0.0705, total
+    0.0731 and 0.0729, at mono05 Gamma_p = 100 and 1000.
+  - E < 1 after the KA map: 5.66% and 5.84%.
+- No verdict changes: A8 head-on KS 1.32e-3, 7.98e-4, 5.79e-4 (tol 0.02).
+  `ARCHETYPES::bh_ka2008` passes 3 contract items and 6
+  implementation-chosen checks (log `logs-step4-r3-stage3-bh_ka2008.log`).
+- The exact-chain fixture headers keep their stage-3 law string ("whose
+  head-on approximation the A8 anchor uses"). It is incomplete rather than
+  wrong, and the fixtures are not regenerated in this round.
+- stage 3 done, this commit, pushed.

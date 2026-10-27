@@ -16,19 +16,28 @@
  * head-on map can give E_lab < 1; that mass sits below the first edge E = 1
  * in both CDFs.
  *
- * Diagnostics, labelled:
- *   - the original reading of round 1 (exact-chain events, exact photon
- *     direction and exact boost, against the paper CDF): it fails (KS 0.073
- *     measured by the referee) and is kept as a failed reading with its
- *     mechanism: the head-on map drops the photon's rest-frame direction, and
- *     the two maps differ on average by eps <p' cos theta'_gamma / eps'>,
- *     which tends to eps/2 when eps' >> 1 (printed: measured mean difference,
- *     the per-event prediction and eps/2);
- *   - applicability: the static-source law holds for eps' << mu_r,
- *     equivalently eps Gamma_p << mu_r (round 2 correction; round 1 wrote
- *     eps' Gamma_p << mu_r); eps'_hi/mu_r and eps Gamma_p/mu_r are printed for
- *     each case; mono05 at Gamma_p = 1000 (eps'_hi/mu_r = 0.54) is outside
- *     the small-eps' regime, a formal mathematical comparison only.
+ * Diagnostics, labelled (wording decided in round 3):
+ *   - the KA UR map: the paper's CDF uses the head-on photon AND V_p = 1,
+ *     E_lab = Gamma_p (E' - p' cos theta'_gamma); the exact chain keeps the
+ *     photon's rest-frame direction (cos theta'_k = (eps/(Gamma eps') - 1)/beta)
+ *     and the exact ion velocity beta;
+ *   - the original reading of round 1 (exact-chain events against the paper
+ *     CDF): it fails (KS 0.073) and is kept as a failed reading. In sup-norm
+ *     the exact-versus-KA difference splits into the photon direction (about
+ *     0.010) and the V_p = 1 substitution (about 0.07); printed here, from the
+ *     same events, through the intermediate map with the head-on photon and the
+ *     exact beta, E = Gamma_p (E' - beta p' cos theta'_gamma). The mean-shift
+ *     identity <E_exact - E_KA> = eps <p' cos theta'_gamma / eps'> (-> eps/2 for
+ *     eps' >> 1) holds for the total map difference after azimuth averaging but
+ *     does not separate the two parts (printed: measured, per-event prediction,
+ *     eps/2);
+ *   - applicability: the static-source law needs eps' << mu_r, equivalently
+ *     eps Gamma_p << mu_r in the lab (Kelner and Aharonian 2008 p. 11); the UR
+ *     map additionally needs E_e >> m_e c^2, which fails for about 6% of the
+ *     mono05 spectrum (the events with E < 1 after the map, printed); both
+ *     mono05 A8 points (Gamma_p = 100 and 1000) are formal static-source
+ *     benchmarks outside the production envelope (eps'_hi/mu_r and
+ *     eps Gamma_p/mu_r printed for each case).
  *
  * Implementation-chosen checks:
  *   - the head-on CDF of this code's laws by deterministic quadrature
@@ -158,7 +167,7 @@ auto main() -> int {
       }
       // the sample: head-on and exact lab energies of the same events
       rf::SplitMix64      rng(8080u + j);
-      std::vector<double> Eho(N), Eex(N);
+      std::vector<double> Eho(N), Eex(N), Emid(N); // KA map, exact chain, head-on photon with the exact beta
       double              s_ho = 0.0, s_ex = 0.0, s_pred = 0.0, s_ex2 = 0.0, s_ho2 = 0.0;
       auto                t0 = std::chrono::steady_clock::now();
       for (std::size_t n = 0; n < N; ++n) {
@@ -166,6 +175,7 @@ auto main() -> int {
         const double pm = rf::momentum(e.Em);
         Eho[n]          = g * (e.Em - pm * e.cosm);
         Eex[n]          = e.lab_m.E;
+        Emid[n]         = g * e.Em - gb * pm * e.cosm;
         s_ho += Eho[n];
         s_ho2 += Eho[n] * Eho[n];
         s_ex += Eex[n];
@@ -175,6 +185,18 @@ auto main() -> int {
       const double tmc = seconds_since(t0);
       std::sort(Eho.begin(), Eho.end());
       std::sort(Eex.begin(), Eex.end());
+      std::sort(Emid.begin(), Emid.end());
+      // sup-norm differences of the empirical CDFs of the three maps of the same events, at the reference's edges
+      auto sup_diff = [&](const std::vector<double>& x, const std::vector<double>& y) {
+        double d = 0.0;
+        for (const double e : edges) {
+          const double Fx = static_cast<double>(std::upper_bound(x.begin(), x.end(), e) - x.begin()) / N;
+          const double Fy = static_cast<double>(std::upper_bound(y.begin(), y.end(), e) - y.begin()) / N;
+          d               = std::max(d, std::abs(Fx - Fy));
+        }
+        return d;
+      };
+      const double d_dir = sup_diff(Eex, Emid), d_vp = sup_diff(Emid, Eho), d_tot = sup_diff(Eex, Eho);
       double       E_ho_at = 0.0, E_ex_at = 0.0;
       const double ks_ho = ks_at_edges(Eho, edges, Fref, &E_ho_at);
       const double ks_ex = ks_at_edges(Eex, edges, Fref, &E_ex_at);
@@ -182,7 +204,7 @@ auto main() -> int {
       diag("A8 %s Gamma_p = %g: eps'_hi = %.4f, eps'_hi/mu_r = %.4f, eps Gamma_p/mu_r = %.4f%s; reference %s (version "
            "%s, data_sha256 %s); N = %zu in %.1f s; largest reference bin probability %.4f",
            c.bath.c_str(), g, khi, khi / mu_r, c.eps0 * g / mu_r,
-           khi / mu_r > 0.1 ? " (outside the small-eps' regime: a formal mathematical comparison only)" : "",
+           c.bath == "mono05" ? " (a formal static-source benchmark outside the production envelope)" : "",
            path.c_str(), ref.header.count("version") ? ref.header.at("version").c_str() : "?",
            sha_ok ? "verified" : "MISMATCH", N, tmc, max_bin);
       check(true,
@@ -190,12 +212,14 @@ auto main() -> int {
             "and the KA2008 CDF, " + c.bath + " Gamma_p = " + std::to_string(static_cast<int>(g)) +
               " (worst at E = " + std::to_string(E_ho_at) + ")",
             ks_ho, 0.02, "KS");
-      diag("A8 original reading (labelled failed diagnostic): exact-chain events (exact photon direction and boost) vs the "
-           "KA2008 CDF, %s Gamma_p = %g: KS = %.4f at E = %.4f%s; mean lab energy exact %.4f, head-on %.4f, difference %.4f "
-           "(predicted eps <p' cos theta'_gamma/eps'> = %.4f; limit eps/2 = %.4f); fraction of head-on energies below 1: "
-           "%.4f (reference CDF at E = 1: %.4f)",
+      diag("A8 original reading (labelled failed diagnostic): exact-chain events (exact photon direction, exact beta) vs "
+           "the KA2008 CDF (head-on photon and V_p = 1), %s Gamma_p = %g: KS = %.4f at E = %.4f%s; sup-norm between the "
+           "maps of the same events: exact vs head-on photon with exact beta (the photon direction) %.4f, that vs the KA "
+           "map (V_p = 1) %.4f, total %.4f; mean lab energy exact %.4f, KA map %.4f, difference %.4f (predicted, total "
+           "map difference after azimuth averaging, eps <p' cos theta'_gamma/eps'> = %.4f; limit eps/2 = %.4f); events "
+           "with E < 1 after the KA map (E_e >> m_e c^2 violated): %.4f (reference CDF at E = 1: %.4f)",
            c.bath.c_str(), g, ks_ex, E_ex_at, ks_ex > 0.02 ? " (fails 0.02, as expected)" : " (passes 0.02 here)",
-           s_ex / N, s_ho / N, (s_ex - s_ho) / N, s_pred / N, 0.5 * c.eps0,
+           d_dir, d_vp, d_tot, s_ex / N, s_ho / N, (s_ex - s_ho) / N, s_pred / N, 0.5 * c.eps0,
            static_cast<double>(std::upper_bound(Eho.begin(), Eho.end(), 1.0) - Eho.begin()) / N, Fref.front());
       // the head-on CDF of this code's laws by quadrature, at the reference's edges
       t0 = std::chrono::steady_clock::now();
