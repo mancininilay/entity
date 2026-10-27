@@ -598,8 +598,8 @@ is known here only through the brief's summary.
 | stage | content | findings | status |
 | --- | --- | --- | --- |
 | 0 | source identifications corrected, verification flags removed, the asymptotic diagnostic | 8 | done, `88f868a` |
-| 1 | the threshold cancellation of the energy law in double; A2 registered for `double`; A1 to A5 for both instantiations; `qk_table.txt` vs the reference | 1 (P1) | done (this commit) |
-| 2 | photon-energy marginal near threshold; standard errors in the moments fixtures; zero-variance columns; fixtures at fixed N; the full-sampled-density budget | 3, 7 | not started |
+| 1 | the threshold cancellation of the energy law in double; A2 registered for `double`; A1 to A5 for both instantiations; `qk_table.txt` vs the reference | 1 (P1) | done, `efb39a2` |
+| 2 | photon-energy marginal near threshold; standard errors in the moments fixtures; zero-variance columns; fixtures at fixed N; the full-sampled-density budget | 3, 7 | in progress |
 | 3 | A8 against the reference's KA2008 CDF with the head-on map; the exact-chain quadrature renamed as a self-check; applicability corrected | 2 (P1) | not started |
 | 4 | A12 by decision (b): fixed N, literal tolerances, the reference's Born-chain <D>; the box spectrum against the reference's histograms | 4 (P1) | not started |
 | 5 | sampler counters in the MPI reduction and the ledger file; a forced-overflow test | 5 | not started |
@@ -744,3 +744,7 @@ double`. No contract tolerance was touched.
 `d36ef7a035299ad7374db87757ea64f9dcc066a5aa24cd2c1115d93da68bda05`); the
 round-1 file differed from the live computation by 1.2e-7 (the long double
 threshold error). A3 asymptotic diagnostic unchanged (stage 0).
+
+### R2 stage 2 (findings 3 and 7: photon marginal, standard errors, fixed N, the sampled-chain budget)
+
+- stage 2 started, HEAD `efb39a2`.
