@@ -1207,7 +1207,7 @@ three items, resolved here in four stages. Same staging discipline.
 | 1 | the generic-symmetry tolerance selected by significand width | done, `cf0363d` |
 | 2 | Claude 3's F8: the calibrated weighted two-sample test of `COMPARISON.md`; C++ log-D histograms; A10 and the source spectra | done, `50ffb6f` |
 | 3 | A8 wording | done, `fb04e0a` |
-| 4 | closure: full ctest single and double, the A10 table | in progress |
+| 4 | closure: full ctest single and double, the A10 table | done (this commit) |
 
 ## R3.1 Stage log
 
@@ -1385,3 +1385,127 @@ three items, resolved here in four stages. Same staging discipline.
 ### R3 stage 4 (closure)
 
 - stage 4 started, HEAD `fb04e0a`.
+- **Full ctest.** Both builds register 96 tests.
+  - **Single precision** (`build`, OpenMP; log `logs-step4-r3-stage4-ctest-single.log`,
+    3957 s): **94 pass, 2 fail**, both registered:
+    - `KERNELS::bh_sampler_a12`, the cost at Gamma_p = 76.53, decision (b).
+      It is unchanged: -1.285e-2 at 2.9 s.e., 0.41 such nodes expected from
+      noise alone. The referee's closure notes the native run passes every
+      node; the cloud failure stays recorded.
+    - `ARCHETYPES::bh_chain_a7w`, A7 weighted against the step-1 I/J,
+      decision (a).
+    - The A10 and source-spectrum lines of this run are identical to the
+      stage-2 logs: the null seeds and the generator are deterministic.
+  - **Double precision** (`build-double`; log `logs-step4-r3-stage4-ctest-double.log`):
+    3867 s, **94 pass, 2 fail**: the same two registered failures, with
+    identical numbers. A12 again fails at Gamma_p 76.53 (-1.285e-2): the
+    device kinematics are in double after the draw, and the seeds are the
+    same. The A10 lines are identical to single precision.
+- **R3 resolutions.**
+
+  | item | resolution | stage, commit |
+  | --- | --- | --- |
+  | tolerance by significand width (`bh_restframe.cpp`) | `significand_tolerance<T>()` by `std::numeric_limits<T>::digits`: 53 -> 1e-10, >= 64 -> 1e-12, 54 to 63 -> 1e-10, < 53 a compile-time error; no contract threshold changed | 1, `cf0363d` |
+  | Claude 3's F8, the calibrated weighted two-sample test | `bh_calibrated_test.h` as `COMPARISON.md` specifies; C++ log-D histograms on the supplement's edges; A10 with the 8 log-D substitutions **80 of 80**; source spectra **30 of 30**; the null self-check calibrated | 2, `50ffb6f` |
+  | A8 wording | the KA UR map (head-on photon and V_p = 1); in sup-norm the photon direction is about 0.010 and V_p = 1 about 0.07 (measured 0.0100 and 0.0702 at Gamma_p 100); the mean-shift identity only for the total; applicability eps' << mu_r (KA2008 p. 11), the UR map needs E_e >> m_e c^2 (5.7% of mono05 violates it); both mono05 points formal benchmarks outside the production envelope | 3, `fb04e0a` |
+
+- **A10, the histogram family.** 80 comparisons, with D on log bins at
+  Gamma_p = 10 and 100. The calibrated test of `COMPARISON.md`; pass iff
+  p >= 0.01.
+  - **80 of 80 pass. Failures: none.** The registered aggregate is >= 95%.
+  - The eight linear-D comparisons replaced by log-D are diagnostics, not
+    counted. All have p >= 0.043, with 9 to 93 merged bins.
+  - The historical round-2 linear-D 80 of 80 (KS) stands unchanged as a
+    record.
+
+| # | bath | Gamma_p | quantity | chain | ESS_A (C++) | ESS_B (ref) | T_AD | p | q99 (diag) | merged bins | verdict |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | mono05 | 2.23125 | E- | unweighted | 1000000 | 1000000 | 1.3986e-06 | 0.56190 | 7.7217e-06 | 119 | pass |
+| 2 | mono05 | 2.23125 | E- | weighted | 988766 | 988795 | 1.4566e-06 | 0.54200 | 7.7998e-06 | 119 | pass |
+| 3 | mono05 | 2.23125 | E+ | unweighted | 1000000 | 1000000 | 2.3425e-06 | 0.27795 | 7.6823e-06 | 119 | pass |
+| 4 | mono05 | 2.23125 | E+ | weighted | 988766 | 988795 | 1.6356e-06 | 0.46980 | 7.8350e-06 | 119 | pass |
+| 5 | mono05 | 2.23125 | cos- | unweighted | 1000000 | 1000000 | 1.1699e-07 | 0.80020 | 4.2927e-06 | 3 | pass |
+| 6 | mono05 | 2.23125 | cos- | weighted | 988766 | 988795 | 2.7031e-07 | 0.62345 | 4.5408e-06 | 3 | pass |
+| 7 | mono05 | 2.23125 | cos+ | unweighted | 1000000 | 1000000 | 1.5814e-07 | 0.74915 | 4.4199e-06 | 3 | pass |
+| 8 | mono05 | 2.23125 | cos+ | weighted | 988766 | 988795 | 1.3129e-06 | 0.17540 | 4.4450e-06 | 3 | pass |
+| 9 | mono05 | 2.23125 | D | unweighted | 1000000 | 1000000 | 8.1439e-07 | 0.84520 | 7.5723e-06 | 119 | pass |
+| 10 | mono05 | 2.23125 | D | weighted | 988766 | 988795 | 2.3969e-06 | 0.27345 | 7.7850e-06 | 119 | pass |
+| 11 | mono05 | 3 | E- | unweighted | 1000000 | 1000000 | 2.2432e-06 | 0.29745 | 7.7597e-06 | 168 | pass |
+| 12 | mono05 | 3 | E- | weighted | 915747 | 916016 | 1.2820e-06 | 0.64705 | 8.4864e-06 | 168 | pass |
+| 13 | mono05 | 3 | E+ | unweighted | 1000000 | 1000000 | 6.5583e-07 | 0.91635 | 7.7335e-06 | 168 | pass |
+| 14 | mono05 | 3 | E+ | weighted | 915747 | 916016 | 7.2690e-06 | 0.01900 | 8.5812e-06 | 168 | pass |
+| 15 | mono05 | 3 | cos- | unweighted | 1000000 | 1000000 | 1.6219e-06 | 0.37085 | 7.0783e-06 | 18 | pass |
+| 16 | mono05 | 3 | cos- | weighted | 915747 | 916016 | 4.9853e-06 | 0.04735 | 8.0206e-06 | 18 | pass |
+| 17 | mono05 | 3 | cos+ | unweighted | 1000000 | 1000000 | 2.0978e-06 | 0.25105 | 6.9016e-06 | 18 | pass |
+| 18 | mono05 | 3 | cos+ | weighted | 915747 | 916016 | 1.9334e-06 | 0.33310 | 7.7566e-06 | 18 | pass |
+| 19 | mono05 | 3 | D | unweighted | 1000000 | 1000000 | 1.0242e-06 | 0.73400 | 7.8038e-06 | 150 | pass |
+| 20 | mono05 | 3 | D | weighted | 915747 | 916016 | 7.7668e-06 | 0.01820 | 8.8711e-06 | 150 | pass |
+| 21 | mono05 | 10 | E- | unweighted | 1000000 | 1000000 | 1.3061e-06 | 0.59680 | 7.6583e-06 | 170 | pass |
+| 22 | mono05 | 10 | E- | weighted | 621612 | 622220 | 1.1134e-06 | 0.85910 | 1.2139e-05 | 170 | pass |
+| 23 | mono05 | 10 | E+ | unweighted | 1000000 | 1000000 | 3.5819e-07 | 0.99505 | 7.8065e-06 | 170 | pass |
+| 24 | mono05 | 10 | E+ | weighted | 621612 | 622220 | 3.8615e-06 | 0.24110 | 1.1946e-05 | 170 | pass |
+| 25 | mono05 | 10 | cos- | unweighted | 1000000 | 1000000 | 1.1051e-06 | 0.55165 | 6.7334e-06 | 47 | pass |
+| 26 | mono05 | 10 | cos- | weighted | 621612 | 622220 | 1.6718e-06 | 0.58365 | 1.0709e-05 | 47 | pass |
+| 27 | mono05 | 10 | cos+ | unweighted | 1000000 | 1000000 | 3.5921e-06 | 0.08460 | 6.7545e-06 | 47 | pass |
+| 28 | mono05 | 10 | cos+ | weighted | 621612 | 622220 | 1.6148e-06 | 0.60220 | 1.0707e-05 | 47 | pass |
+| 29 | mono05 | 10 | D (log) | unweighted | 1000000 | 1000000 | 1.3674e-06 | 0.57490 | 7.7379e-06 | 158 | pass |
+| 30 | mono05 | 10 | D (log) | weighted | 621612 | 622016 | 6.8410e-06 | 0.10875 | 1.4854e-05 | 158 | pass |
+| 31 | mono05 | 100 | E- | unweighted | 1000000 | 1000000 | 1.5891e-06 | 0.48400 | 7.9847e-06 | 144 | pass |
+| 32 | mono05 | 100 | E- | weighted | 296962 | 296940 | 2.8326e-06 | 0.73920 | 2.4418e-05 | 144 | pass |
+| 33 | mono05 | 100 | E+ | unweighted | 1000000 | 1000000 | 5.2049e-06 | 0.04145 | 7.6132e-06 | 145 | pass |
+| 34 | mono05 | 100 | E+ | weighted | 296962 | 296940 | 2.3288e-06 | 0.82835 | 2.4084e-05 | 145 | pass |
+| 35 | mono05 | 100 | cos- | unweighted | 1000000 | 1000000 | 1.8073e-06 | 0.25015 | 6.1251e-06 | 65 | pass |
+| 36 | mono05 | 100 | cos- | weighted | 296962 | 296940 | 5.2728e-06 | 0.29820 | 1.9577e-05 | 65 | pass |
+| 37 | mono05 | 100 | cos+ | unweighted | 1000000 | 1000000 | 1.0008e-06 | 0.51870 | 5.8390e-06 | 66 | pass |
+| 38 | mono05 | 100 | cos+ | weighted | 296962 | 296940 | 2.8895e-06 | 0.59305 | 1.9646e-05 | 66 | pass |
+| 39 | mono05 | 100 | D (log) | unweighted | 1000000 | 1000000 | 8.9661e-07 | 0.79390 | 7.7008e-06 | 140 | pass |
+| 40 | mono05 | 100 | D (log) | weighted | 296962 | 297633 | 4.7135e-06 | 0.58025 | 3.4475e-05 | 140 | pass |
+| 41 | powerlaw | 1.09375 | E- | unweighted | 1000000 | 1000000 | 2.6495e-06 | 0.22085 | 7.8054e-06 | 161 | pass |
+| 42 | powerlaw | 1.09375 | E- | weighted | 972445 | 972520 | 1.0683e-06 | 0.71525 | 8.0506e-06 | 161 | pass |
+| 43 | powerlaw | 1.09375 | E+ | unweighted | 1000000 | 1000000 | 1.3282e-06 | 0.58810 | 7.6385e-06 | 160 | pass |
+| 44 | powerlaw | 1.09375 | E+ | weighted | 972445 | 972520 | 4.3155e-06 | 0.08100 | 7.8324e-06 | 160 | pass |
+| 45 | powerlaw | 1.09375 | cos- | unweighted | 1000000 | 1000000 | 1.6732e-06 | 0.44460 | 7.6448e-06 | 197 | pass |
+| 46 | powerlaw | 1.09375 | cos- | weighted | 972445 | 972520 | 2.0259e-06 | 0.36215 | 8.0267e-06 | 197 | pass |
+| 47 | powerlaw | 1.09375 | cos+ | unweighted | 1000000 | 1000000 | 8.8256e-07 | 0.79565 | 7.8238e-06 | 196 | pass |
+| 48 | powerlaw | 1.09375 | cos+ | weighted | 972445 | 972520 | 1.3922e-06 | 0.57225 | 8.0145e-06 | 196 | pass |
+| 49 | powerlaw | 1.09375 | D | unweighted | 1000000 | 1000000 | 3.2338e-06 | 0.15215 | 7.7226e-06 | 161 | pass |
+| 50 | powerlaw | 1.09375 | D | weighted | 972445 | 972520 | 3.2684e-06 | 0.15700 | 7.9957e-06 | 161 | pass |
+| 51 | powerlaw | 3 | E- | unweighted | 1000000 | 1000000 | 3.7086e-07 | 0.99280 | 7.9554e-06 | 153 | pass |
+| 52 | powerlaw | 3 | E- | weighted | 700357 | 701205 | 1.2985e-06 | 0.76625 | 1.1904e-05 | 153 | pass |
+| 53 | powerlaw | 3 | E+ | unweighted | 1000000 | 1000000 | 4.6973e-06 | 0.05900 | 7.7803e-06 | 153 | pass |
+| 54 | powerlaw | 3 | E+ | weighted | 700357 | 701205 | 6.1560e-06 | 0.08005 | 1.1468e-05 | 153 | pass |
+| 55 | powerlaw | 3 | cos- | unweighted | 1000000 | 1000000 | 1.1852e-06 | 0.62265 | 7.4578e-06 | 200 | pass |
+| 56 | powerlaw | 3 | cos- | weighted | 700357 | 701205 | 2.8764e-06 | 0.36100 | 1.2119e-05 | 200 | pass |
+| 57 | powerlaw | 3 | cos+ | unweighted | 1000000 | 1000000 | 1.5821e-06 | 0.46165 | 7.4378e-06 | 200 | pass |
+| 58 | powerlaw | 3 | cos+ | weighted | 700357 | 701205 | 2.9924e-06 | 0.34230 | 1.1621e-05 | 200 | pass |
+| 59 | powerlaw | 3 | D | unweighted | 1000000 | 1000000 | 1.0572e-06 | 0.70760 | 7.9875e-06 | 86 | pass |
+| 60 | powerlaw | 3 | D | weighted | 700357 | 701205 | 5.8770e-06 | 0.12150 | 1.3180e-05 | 86 | pass |
+| 61 | powerlaw | 10 | E- | unweighted | 1000000 | 1000000 | 1.5395e-06 | 0.50470 | 7.6848e-06 | 143 | pass |
+| 62 | powerlaw | 10 | E- | weighted | 499089 | 498793 | 2.7040e-06 | 0.58485 | 1.8232e-05 | 143 | pass |
+| 63 | powerlaw | 10 | E+ | unweighted | 1000000 | 1000000 | 1.3590e-06 | 0.57615 | 7.5207e-06 | 143 | pass |
+| 64 | powerlaw | 10 | E+ | weighted | 499089 | 498793 | 1.5312e-06 | 0.84585 | 1.8020e-05 | 143 | pass |
+| 65 | powerlaw | 10 | cos- | unweighted | 1000000 | 1000000 | 1.3093e-06 | 0.46505 | 6.6423e-06 | 196 | pass |
+| 66 | powerlaw | 10 | cos- | weighted | 499089 | 498793 | 9.5208e-06 | 0.06640 | 1.7047e-05 | 196 | pass |
+| 67 | powerlaw | 10 | cos+ | unweighted | 1000000 | 1000000 | 2.2740e-06 | 0.20725 | 6.6205e-06 | 197 | pass |
+| 68 | powerlaw | 10 | cos+ | weighted | 499089 | 498793 | 5.7977e-06 | 0.19065 | 1.6981e-05 | 197 | pass |
+| 69 | powerlaw | 10 | D (log) | unweighted | 1000000 | 1000000 | 2.0137e-06 | 0.35175 | 7.7838e-06 | 138 | pass |
+| 70 | powerlaw | 10 | D (log) | weighted | 499089 | 497908 | 1.2630e-05 | 0.06875 | 2.2685e-05 | 138 | pass |
+| 71 | powerlaw | 100 | E- | unweighted | 1000000 | 1000000 | 6.3900e-07 | 0.92310 | 8.0284e-06 | 131 | pass |
+| 72 | powerlaw | 100 | E- | weighted | 251052 | 250354 | 5.1968e-06 | 0.64100 | 4.3539e-05 | 131 | pass |
+| 73 | powerlaw | 100 | E+ | unweighted | 1000000 | 1000000 | 2.1222e-06 | 0.33210 | 7.8278e-06 | 132 | pass |
+| 74 | powerlaw | 100 | E+ | weighted | 251052 | 250354 | 2.7669e-06 | 0.89190 | 4.4171e-05 | 132 | pass |
+| 75 | powerlaw | 100 | cos- | unweighted | 1000000 | 1000000 | 1.4745e-07 | 0.97125 | 4.0987e-06 | 128 | pass |
+| 76 | powerlaw | 100 | cos- | weighted | 251052 | 250354 | 2.3595e-06 | 0.81550 | 3.2790e-05 | 128 | pass |
+| 77 | powerlaw | 100 | cos+ | unweighted | 1000000 | 1000000 | 2.0970e-07 | 0.92120 | 4.0923e-06 | 130 | pass |
+| 78 | powerlaw | 100 | cos+ | weighted | 251052 | 250354 | 2.3535e-06 | 0.81280 | 3.1832e-05 | 130 | pass |
+| 79 | powerlaw | 100 | D (log) | unweighted | 1000000 | 1000000 | 1.1923e-06 | 0.65085 | 7.7754e-06 | 121 | pass |
+| 80 | powerlaw | 100 | D (log) | weighted | 251052 | 252355 | 6.0218e-06 | 0.65100 | 5.5959e-05 | 121 | pass |
+- **Remaining registered failures:**
+  1. A7 weighted against the step-1 I/J (decision (a)).
+  2. The A12 cost at one node in the cloud runs (decision (b)).
+- **Observation for the reference's author** (diagnostic, R3 stage 2). The
+  reference's mono05 Gamma_p = 3 histogram file is inconsistent with itself:
+  its weighted chain, re-weighted by 1/D, against its own unweighted chain
+  gives E+ p = 0.0004 and D p = 0.0061. Every C++ file passes this check
+  (p >= 0.018), and so does every other reference file (p >= 0.010).
+- stage 4 done, this commit, pushed. Round 3 complete.
