@@ -599,7 +599,7 @@ is known here only through the brief's summary.
 | --- | --- | --- | --- |
 | 0 | source identifications corrected, verification flags removed, the asymptotic diagnostic | 8 | done, `88f868a` |
 | 1 | the threshold cancellation of the energy law in double; A2 registered for `double`; A1 to A5 for both instantiations; `qk_table.txt` vs the reference | 1 (P1) | done, `efb39a2` |
-| 2 | photon-energy marginal near threshold; standard errors in the moments fixtures; zero-variance columns; fixtures at fixed N; the full-sampled-density budget | 3, 7 | done (closing commit after `ff5310c`) |
+| 2 | photon-energy marginal near threshold; standard errors in the moments fixtures; zero-variance columns; fixtures at fixed N; the full-sampled-density budget | 3, 7 | done, `d778eb0` |
 | 3 | A8 against the reference's KA2008 CDF with the head-on map; the exact-chain quadrature renamed as a self-check; applicability corrected | 2 (P1) | not started |
 | 4 | A12 by decision (b): fixed N, literal tolerances, the reference's Born-chain <D>; the box spectrum against the reference's histograms | 4 (P1) | not started |
 | 5 | sampler counters in the MPI reduction and the ledger file; a forced-overflow test | 5 | not started |
@@ -858,4 +858,25 @@ threshold error). A3 asymptotic diagnostic unchanged (stage 0).
   - Rerun in the stage-6 full ctest.
 - **Kernel spectrum test.** Adapted to the new histogram layout. It is
   replaced in stage 4.
-- stage 2 done, this commit, pushed.
+- **A10 against the reference, on the regenerated fixtures** (the stage-6
+  test run here on the stage-2 files; log
+  `logs-step4-r2-stage2-bh_sampler_fixtures-partial.log`).
+  - Moments: **13849 comparisons** of <D>, <D^2>, <E->, <E+>, <cos theta->,
+    <eps> (broad baths) and E_p[1/D] <D>, at every node of the five baths.
+    The largest deviation is 3.64 combined s.e. (powerlaw <eps>,
+    Gamma 1.0622; the expected maximum of 13849 normal deviates is about 3.9),
+    within 4 s.e.
+  - The referee's 44 powerlaw <eps> nodes beyond 4 s.e. are gone.
+  - The deterministic columns (3503 values: the Gamma_p nodes, and <eps> of
+    the mono baths with s.e. 0) agree to the last printed digit: 9.5e-13
+    relative, which is one unit in the 13th significant digit of `%.12e`,
+    against 1e-12.
+  - Acceptance efficiencies (diagnostic): within 3.7 combined s.e. at every
+    node.
+  - Histograms: 80 of 80 combinations pass the weighted two-sample KS at 99%.
+  - qk: sigma 9.7e-12, q_k 4.0e-12, <E'-> 2.2e-13, <p' cos theta'> 6.2e-8,
+    against 1e-4.
+- Logs: `logs-step4-r2-stage2-bh_chain-epsbias-budget.log` (epsbias and
+  budget groups, 126 s, 7 contract and 2 implementation-chosen checks, all
+  pass) and `logs-step4-r2-stage2-fixture-regeneration.log`.
+- stage 2 done, commit `d778eb0`, pushed.
