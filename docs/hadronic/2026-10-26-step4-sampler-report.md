@@ -1187,8 +1187,8 @@ three items, resolved here in four stages. Same staging discipline.
 | stage | content | status |
 | --- | --- | --- |
 | 1 | the generic-symmetry tolerance selected by significand width | done, `cf0363d` |
-| 2 | Claude 3's F8: the calibrated weighted two-sample test of `COMPARISON.md`; C++ log-D histograms; A10 and the source spectra | done (this commit) |
-| 3 | A8 wording | not started |
+| 2 | Claude 3's F8: the calibrated weighted two-sample test of `COMPARISON.md`; C++ log-D histograms; A10 and the source spectra | done, `50ffb6f` |
+| 3 | A8 wording | in progress |
 | 4 | closure: full ctest single and double, the A10 table | not started |
 
 ## R3.1 Stage log
@@ -1332,4 +1332,8 @@ three items, resolved here in four stages. Same staging discipline.
     of a minimum p <= 4e-4 among the 80 within-file checks is about 3%), or
     something in its weighted chain at that Gamma_p. This is for the
     reference's author to judge.
-- stage 2 done, this commit, pushed.
+- stage 2 done, commit `50ffb6f`, pushed.
+
+### R3 stage 3 (A8 wording)
+
+- stage 3 started, HEAD `50ffb6f`.
