@@ -34,7 +34,9 @@
  * log-spaced bins in E- and in E+ over the kinematic lab range
  * [1, Gamma (E'_max + beta p'_max)], 200 linear bins in cos theta- and
  * cos theta+ (lab, to u^), 200 linear bins in D over [D_min, D_max] of the
- * bath at this Gamma_p, or the edges of another fixture (`--bins-from`); the
+ * bath at this Gamma_p, or the edges of another fixture (`--bins-from`; only
+ * the quantities that file holds, and its two unweighted-sum columns when it
+ * has them, as the log-D files of bhref-0.2.0-suppl1); the
  * layout of the bh-sampler-fixture histograms (quantity_id, bin, lo, hi,
  * unweighted_count, weighted_packet_count, sum_1_over_D,
  * sum_1_over_D_squared, normalized_packet_weight).
@@ -486,6 +488,8 @@ namespace {
     const int                        NQ = 5;
     const char* const                qname[NQ] = { "Eminus", "Eplus", "cosminus", "cosplus", "D" };
     std::vector<std::vector<double>> edges(NQ);
+    std::vector<bool>                present(NQ, true); // quantities histogrammed (a --bins-from file may hold a subset)
+    bool                             unw_sums = false;  // the two unweighted sum columns of the supplement layout
     std::string                      bins_json;
     if (!o.bins_from.empty()) {
       // the bin edges of another fixture in the bh-sampler-fixture layout (quantity_id, bin, lo, hi, ...)
@@ -499,6 +503,7 @@ namespace {
         throw std::runtime_error("hist: --bins-from file has no column " + n);
       };
       const std::size_t cq = col("quantity_id"), cl = col("lo"), ch = col("hi");
+      unw_sums = std::find(ref.columns.begin(), ref.columns.end(), "unweighted_sum_w") != ref.columns.end();
       for (const auto& row : ref.rows) {
         const int q = static_cast<int>(row[cq]);
         if (q < 0 || q >= NQ) {
@@ -509,10 +514,19 @@ namespace {
         }
         edges[q].push_back(row[ch]);
       }
+      int n_present = 0;
       for (int q = 0; q < NQ; ++q) {
-        if (edges[q].size() < 2 || !std::is_sorted(edges[q].begin(), edges[q].end())) {
-          throw std::runtime_error("hist: --bins-from edges missing or not increasing");
+        present[q] = !edges[q].empty();
+        if (!present[q]) {
+          continue;
         }
+        ++n_present;
+        if (edges[q].size() < 2 || !std::is_sorted(edges[q].begin(), edges[q].end())) {
+          throw std::runtime_error("hist: --bins-from edges not increasing");
+        }
+      }
+      if (n_present == 0) {
+        throw std::runtime_error("hist: --bins-from file holds no bins");
       }
       bins_json = "{\"source\": " + json_string(o.bins_from) + "}";
     } else {
@@ -554,6 +568,10 @@ namespace {
                   json_number(Dlo) + ", \"hi\": " + json_number(Dhi) + "}}";
     }
     // values outside the edges are counted in the first or last bin (and reported)
+    int q_first = 0;
+    while (!present[q_first]) {
+      ++q_first;
+    }
     auto bin_of = [&](int q, double v, std::size_t& clamped) {
       const auto& e  = edges[q];
       const int   nb = static_cast<int>(e.size()) - 1;
@@ -587,7 +605,7 @@ namespace {
         for (auto* v : { &ch.nu, &ch.nw, &ch.sw, &ch.sw2 }) {
           v->assign(NQ, {});
           for (int q = 0; q < NQ; ++q) {
-            (*v)[q].assign(edges[q].size() - 1, 0.0);
+            (*v)[q].assign(present[q] ? edges[q].size() - 1 : 0, 0.0);
           }
         }
         const std::size_t nu = o.n / NC + (c < o.n % NC ? 1 : 0);
@@ -598,7 +616,9 @@ namespace {
           for (std::size_t n = 0; n < nu; ++n) {
             values(s.S->draw(g, false, rng), v);
             for (int q = 0; q < NQ; ++q) {
-              ch.nu[q][bin_of(q, v[q], ch.clamped)] += 1.0;
+              if (present[q]) {
+                ch.nu[q][bin_of(q, v[q], ch.clamped)] += 1.0;
+              }
             }
           }
         }
@@ -613,6 +633,9 @@ namespace {
             values(e, v);
             const double w = 1.0 / e.D;
             for (int q = 0; q < NQ; ++q) {
+              if (!present[q]) {
+                continue;
+              }
               const int i = bin_of(q, v[q], ch.clamped);
               ch.nw[q][i] += 1.0;
               ch.sw[q][i] += w;
@@ -626,7 +649,7 @@ namespace {
     std::vector<std::vector<double>> nu(NQ), nw(NQ), sw(NQ), sw2(NQ);
     std::size_t                      n_att = 0, clamped = 0;
     for (int q = 0; q < NQ; ++q) {
-      nu[q].assign(edges[q].size() - 1, 0.0);
+      nu[q].assign(present[q] ? edges[q].size() - 1 : 0, 0.0);
       nw[q] = sw[q] = sw2[q] = nu[q];
     }
     for (const auto& ch : chunks) {
@@ -642,9 +665,9 @@ namespace {
       }
     }
     double W = 0.0, W2 = 0.0;
-    for (std::size_t i = 0; i < sw[0].size(); ++i) {
-      W += sw[0][i];
-      W2 += sw2[0][i];
+    for (std::size_t i = 0; i < sw[q_first].size(); ++i) {
+      W += sw[q_first][i];
+      W2 += sw2[q_first][i];
     }
     FixtureTable t;
     t.header = common_header("bh-sampler-hist", o);
@@ -664,7 +687,15 @@ namespace {
     t.header.push_back({ "rng", json_string("64 chunks c = 0..63 (n/64 draws each, remainder to the first): "
                                             "SplitMix64(seed + 1000003 c) unweighted, SplitMix64(seed + 500000 + "
                                             "1000003 c) weighted; merged in chunk order") });
-    t.header.push_back({ "quantities", "[\"Eminus\", \"Eplus\", \"cosminus\", \"cosplus\", \"D\"]" });
+    {
+      std::string qs = "[";
+      for (int q = 0; q < NQ; ++q) {
+        if (present[q]) {
+          qs += std::string(qs.size() > 1 ? ", " : "") + json_string(qname[q]);
+        }
+      }
+      t.header.push_back({ "quantities", qs + "]" });
+    }
     t.header.push_back({ "bins", bins_json });
     t.header.push_back({ "weights", json_string("weighted chain: packet weight 1/D; normalized_packet_weight = "
                                                 "sum_1_over_D of the bin / the total sum of 1/D") });
@@ -678,17 +709,26 @@ namespace {
     t.header.push_back({ "node_count", std::to_string(nrows) });
     t.columns = { "quantity_id", "bin", "lo", "hi", "unweighted_count", "weighted_packet_count", "sum_1_over_D",
                   "sum_1_over_D_squared", "normalized_packet_weight" };
+    if (unw_sums) {
+      // the supplement layout: the unweighted chain's sum of weights and of squared weights (weight 1)
+      t.columns.push_back("unweighted_sum_w");
+      t.columns.push_back("unweighted_sum_w_squared");
+    }
     for (int q = 0; q < NQ; ++q) {
       for (std::size_t i = 0; i < nu[q].size(); ++i) {
         t.rows.push_back({ static_cast<double>(q), static_cast<double>(i), edges[q][i], edges[q][i + 1], nu[q][i],
                            nw[q][i], sw[q][i], sw2[q][i], sw[q][i] / W });
+        if (unw_sums) {
+          t.rows.back().push_back(nu[q][i]);
+          t.rows.back().push_back(nu[q][i]);
+        }
       }
     }
     write_fixture_file(o.out, t);
     const FixtureContents c = read_fixture_file(o.out);
     std::printf("bh_sampler_dump hist %s Gamma %g: %zu rows (%s) written to %s in %.0f s; weighted %zu accepted of %zu "
                 "attempts, ESS %.0f; %zu values outside the edges (data_sha256 %s)\n",
-                o.bath.c_str(), g, c.rows.size(), qname[0], o.out.c_str(),
+                o.bath.c_str(), g, c.rows.size(), qname[q_first], o.out.c_str(),
                 std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count(), o.n_weighted, n_att,
                 W * W / W2, clamped, c.data_sha256.c_str());
     return 0;

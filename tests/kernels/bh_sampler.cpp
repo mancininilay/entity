@@ -37,13 +37,20 @@
  *     above both tables and is not reachable by the box), 100 ions at Gamma_p
  *     (K = mu_r (Gamma_p - 1), to the real_t rounding of u), 1e5 pairs with
  *     weights 1/D (r_packet constant), compared with the reference's
- *     weighted-chain histograms (bhref-0.2.0/hist_<bath>_G<Gamma>.txt,
- *     sum_1_over_D normalised) in E-, E+, cos theta-, cos theta+ and D on the
- *     reference's bins, by the A10 weighted two-sample test: the binned
- *     two-sample KS statistic against the 99% critical value
- *     1.628 sqrt((n1 + n2)/(n1 n2)), n the Kish effective sample sizes (the
- *     reference's header weighted_ESS); at least 95% of the combinations must
- *     pass, the failures are listed
+ *     weighted-chain histograms (bhref-0.2.0/hist_<bath>_G<Gamma>.txt; D at
+ *     Gamma_p = 10 on the log bins of bhref-0.2.0-suppl1/hist_logD_*.txt) in
+ *     E-, E+, cos theta-, cos theta+ and D on the reference's bins, by the
+ *     calibrated weighted two-sample test of bhref-0.2.0-suppl1/COMPARISON.md
+ *     (round 3, Claude 3's F8; bh_calibrated_test.h): bins merged from left to
+ *     right until the kernel's packet count and the reference's weighted
+ *     packet count both reach 100 (the device draws the weighted chain only,
+ *     so these are the two counts that exist), the right-edge discrete
+ *     Anderson-Darling statistic on the per-bin sums of w and w^2, its
+ *     conditional Gaussian-multiplier null with 19,999 replicates, pass iff
+ *     p >= 0.01; null seeds 2026102901 + 10 case + quantity (case 0..5 =
+ *     mono05 2.23125, 3, 10, powerlaw 1.09375, 3, 10; quantity 0..4 = E-, E+,
+ *     cos-, cos+, D); at least 95% of the 30 comparisons must pass, the
+ *     failures are listed
  *
  * Verdict lines: "PASS" / "FAIL" with the measured number and the tolerance;
  * "(diag)" lines are reported only. One ctest entry per group.
@@ -56,6 +63,7 @@
 
 #include "metrics/minkowski.h"
 
+#include "archetypes/hadronic/bh_calibrated_test.h"
 #include "archetypes/hadronic/bh_interpolate.h"
 #include "archetypes/hadronic/bh_physics.h"
 #include "archetypes/hadronic/bh_sampler_device.h"
@@ -84,6 +92,7 @@ using namespace metric;
 namespace bh = arch::bh;
 namespace rf = arch::bh::rf;
 namespace kh = kernel::hadronic;
+namespace cal = arch::bh::cal;
 
 namespace {
 
@@ -966,43 +975,18 @@ namespace {
     }
   }
 
-  // binned two-sample Kolmogorov-Smirnov statistic of two weighted histograms on the same bins (normalised
-  // weights), with the 99% critical value 1.628 sqrt((n1 + n2)/(n1 n2)) on the Kish effective sizes: the weighted
-  // two-sample test of contract A10
-  struct KsResult {
-    double ks { 0.0 }, crit { 0.0 }, n1 { 0.0 }, n2 { 0.0 };
-    bool   pass { false };
-  };
-
-  KsResult weighted_ks(const std::vector<double>& w1, double n1, const std::vector<double>& p2, double n2) {
-    KsResult r;
-    double   W = 0.0;
-    for (const double v : w1) {
-      W += v;
-    }
-    double F1 = 0.0, F2 = 0.0;
-    for (std::size_t i = 0; i < w1.size(); ++i) {
-      F1 += w1[i] / W;
-      F2 += p2[i];
-      r.ks = std::max(r.ks, std::abs(F1 - F2));
-    }
-    r.n1   = n1;
-    r.n2   = n2;
-    r.crit = 1.628 * std::sqrt((n1 + n2) / (n1 * n2));
-    r.pass = r.ks <= r.crit;
-    return r;
-  }
-
   void test_spectrum(const Tables& Tmono) {
     std::printf("---- the spectrum of created pairs vs the reference's weighted-chain histograms (bhref 0.2.0, frozen), "
-                "mono05 and powerlaw, every reference Gamma_p inside the rate table ----\n");
+                "mono05 and powerlaw, every reference Gamma_p inside the rate table; the calibrated weighted "
+                "two-sample test (bhref-0.2.0-suppl1/COMPARISON.md) ----\n");
     struct Combo {
       std::string what;
-      KsResult    r;
+      cal::Result r;
     };
     std::vector<Combo>       combos;
     std::vector<std::string> not_reached;
     const char* const        qname[5] = { "E-", "E+", "cos-", "cos+", "D" };
+    int                      case_index = 0;
     for (const std::string bath : { "mono05", "powerlaw" }) {
       const Tables& T = bath == "mono05" ? Tmono : powerlaw_tables();
       const std::vector<std::string> gs = bath == "mono05" ? std::vector<std::string> { "2.23125", "3", "10", "100" }
@@ -1014,20 +998,29 @@ namespace {
                                 fmt("%.4f", T.host.gamma_max) + "])");
           continue;
         }
-        const std::string path = std::string(BH_TEST_DATA_DIR) + "/bhref-0.2.0/hist_" + bath + "_G" + gs[jg] +
-                                 ".txt";
-        const bh::FixtureContents F = bh::read_fixture_file(path);
-        // the reference's bins and normalised weighted-chain histograms, quantity by quantity
-        std::vector<std::vector<double>> edges(5), pref(5);
-        for (const auto& r : F.rows) {
-          const int q = static_cast<int>(r[0]);
-          if (edges[q].empty()) {
-            edges[q].push_back(r[2]);
+        // the reference's bins and weighted-chain sums, quantity by quantity; D at Gamma_p >= 10 on the
+        // supplement's log bins (as in A10)
+        std::vector<std::vector<double>> edges(5), rn(5), rw(5), rw2(5);
+        auto read_ref = [&](const std::string& file, bool only_D) {
+          const bh::FixtureContents F = bh::read_fixture_file(std::string(BH_TEST_DATA_DIR) + "/" + file);
+          for (const auto& r : F.rows) {
+            const int q = static_cast<int>(r[0]);
+            if ((only_D && q != 4) || (!only_D && q == 4 && g >= 10.0)) {
+              continue;
+            }
+            if (edges[q].empty()) {
+              edges[q].push_back(r[2]);
+            }
+            edges[q].push_back(r[3]);
+            rn[q].push_back(r[5]);  // weighted_packet_count
+            rw[q].push_back(r[6]);  // sum_1_over_D
+            rw2[q].push_back(r[7]); // sum_1_over_D_squared
           }
-          edges[q].push_back(r[3]);
-          pref[q].push_back(r[8]);
+        };
+        read_ref("bhref-0.2.0/hist_" + bath + "_G" + gs[jg] + ".txt", false);
+        if (g >= 10.0) {
+          read_ref("bhref-0.2.0-suppl1/hist_logD_" + bath + "_G" + gs[jg] + ".txt", true);
         }
-        const double ess_ref = std::stod(F.header.at("weighted_ESS"));
         // the kernel run: 100 ions at Gamma_p, 1000 packets each
         const int           nions = 100, pk = 1000;
         Ions                ions(nions, 1.0);
@@ -1047,20 +1040,18 @@ namespace {
         random_number_pool_t pool(2024u + static_cast<unsigned>(jg) + (bath == "mono05" ? 0u : 100u));
         launch(ions, pairs, T, prm, pool, 1.0e-6);
         const auto rows = pairs.rows();
-        std::vector<std::vector<double>> wk(5);
+        std::vector<std::vector<double>> kn(5), kw(5), kw2(5);
         for (int q = 0; q < 5; ++q) {
-          wk[q].assign(edges[q].size() - 1, 0.0);
+          kn[q].assign(edges[q].size() - 1, 0.0);
+          kw[q] = kw2[q] = kn[q];
         }
-        double      sw = 0.0, sw2 = 0.0;
         std::size_t outside = 0;
         for (const auto& r : rows) {
           const double gm = kh::lepton_gamma(r.u1m, r.u2m, r.u3m), gp = kh::lepton_gamma(r.u1p, r.u2p, r.u3p);
           const double um = std::sqrt(r.u1m * r.u1m + r.u2m * r.u2m + r.u3m * r.u3m);
           const double up = std::sqrt(r.u1p * r.u1p + r.u2p * r.u2p + r.u3p * r.u3p);
           const double v[5] = { gm, gp, r.u1m / um, r.u1p / up, gm + gp - r.eps_m }; // the ion moves along +x
-          const double w    = r.wm;
-          sw += w;
-          sw2 += w * w;
+          const double w    = r.wm; // r_packet / D (r_packet constant)
           for (int q = 0; q < 5; ++q) {
             const auto& e = edges[q];
             if (v[q] < e.front() || v[q] > e.back()) {
@@ -1068,20 +1059,32 @@ namespace {
             }
             int i = static_cast<int>(std::upper_bound(e.begin(), e.end(), v[q]) - e.begin()) - 1;
             i     = std::min(static_cast<int>(e.size()) - 2, std::max(0, i));
-            wk[q][i] += w;
+            kn[q][i] += 1.0;
+            kw[q][i] += w;
+            kw2[q][i] += w * w;
           }
         }
-        const double n_eff = sw * sw / sw2;
-        std::string  line  = bath + " Gamma_p " + gs[jg] + ": " + std::to_string(rows.size()) + " pairs (N_eff " +
-                           fmt("%.0f", n_eff) + "), reference ESS " + fmt("%.0f", ess_ref) + ", values outside the " +
-                           "reference's edges " + std::to_string(outside) + ";";
+        diag(bath + " Gamma_p " + gs[jg] + ": " + std::to_string(rows.size()) + " pairs; values outside the " +
+             "reference's edges " + std::to_string(outside));
         for (int q = 0; q < 5; ++q) {
-          const KsResult r = weighted_ks(wk[q], n_eff, pref[q], ess_ref);
-          combos.push_back({ bath + " Gamma_p " + gs[jg] + " " + qname[q], r });
-          line += std::string(" ") + qname[q] + " KS " + fmt("%.5f", r.ks) + (r.pass ? "" : " (FAILS)");
+          // the common partition from the two packet counts that exist (the device draws the weighted chain only)
+          const cal::Partition P = cal::merge_partition({ kn[q], rn[q] }, 100.0);
+          const cal::Result    r = cal::calibrated(cal::merge_sums(P, kw[q]), cal::merge_sums(P, kw2[q]),
+                                                   cal::merge_sums(P, rw[q]), cal::merge_sums(P, rw2[q]),
+                                                   2026102901ULL + 10ULL * case_index + static_cast<unsigned>(q));
+          const std::string what = bath + " Gamma_p " + gs[jg] + " " + qname[q] + (q == 4 && g >= 10.0 ? " (log bins)" : "");
+          combos.push_back({ what, r });
+          char b[256];
+          if (r.insufficient) {
+            std::snprintf(b, sizeof(b), "ESS_A %.0f ESS_B %.0f, 1 merged bin: INSUFFICIENT RESOLUTION (not a pass)",
+                          r.ess_a, r.ess_b);
+          } else {
+            std::snprintf(b, sizeof(b), "ESS_A %.0f ESS_B %.0f T_AD %.4e p %.5f q99 %.4e merged bins %zu%s", r.ess_a,
+                          r.ess_b, r.T_AD, r.p, r.q99, r.merged_bins, r.pass ? "" : " FAIL");
+          }
+          diag("spectrum " + what + ": " + b);
         }
-        line += "; 99% critical " + fmt("%.5f", combos.back().r.crit);
-        diag(line);
+        ++case_index;
       }
     }
     int         n_pass_c = 0;
@@ -1090,18 +1093,18 @@ namespace {
       if (c.r.pass) {
         ++n_pass_c;
       } else {
-        failed += " " + c.what + " (KS " + fmt("%.5f", c.r.ks) + " > " + fmt("%.5f", c.r.crit) + ");";
+        failed += " " + c.what + (c.r.insufficient ? " (insufficient resolution)" : " (p " + fmt("%.5f", c.r.p) + ")") +
+                  ";";
       }
     }
     const double frac = combos.empty() ? 0.0 : static_cast<double>(n_pass_c) / static_cast<double>(combos.size());
     verdict(!combos.empty() && frac >= 0.95,
             "spectrum: the kernel's weighted pairs vs the reference's weighted-chain histograms (E-, E+, cos-, cos+, D; "
-            "binned weighted two-sample KS at 99% with Kish effective sizes, the A10 test), fraction of the " +
-              std::to_string(combos.size()) + " combinations passing (>= 95% required)",
+            "the calibrated weighted two-sample test of COMPARISON.md, pass iff p >= 0.01), fraction of the " +
+              std::to_string(combos.size()) + " comparisons passing (>= 95% required)",
             frac, 0.95);
-    if (!failed.empty()) {
-      diag("spectrum: failing combinations:" + failed);
-    }
+    diag("spectrum: " + std::to_string(n_pass_c) + " of " + std::to_string(combos.size()) +
+         " pass; failures:" + (failed.empty() ? std::string(" none") : failed));
     std::string nr;
     for (const auto& s : not_reached) {
       nr += " " + s + ";";

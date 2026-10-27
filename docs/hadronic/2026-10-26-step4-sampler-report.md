@@ -1187,7 +1187,7 @@ three items, resolved here in four stages. Same staging discipline.
 | stage | content | status |
 | --- | --- | --- |
 | 1 | the generic-symmetry tolerance selected by significand width | done, `cf0363d` |
-| 2 | Claude 3's F8: the calibrated weighted two-sample test of `COMPARISON.md`; C++ log-D histograms; A10 and the source spectra | in progress |
+| 2 | Claude 3's F8: the calibrated weighted two-sample test of `COMPARISON.md`; C++ log-D histograms; A10 and the source spectra | done (this commit) |
 | 3 | A8 wording | not started |
 | 4 | closure: full ctest single and double, the A10 table | not started |
 
@@ -1228,3 +1228,108 @@ three items, resolved here in four stages. Same staging discipline.
 ### R3 stage 2 (F8: the calibrated weighted two-sample test)
 
 - stage 2 started, HEAD `cf0363d`.
+- **The statistic** (`src/archetypes/hadronic/bh_calibrated_test.h`,
+  namespace `arch::bh::cal`) is implemented as `COMPARISON.md` specifies.
+  - *Partition* (`merge_partition`):
+    - Adjacent bins are merged from left to right until every given count
+      series has accumulated >= 100. For A10 the four series are the C++
+      unweighted events, the reference's unweighted events, the C++ weighted
+      packets and the reference's weighted packets.
+    - An incomplete final tail joins its previous merged bin.
+    - One merged bin means insufficient resolution, which is not a pass.
+    - The same partition serves both chains.
+  - *Sums* (`merge_sums`): counts, sums of w and sums of w^2 are carried
+    through the merging, with w = 1/D for weighted packets. a2_j is the sum
+    of squared weights; for unweighted events a = a2 = count.
+  - *Statistic* (`calibrated`): the right-edge discrete Anderson-Darling T_AD
+    as written: h = (p + q)/2, H = cumsum(h), delta = cumsum(p - q), and
+    J = {0 < H < 1 - 1e-12}.
+  - *Null*: per replicate, z_j ~ N(0, a2_j/A^2) and y_j ~ N(0, b2_j/B^2),
+    independent; each vector centred (zc = z - p sum z, yc = y - q sum y);
+    T* on delta* = cumsum(zc - yc). With 19,999 replicates,
+    p = (1 + #{T* >= T_AD})/20,000, and a comparison passes iff p >= 0.01.
+  - *Reported per comparison*: ESS_A, ESS_B, T_AD, p, the empirical 99th
+    percentile of T* (NumPy's linear interpolation at 0.99 (n - 1),
+    diagnostic) and the merged-bin count.
+  - *Gaussian generator (stated)*: `std::mt19937_64` seeded with the integer
+    seed; uniforms ((x >> 11) + 0.5) 2^-53; Box-Muller, both members (cos,
+    then sin); per replicate the full z vector, then the full y vector.
+    `std::mt19937_64` is fully specified by the standard, so the stream does
+    not depend on the standard library. It is not NumPy's PCG64 stream, so
+    p-values agree with the referee's in distribution, not bit for bit.
+  - *Seeds*:
+    - A10: `COMPARISON.md`'s rule, 2026102701 + 10 case + 5 chain + quantity,
+      for all 80 comparisons. Case = mono05 2.23125, 3, 10, 100 then powerlaw
+      1.09375, 3, 10, 100; chain 0 unweighted, 1 weighted; quantity 0..4 =
+      E-, E+, cos-, cos+, D. This reproduces the table's eight D seeds.
+    - Source spectra: 2026102901 + 10 case + quantity, case 0..5 = mono05
+      2.23125, 3, 10 then powerlaw 1.09375, 3, 10.
+  - *Self-check (implementation-chosen, group `calnull`)*: 100 comparisons
+    of synthetic weighted samples drawn from one distribution (sizes 20,000
+    and 50,000, w = 1/(0.5 + x)). Result: 0 with p < 0.01 (bound 5) and mean
+    p 0.473 (0.5 +- 0.1), so the null is calibrated.
+- **C++ log-D histograms.**
+  - `bh_sampler_dump hist --bins-from` now takes a file holding a subset of
+    the quantities, and reproduces the supplement's two extra columns.
+  - Four files `cpp-sampler-candidate/hist_logD_{mono05,powerlaw}_G{10,100}.txt`:
+    D only, on the supplement's serialized edges, both chains at 1e6
+    accepted.
+  - They use the seeds of the linear files: the attempts and ESS are
+    identical, so these are the same events binned differently.
+  - The modified tool reproduces the committed linear `hist_mono05_G2.23125.txt`
+    data block bit for bit (data_sha256 `4545934b...`).
+  - The linear `hist_*` fixtures already carried per-bin
+    `sum_1_over_D_squared` (since round 2) and are unchanged.
+- **A10, the histogram family** (`ARCHETYPES::bh_sampler_fixtures`, group
+  `hist`; log `logs-step4-r3-stage2-bh_sampler_fixtures.log`, which has the
+  full line of every comparison).
+  - The universal Kish-ESS KS cutoff is removed.
+  - 80 comparisons: 2 baths x 4 Gamma_p x 5 quantities x 2 chains. D at
+    Gamma_p = 10 and 100 is compared on the log bins (C++ `hist_logD_*`
+    against `bhref-0.2.0-suppl1/hist_logD_*`) instead of the linear bins.
+  - **80 of 80 pass** (p >= 0.01); the registered aggregate is >= 95%.
+    **Failures: none.**
+  - The lowest p values: 0.0182 (mono05 Gamma_p 3, D, weighted), 0.0190
+    (mono05 3, E+, weighted), 0.0415 (mono05 100, E+, unweighted), 0.0474
+    (mono05 3, cos-, weighted).
+  - The merged-bin counts run from 3 (mono05 at 1.05 Gamma_th, cos theta, where
+    the lab angles are concentrated) to 200.
+  - The bin edges are identical to the reference's: 0 relative deviation,
+    the log-D edges included.
+  - The referee's replay case (mono05 Gamma_p 3, weighted linear D) gives
+    150 merged bins, matching the replay (deterministic partition). Its
+    p = 0.0182 against the replay's 0.01805, with a different Gaussian
+    stream: an agreement in distribution.
+  - The eight linear-D comparisons the log-D ones replace are printed as
+    diagnostics, not counted. All have p >= 0.043; the merged bins drop to
+    9 to 93, which is F8's point: at Gamma_p >= 10 the linear bins put 95 to
+    98% of events in the first bin.
+- **Source spectra** (`KERNELS::bh_sampler_spectrum`; log
+  `logs-step4-r3-stage2-bh_sampler-spectrum.log`).
+  - The 30 device comparisons now use the same calibrated test.
+  - The device draws only the weighted chain, so the common partition is
+    built from the two packet counts that exist (kernel and reference
+    weighted packets, both >= 100).
+  - D at Gamma_p = 10 is on the supplement's log bins, as in A10.
+  - **30 of 30 pass.** The lowest p is 0.0214 (mono05 Gamma_p 3, E-).
+- **Observation: mono05 Gamma_p = 3, weighted chain, located on the
+  reference side.** It is a diagnostic and changes no verdict.
+  - The lowest p values of both families sit at mono05 Gamma_p = 3 in the
+    weighted chain: A10 D 0.018 and E+ 0.019; device E- 0.021 and D 0.056.
+    Both families share the reference's Gamma_p = 3 sample.
+  - A second, independently seeded C++ sample (scratch, seed 777001, not
+    committed) against the reference gave weighted E+ p = 0.0044 and D
+    p = 0.0047. The two C++ samples agree with each other: E+ 0.67, D 0.74.
+  - The decisive check: within any one file, the weighted chain re-weighted
+    by 1/D must reproduce that file's unweighted chain, since the weighted
+    density is D times the unweighted one. This check is now a diagnostic in
+    the A10 test for all 16 files.
+  - Result: the **reference's** mono05 Gamma_p = 3 file is inconsistent with
+    itself, E+ p = 0.0004 and D p = 0.0061. Every other reference file and
+    every C++ file gives p >= 0.010 (C++: >= 0.018).
+  - So the low C++-versus-reference p values at that point come from the
+    reference's weighted sample there. Either it is a fluctuation (the chance
+    of a minimum p <= 4e-4 among the 80 within-file checks is about 3%), or
+    something in its weighted chain at that Gamma_p. This is for the
+    reference's author to judge.
+- stage 2 done, this commit, pushed.

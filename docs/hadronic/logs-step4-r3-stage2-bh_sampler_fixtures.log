@@ -1,0 +1,141 @@
+
+== A10 item 1: qk_table.txt, C++ vs reference ==
+[PASS] qk: node count: C++ nodes (reference count as tol) = 4.490000e+02 (tol 4.490e+02)
+[PASS] qk: eps' nodes equal (deterministic): max rel. dev. = 0.000000e+00 (tol 1.000e-12)
+[PASS] qk: sigma at every eps' node (worst eps' = 2.031623): max rel. dev. = 9.710647e-12 (tol 1.000e-04)
+[PASS] qk: q_k at every eps' node (worst eps' = 2.000104): max rel. dev. = 4.000074e-12 (tol 1.000e-04)
+[PASS] qk: <E'-> at every eps' node (worst eps' = 899.687132): max rel. dev. = 2.222719e-13 (tol 1.000e-04)
+[PASS] qk: <p' cos theta'> at every eps' node (worst eps' = 2.000104): max rel. dev. = 6.213729e-08 (tol 1.000e-04)
+[DIAG] qk: C++ "31e82eb9e0629b8281447fa70adff1a7478e9bdb-mod" (data_sha256 d36ef7a035299ad7374db87757ea64f9dcc066a5aa24cd2c1115d93da68bda05), reference "0.2.0" (data_sha256 43e3035173104bb41fd35d7513621ea58607c0146a94f77abcfd3eb312c4a476)
+
+== A10 item 2: moments_<bath>.txt, C++ vs reference, every node ==
+[DIAG] moments mono05: 466 nodes; max |C++ - ref| / combined s.e. = 3.28 (<E+> at Gamma_p 2.146700); acceptance efficiency max 3.06 combined s.e.; reference <D> vs the C++ sampled-density <D> max 3.56 ref s.e.; C++ be9a3c370302, reference 69b87f32ad4c
+[DIAG] moments mono03: 465 nodes; max |C++ - ref| / combined s.e. = 3.46 (<cos theta-> at Gamma_p 3.475345); acceptance efficiency max 2.85 combined s.e.; reference <D> vs the C++ sampled-density <D> max 3.63 ref s.e.; C++ efcab366841c, reference 672bf47c3df4
+[DIAG] moments powerlaw: 429 nodes; max |C++ - ref| / combined s.e. = 3.64 (<eps> at Gamma_p 1.062193); acceptance efficiency max 2.56 combined s.e.; reference <D> vs the C++ sampled-density <D> max 3.42 ref s.e.; C++ b4659239af74, reference 9ce146a989b0
+[DIAG] moments blackbody: 406 nodes; max |C++ - ref| / combined s.e. = 3.56 (<E+> at Gamma_p 1.015970); acceptance efficiency max 2.72 combined s.e.; reference <D> vs the C++ sampled-density <D> max 3.03 ref s.e.; C++ 471fbb4748ce, reference a7fe2bff550f
+[DIAG] moments mono05_mu100: 403 nodes; max |C++ - ref| / combined s.e. = 3.46 (<D> at Gamma_p 2.138041); acceptance efficiency max 3.74 combined s.e.; reference <D> vs the C++ sampled-density <D> max 3.52 ref s.e.; C++ 31fc64d75f4b, reference 901b16d321f0
+[PASS] moments: deterministic columns (Gamma_p nodes; <eps> of the mono baths, s.e. 0) at 1e-12 relative, 3503 values: max rel. dev. = 9.489864e-13 (tol 1.000e-12)
+[PASS] moments: every Monte Carlo moment within 4 combined s.e. at every node of the five baths (13849 comparisons; worst powerlaw <eps> at Gamma_p 1.062193): max |dev| / s.e. = 3.637629e+00 (tol 4.000e+00)
+
+== the calibrated test under the null: synthetic weighted samples from one distribution ==
+[DIAG] calibrated test under the null: 100 comparisons, 0 with p < 0.01 (expected 1; binomial 99.95% bound 5), mean p 0.473 (expected 0.5, s.e. 0.029); 3.8 s
+[PASS] calibration null: rejections at p < 0.01 among 100 null comparisons (binomial(100, 0.01), P(>= 6) = 5e-4): rejections = 0.000000e+00 (tol 5.000e+00)
+[PASS] calibration null: mean p of the 100 null comparisons within 0.5 +- 0.1 (+-3.4 s.e.): mean p - 0.5 = -2.716350e-02 (tol 1.000e-01)
+
+== A10 item 3: histograms, C++ vs reference, the calibrated weighted two-sample test (bhref-0.2.0-suppl1/COMPARISON.md) ==
+[DIAG] A10 hist mono05 Gamma_p 2.23125 E- unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 1.3986e-06 p 0.56190 q99 7.7217e-06 merged bins 119
+[DIAG] A10 hist mono05 Gamma_p 2.23125 E- weighted: ESS_A 988766 ESS_B 988795 T_AD 1.4566e-06 p 0.54200 q99 7.7998e-06 merged bins 119
+[DIAG] A10 hist mono05 Gamma_p 2.23125 E+ unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 2.3425e-06 p 0.27795 q99 7.6823e-06 merged bins 119
+[DIAG] A10 hist mono05 Gamma_p 2.23125 E+ weighted: ESS_A 988766 ESS_B 988795 T_AD 1.6356e-06 p 0.46980 q99 7.8350e-06 merged bins 119
+[DIAG] A10 hist mono05 Gamma_p 2.23125 cos- unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 1.1699e-07 p 0.80020 q99 4.2927e-06 merged bins 3
+[DIAG] A10 hist mono05 Gamma_p 2.23125 cos- weighted: ESS_A 988766 ESS_B 988795 T_AD 2.7031e-07 p 0.62345 q99 4.5408e-06 merged bins 3
+[DIAG] A10 hist mono05 Gamma_p 2.23125 cos+ unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 1.5814e-07 p 0.74915 q99 4.4199e-06 merged bins 3
+[DIAG] A10 hist mono05 Gamma_p 2.23125 cos+ weighted: ESS_A 988766 ESS_B 988795 T_AD 1.3129e-06 p 0.17540 q99 4.4450e-06 merged bins 3
+[DIAG] A10 hist mono05 Gamma_p 2.23125 D unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 8.1439e-07 p 0.84520 q99 7.5723e-06 merged bins 119
+[DIAG] A10 hist mono05 Gamma_p 2.23125 D weighted: ESS_A 988766 ESS_B 988795 T_AD 2.3969e-06 p 0.27345 q99 7.7850e-06 merged bins 119
+[DIAG] A10 hist mono05 Gamma_p 3 E- unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 2.2432e-06 p 0.29745 q99 7.7597e-06 merged bins 168
+[DIAG] A10 hist mono05 Gamma_p 3 E- weighted: ESS_A 915747 ESS_B 916016 T_AD 1.2820e-06 p 0.64705 q99 8.4864e-06 merged bins 168
+[DIAG] A10 hist mono05 Gamma_p 3 E+ unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 6.5583e-07 p 0.91635 q99 7.7335e-06 merged bins 168
+[DIAG] A10 hist mono05 Gamma_p 3 E+ weighted: ESS_A 915747 ESS_B 916016 T_AD 7.2690e-06 p 0.01900 q99 8.5812e-06 merged bins 168
+[DIAG] A10 hist mono05 Gamma_p 3 cos- unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 1.6219e-06 p 0.37085 q99 7.0783e-06 merged bins 18
+[DIAG] A10 hist mono05 Gamma_p 3 cos- weighted: ESS_A 915747 ESS_B 916016 T_AD 4.9853e-06 p 0.04735 q99 8.0206e-06 merged bins 18
+[DIAG] A10 hist mono05 Gamma_p 3 cos+ unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 2.0978e-06 p 0.25105 q99 6.9016e-06 merged bins 18
+[DIAG] A10 hist mono05 Gamma_p 3 cos+ weighted: ESS_A 915747 ESS_B 916016 T_AD 1.9334e-06 p 0.33310 q99 7.7566e-06 merged bins 18
+[DIAG] A10 hist mono05 Gamma_p 3 D unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 1.0242e-06 p 0.73400 q99 7.8038e-06 merged bins 150
+[DIAG] A10 hist mono05 Gamma_p 3 D weighted: ESS_A 915747 ESS_B 916016 T_AD 7.7668e-06 p 0.01820 q99 8.8711e-06 merged bins 150
+[DIAG] A10 hist mono05 Gamma_p 10 E- unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 1.3061e-06 p 0.59680 q99 7.6583e-06 merged bins 170
+[DIAG] A10 hist mono05 Gamma_p 10 E- weighted: ESS_A 621612 ESS_B 622220 T_AD 1.1134e-06 p 0.85910 q99 1.2139e-05 merged bins 170
+[DIAG] A10 hist mono05 Gamma_p 10 E+ unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 3.5819e-07 p 0.99505 q99 7.8065e-06 merged bins 170
+[DIAG] A10 hist mono05 Gamma_p 10 E+ weighted: ESS_A 621612 ESS_B 622220 T_AD 3.8615e-06 p 0.24110 q99 1.1946e-05 merged bins 170
+[DIAG] A10 hist mono05 Gamma_p 10 cos- unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 1.1051e-06 p 0.55165 q99 6.7334e-06 merged bins 47
+[DIAG] A10 hist mono05 Gamma_p 10 cos- weighted: ESS_A 621612 ESS_B 622220 T_AD 1.6718e-06 p 0.58365 q99 1.0709e-05 merged bins 47
+[DIAG] A10 hist mono05 Gamma_p 10 cos+ unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 3.5921e-06 p 0.08460 q99 6.7545e-06 merged bins 47
+[DIAG] A10 hist mono05 Gamma_p 10 cos+ weighted: ESS_A 621612 ESS_B 622220 T_AD 1.6148e-06 p 0.60220 q99 1.0707e-05 merged bins 47
+[DIAG] A10 hist mono05 Gamma_p 10 D (log bins) unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 1.3674e-06 p 0.57490 q99 7.7379e-06 merged bins 158
+[DIAG] A10 hist mono05 Gamma_p 10 D (log bins) weighted: ESS_A 621612 ESS_B 622016 T_AD 6.8410e-06 p 0.10875 q99 1.4854e-05 merged bins 158
+[DIAG] A10 hist mono05 Gamma_p 100 E- unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 1.5891e-06 p 0.48400 q99 7.9847e-06 merged bins 144
+[DIAG] A10 hist mono05 Gamma_p 100 E- weighted: ESS_A 296962 ESS_B 296940 T_AD 2.8326e-06 p 0.73920 q99 2.4418e-05 merged bins 144
+[DIAG] A10 hist mono05 Gamma_p 100 E+ unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 5.2049e-06 p 0.04145 q99 7.6132e-06 merged bins 145
+[DIAG] A10 hist mono05 Gamma_p 100 E+ weighted: ESS_A 296962 ESS_B 296940 T_AD 2.3288e-06 p 0.82835 q99 2.4084e-05 merged bins 145
+[DIAG] A10 hist mono05 Gamma_p 100 cos- unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 1.8073e-06 p 0.25015 q99 6.1251e-06 merged bins 65
+[DIAG] A10 hist mono05 Gamma_p 100 cos- weighted: ESS_A 296962 ESS_B 296940 T_AD 5.2728e-06 p 0.29820 q99 1.9577e-05 merged bins 65
+[DIAG] A10 hist mono05 Gamma_p 100 cos+ unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 1.0008e-06 p 0.51870 q99 5.8390e-06 merged bins 66
+[DIAG] A10 hist mono05 Gamma_p 100 cos+ weighted: ESS_A 296962 ESS_B 296940 T_AD 2.8895e-06 p 0.59305 q99 1.9646e-05 merged bins 66
+[DIAG] A10 hist mono05 Gamma_p 100 D (log bins) unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 8.9661e-07 p 0.79390 q99 7.7008e-06 merged bins 140
+[DIAG] A10 hist mono05 Gamma_p 100 D (log bins) weighted: ESS_A 296962 ESS_B 297633 T_AD 4.7135e-06 p 0.58025 q99 3.4475e-05 merged bins 140
+[DIAG] A10 hist powerlaw Gamma_p 1.09375 E- unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 2.6495e-06 p 0.22085 q99 7.8054e-06 merged bins 161
+[DIAG] A10 hist powerlaw Gamma_p 1.09375 E- weighted: ESS_A 972445 ESS_B 972520 T_AD 1.0683e-06 p 0.71525 q99 8.0506e-06 merged bins 161
+[DIAG] A10 hist powerlaw Gamma_p 1.09375 E+ unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 1.3282e-06 p 0.58810 q99 7.6385e-06 merged bins 160
+[DIAG] A10 hist powerlaw Gamma_p 1.09375 E+ weighted: ESS_A 972445 ESS_B 972520 T_AD 4.3155e-06 p 0.08100 q99 7.8324e-06 merged bins 160
+[DIAG] A10 hist powerlaw Gamma_p 1.09375 cos- unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 1.6732e-06 p 0.44460 q99 7.6448e-06 merged bins 197
+[DIAG] A10 hist powerlaw Gamma_p 1.09375 cos- weighted: ESS_A 972445 ESS_B 972520 T_AD 2.0259e-06 p 0.36215 q99 8.0267e-06 merged bins 197
+[DIAG] A10 hist powerlaw Gamma_p 1.09375 cos+ unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 8.8256e-07 p 0.79565 q99 7.8238e-06 merged bins 196
+[DIAG] A10 hist powerlaw Gamma_p 1.09375 cos+ weighted: ESS_A 972445 ESS_B 972520 T_AD 1.3922e-06 p 0.57225 q99 8.0145e-06 merged bins 196
+[DIAG] A10 hist powerlaw Gamma_p 1.09375 D unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 3.2338e-06 p 0.15215 q99 7.7226e-06 merged bins 161
+[DIAG] A10 hist powerlaw Gamma_p 1.09375 D weighted: ESS_A 972445 ESS_B 972520 T_AD 3.2684e-06 p 0.15700 q99 7.9957e-06 merged bins 161
+[DIAG] A10 hist powerlaw Gamma_p 3 E- unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 3.7086e-07 p 0.99280 q99 7.9554e-06 merged bins 153
+[DIAG] A10 hist powerlaw Gamma_p 3 E- weighted: ESS_A 700357 ESS_B 701205 T_AD 1.2985e-06 p 0.76625 q99 1.1904e-05 merged bins 153
+[DIAG] A10 hist powerlaw Gamma_p 3 E+ unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 4.6973e-06 p 0.05900 q99 7.7803e-06 merged bins 153
+[DIAG] A10 hist powerlaw Gamma_p 3 E+ weighted: ESS_A 700357 ESS_B 701205 T_AD 6.1560e-06 p 0.08005 q99 1.1468e-05 merged bins 153
+[DIAG] A10 hist powerlaw Gamma_p 3 cos- unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 1.1852e-06 p 0.62265 q99 7.4578e-06 merged bins 200
+[DIAG] A10 hist powerlaw Gamma_p 3 cos- weighted: ESS_A 700357 ESS_B 701205 T_AD 2.8764e-06 p 0.36100 q99 1.2119e-05 merged bins 200
+[DIAG] A10 hist powerlaw Gamma_p 3 cos+ unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 1.5821e-06 p 0.46165 q99 7.4378e-06 merged bins 200
+[DIAG] A10 hist powerlaw Gamma_p 3 cos+ weighted: ESS_A 700357 ESS_B 701205 T_AD 2.9924e-06 p 0.34230 q99 1.1621e-05 merged bins 200
+[DIAG] A10 hist powerlaw Gamma_p 3 D unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 1.0572e-06 p 0.70760 q99 7.9875e-06 merged bins 86
+[DIAG] A10 hist powerlaw Gamma_p 3 D weighted: ESS_A 700357 ESS_B 701205 T_AD 5.8770e-06 p 0.12150 q99 1.3180e-05 merged bins 86
+[DIAG] A10 hist powerlaw Gamma_p 10 E- unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 1.5395e-06 p 0.50470 q99 7.6848e-06 merged bins 143
+[DIAG] A10 hist powerlaw Gamma_p 10 E- weighted: ESS_A 499089 ESS_B 498793 T_AD 2.7040e-06 p 0.58485 q99 1.8232e-05 merged bins 143
+[DIAG] A10 hist powerlaw Gamma_p 10 E+ unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 1.3590e-06 p 0.57615 q99 7.5207e-06 merged bins 143
+[DIAG] A10 hist powerlaw Gamma_p 10 E+ weighted: ESS_A 499089 ESS_B 498793 T_AD 1.5312e-06 p 0.84585 q99 1.8020e-05 merged bins 143
+[DIAG] A10 hist powerlaw Gamma_p 10 cos- unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 1.3093e-06 p 0.46505 q99 6.6423e-06 merged bins 196
+[DIAG] A10 hist powerlaw Gamma_p 10 cos- weighted: ESS_A 499089 ESS_B 498793 T_AD 9.5208e-06 p 0.06640 q99 1.7047e-05 merged bins 196
+[DIAG] A10 hist powerlaw Gamma_p 10 cos+ unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 2.2740e-06 p 0.20725 q99 6.6205e-06 merged bins 197
+[DIAG] A10 hist powerlaw Gamma_p 10 cos+ weighted: ESS_A 499089 ESS_B 498793 T_AD 5.7977e-06 p 0.19065 q99 1.6981e-05 merged bins 197
+[DIAG] A10 hist powerlaw Gamma_p 10 D (log bins) unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 2.0137e-06 p 0.35175 q99 7.7838e-06 merged bins 138
+[DIAG] A10 hist powerlaw Gamma_p 10 D (log bins) weighted: ESS_A 499089 ESS_B 497908 T_AD 1.2630e-05 p 0.06875 q99 2.2685e-05 merged bins 138
+[DIAG] A10 hist powerlaw Gamma_p 100 E- unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 6.3900e-07 p 0.92310 q99 8.0284e-06 merged bins 131
+[DIAG] A10 hist powerlaw Gamma_p 100 E- weighted: ESS_A 251052 ESS_B 250354 T_AD 5.1968e-06 p 0.64100 q99 4.3539e-05 merged bins 131
+[DIAG] A10 hist powerlaw Gamma_p 100 E+ unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 2.1222e-06 p 0.33210 q99 7.8278e-06 merged bins 132
+[DIAG] A10 hist powerlaw Gamma_p 100 E+ weighted: ESS_A 251052 ESS_B 250354 T_AD 2.7669e-06 p 0.89190 q99 4.4171e-05 merged bins 132
+[DIAG] A10 hist powerlaw Gamma_p 100 cos- unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 1.4745e-07 p 0.97125 q99 4.0987e-06 merged bins 128
+[DIAG] A10 hist powerlaw Gamma_p 100 cos- weighted: ESS_A 251052 ESS_B 250354 T_AD 2.3595e-06 p 0.81550 q99 3.2790e-05 merged bins 128
+[DIAG] A10 hist powerlaw Gamma_p 100 cos+ unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 2.0970e-07 p 0.92120 q99 4.0923e-06 merged bins 130
+[DIAG] A10 hist powerlaw Gamma_p 100 cos+ weighted: ESS_A 251052 ESS_B 250354 T_AD 2.3535e-06 p 0.81280 q99 3.1832e-05 merged bins 130
+[DIAG] A10 hist powerlaw Gamma_p 100 D (log bins) unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 1.1923e-06 p 0.65085 q99 7.7754e-06 merged bins 121
+[DIAG] A10 hist powerlaw Gamma_p 100 D (log bins) weighted: ESS_A 251052 ESS_B 252355 T_AD 6.0218e-06 p 0.65100 q99 5.5959e-05 merged bins 121
+[DIAG] A10 hist mono05 Gamma_p 10 D (linear bins, diagnostic) unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 6.0160e-07 p 0.91400 q99 8.2972e-06 merged bins 93 (not counted)
+[DIAG] A10 hist mono05 Gamma_p 10 D (linear bins, diagnostic) weighted: ESS_A 621612 ESS_B 622220 T_AD 1.8938e-06 p 0.60310 q99 1.4668e-05 merged bins 93 (not counted)
+[DIAG] A10 hist mono05 Gamma_p 100 D (linear bins, diagnostic) unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 4.9170e-06 p 0.11280 q99 1.2446e-05 merged bins 21 (not counted)
+[DIAG] A10 hist mono05 Gamma_p 100 D (linear bins, diagnostic) weighted: ESS_A 296962 ESS_B 296940 T_AD 7.0616e-07 p 0.30055 q99 4.3115e-06 merged bins 21 (not counted)
+[DIAG] A10 hist powerlaw Gamma_p 10 D (linear bins, diagnostic) unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 5.4288e-07 p 0.89480 q99 8.3858e-06 merged bins 40 (not counted)
+[DIAG] A10 hist powerlaw Gamma_p 10 D (linear bins, diagnostic) weighted: ESS_A 499089 ESS_B 498793 T_AD 1.6220e-06 p 0.63980 q99 1.9842e-05 merged bins 40 (not counted)
+[DIAG] A10 hist powerlaw Gamma_p 100 D (linear bins, diagnostic) unweighted: ESS_A 1000000 ESS_B 1000000 T_AD 7.3540e-06 p 0.05330 q99 1.2926e-05 merged bins 9 (not counted)
+[DIAG] A10 hist powerlaw Gamma_p 100 D (linear bins, diagnostic) weighted: ESS_A 251052 ESS_B 250354 T_AD 1.4118e-06 p 0.04265 q99 2.2910e-06 merged bins 9 (not counted)
+[DIAG] within-file consistency (diagnostic), C++ mono05 Gamma_p 2.23125, weighted (1/D) vs unweighted: E- p 0.5553 E+ p 0.3508 cos- p 0.1976 cos+ p 0.7331 D p 0.3361
+[DIAG] within-file consistency (diagnostic), reference mono05 Gamma_p 2.23125, weighted (1/D) vs unweighted: E- p 0.6029 E+ p 0.9256 cos- p 0.7020 cos+ p 0.3631 D p 0.4449
+[DIAG] within-file consistency (diagnostic), C++ mono05 Gamma_p 3, weighted (1/D) vs unweighted: E- p 0.7042 E+ p 0.9729 cos- p 0.0182 cos+ p 0.1414 D p 0.6825
+[DIAG] within-file consistency (diagnostic), reference mono05 Gamma_p 3, weighted (1/D) vs unweighted: E- p 0.5694 E+ p 0.0004 (< 0.01) cos- p 0.2109 cos+ p 0.6361 D p 0.0061 (< 0.01)
+[DIAG] within-file consistency (diagnostic), C++ mono05 Gamma_p 10, weighted (1/D) vs unweighted: E- p 0.1868 E+ p 0.9121 cos- p 0.8184 cos+ p 0.9194 D p 0.5461
+[DIAG] within-file consistency (diagnostic), reference mono05 Gamma_p 10, weighted (1/D) vs unweighted: E- p 0.7812 E+ p 0.1784 cos- p 0.4081 cos+ p 0.5169 D p 0.7759
+[DIAG] within-file consistency (diagnostic), C++ mono05 Gamma_p 100, weighted (1/D) vs unweighted: E- p 0.9876 E+ p 0.8672 cos- p 0.6888 cos+ p 0.9204 D p 0.4449
+[DIAG] within-file consistency (diagnostic), reference mono05 Gamma_p 100, weighted (1/D) vs unweighted: E- p 0.2026 E+ p 0.2533 cos- p 0.1011 cos+ p 0.1129 D p 0.6482
+[DIAG] within-file consistency (diagnostic), C++ powerlaw Gamma_p 1.09375, weighted (1/D) vs unweighted: E- p 0.2801 E+ p 0.2507 cos- p 0.5937 cos+ p 0.6284 D p 0.5602
+[DIAG] within-file consistency (diagnostic), reference powerlaw Gamma_p 1.09375, weighted (1/D) vs unweighted: E- p 0.2620 E+ p 0.2738 cos- p 0.2442 cos+ p 0.4219 D p 0.0101
+[DIAG] within-file consistency (diagnostic), C++ powerlaw Gamma_p 3, weighted (1/D) vs unweighted: E- p 0.6131 E+ p 0.9856 cos- p 0.4725 cos+ p 0.6725 D p 0.6681
+[DIAG] within-file consistency (diagnostic), reference powerlaw Gamma_p 3, weighted (1/D) vs unweighted: E- p 0.6980 E+ p 0.9107 cos- p 0.4817 cos+ p 0.1185 D p 0.3598
+[DIAG] within-file consistency (diagnostic), C++ powerlaw Gamma_p 10, weighted (1/D) vs unweighted: E- p 0.5226 E+ p 0.0887 cos- p 0.1043 cos+ p 0.0428 D p 0.2834
+[DIAG] within-file consistency (diagnostic), reference powerlaw Gamma_p 10, weighted (1/D) vs unweighted: E- p 0.2379 E+ p 0.1511 cos- p 0.1058 cos+ p 0.2127 D p 0.2205
+[DIAG] within-file consistency (diagnostic), C++ powerlaw Gamma_p 100, weighted (1/D) vs unweighted: E- p 0.9522 E+ p 0.6232 cos- p 0.8139 cos+ p 0.3285 D p 0.2051
+[DIAG] within-file consistency (diagnostic), reference powerlaw Gamma_p 100, weighted (1/D) vs unweighted: E- p 0.5483 E+ p 0.8595 cos- p 0.6022 cos+ p 0.1960 D p 0.8980
+[PASS] hist: bin edges of the C++ fixtures = the reference's (taken from them by --bins-from; the log-D edges from the supplement's serialized edges): max rel. dev. = 0.000000e+00 (tol 1.000e-12)
+[PASS] hist: the referee's replay case (mono05 Gamma_p = 3, weighted D): merged-bin count 150 (deterministic partition); p = 0.018200 against the replay's 0.01805 (a different Gaussian stream: diagnostic): merged bins = 1.500000e+02 (tol 1.500e+02)
+[PASS] hist: fraction of the 80 comparisons (2 baths x 4 Gamma_p x 5 quantities x 2 chains; D on log bins at Gamma_p = 10 and 100) passing the calibrated test at p >= 0.01: fraction (>= 0.95 required) = 1.000000e+00 (tol 9.500e-01)
+[DIAG] hist: 80 of 80 pass; failures: none
+
+== A10 item 4: the head-on A8 KS against the reference's KA2008 CDF ==
+[DIAG] rest-frame tables built in 11.1 s
+[PASS] A8 head-on KS, mono05 Gamma_p = 100 (eps'_hi/mu_r = 0.054460): KS = 1.316416e-03 (tol 2.000e-02)
+[PASS] A8 head-on KS, mono05 Gamma_p = 1000 (eps'_hi/mu_r = 0.544618): KS = 7.979148e-04 (tol 2.000e-02)
+[PASS] A8 head-on KS, mono005 Gamma_p = 1000 (eps'_hi/mu_r = 0.054462): KS = 5.791196e-04 (tol 2.000e-02)
+
+bh_sampler_fixtures summary: 16 passed, 0 failed; 37 s

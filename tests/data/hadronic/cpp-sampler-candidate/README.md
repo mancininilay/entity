@@ -52,6 +52,17 @@ stage 3; their `version` header names the build that regenerated them.
     Gamma_p = 100) and `weighted_ESS`.
   - Generation: 64 chunks with seeds of their own, so the result does not
     depend on the thread count.
+- `hist_logD_<bath>_G<Gamma>.txt` (round 3, Claude 3's F8): histograms of D
+  only (quantity_id 4) for mono05 and powerlaw at Gamma_p = 10 and 100.
+  - Bins: the 200 log bins of `../bhref-0.2.0-suppl1/hist_logD_*.txt`, its
+    serialized edges, read by `--bins-from`.
+  - Columns: those of the supplement, the nine above plus `unweighted_sum_w`
+    and `unweighted_sum_w_squared` (both equal to the unweighted count).
+  - Generated with the seeds of the linear `hist_*` file at the same
+    Gamma_p, so the events are the same, binned differently: the attempts and
+    ESS equal those of the linear files.
+  - The linear `hist_*` files already carry the per-bin `sum_1_over_D_squared`
+    the calibrated test needs, and are unchanged.
 - `exact_chain_cdf_mono05_G100.txt`, `exact_chain_cdf_mono05_G1000.txt`
   (round 1: `ka2008_mono05_G*.txt`, renamed in round 2):
   - What it is: the exact-chain self-check of the lab e- spectrum. It is the

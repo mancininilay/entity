@@ -3,7 +3,7 @@
  * @brief Contract A10 inside ctest (P2 step 4, round 2, stage 6): the C++
  *        sampler fixtures (`tests/data/hadronic/cpp-sampler-candidate/`)
  *        against the Python reference's (`tests/data/hadronic/bhref-0.2.0/`,
- *        bhref 0.2.0 (frozen), unfrozen), file against file; no Python.
+ *        bhref 0.2.0, frozen), file against file; no Python.
  *
  * Contract items (tolerances of contract A10 and of the round-2 brief, never
  * adjusted here):
@@ -16,14 +16,27 @@
  *          columns compared at 1e-12 relative, not by a standard-error
  *          criterion: the Gamma_p nodes, and <eps> of a mono bath (eps = eps0
  *          exactly, zero variance)
- *   hist   `hist_<bath>_G<Gamma>.txt`, mono05 and powerlaw at four Gamma_p:
- *          the binned two-sample Kolmogorov-Smirnov statistic of every quantity
- *          (E-, E+, cos theta-, cos theta+, D) and both chains, on the
- *          reference's bins, against the 99% critical value
- *          1.628 sqrt((n1 + n2)/(n1 n2)) with the effective sample sizes (the
- *          counts N for the unweighted chain; the Kish sizes (sum w)^2/sum w^2,
- *          the files' weighted_ESS, for the 1/D-weighted chain); at least 95%
- *          of the combinations must pass, the failures are listed
+ *   hist   `hist_<bath>_G<Gamma>.txt`, mono05 and powerlaw at four Gamma_p,
+ *          every quantity (E-, E+, cos theta-, cos theta+, D) and both chains:
+ *          the calibrated weighted two-sample test of
+ *          `bhref-0.2.0-suppl1/COMPARISON.md` (round 3, Claude 3's F8;
+ *          `bh_calibrated_test.h`): the common partition (adjacent bins merged
+ *          until the C++ and reference unweighted counts and weighted packet
+ *          counts all reach 100), the right-edge discrete Anderson-Darling
+ *          statistic, its conditional Gaussian-multiplier null with the
+ *          per-bin sums of w and w^2 (w = 1/D), 19,999 replicates, pass iff
+ *          p >= 0.01, one merged bin = insufficient resolution (not a pass).
+ *          D at Gamma_p = 10 and 100 on the supplement's log bins
+ *          (`hist_logD_*.txt`, both directories) instead of the linear bins
+ *          (8 substitutions; the linear-D results are printed as diagnostics,
+ *          not counted); at least 95% of the 80 comparisons must pass, the
+ *          failures are listed. Null seeds 2026102701 + 10 case + 5 chain +
+ *          quantity (COMPARISON.md; case = mono05 2.23125, 3, 10, 100,
+ *          powerlaw 1.09375, 3, 10, 100; chain 0 unweighted, 1 weighted).
+ *          Diagnostic, not counted: within each file (C++ and reference) the
+ *          weighted chain re-weighted by 1/D against the file's own unweighted
+ *          chain, by the same test (it locates a C++-vs-reference difference
+ *          on one side)
  *   A8     the head-on A8 KS: rest-frame events of the C++ sampler mapped
  *          head-on, E = Gamma (E' - p' cos theta'_gamma), N = 1e6, against the
  *          reference's KA2008 CDF (`ka2008_<bath>_G<Gamma>.txt`), KS <= 0.02 at
@@ -35,6 +48,10 @@
  * sqrt(N_cpp/N_ref) (the same population variance; both files use N = 1e6
  * unweighted draws per node), so the combined s.e. is sqrt(se_cpp^2 + se_ref^2).
  *
+ * Implementation-chosen (group `calnull`): the size of the calibrated test
+ * under its null, 100 comparisons of synthetic weighted samples drawn from one
+ * distribution: at most 5 with p < 0.01, mean p within 0.5 +- 0.1.
+ *
  * Diagnostics: the acceptance efficiencies of the weighted chains (C++
  * n_accepted/n_attempts against the reference's accepted/proposal counts),
  * the extremes D_min, D_max, the C++ deterministic <D>_sampled against both
@@ -43,6 +60,7 @@
  * Seeds (A8 part): SplitMix64(8080 + j), as in bh_ka2008.cpp.
  */
 
+#include "archetypes/hadronic/bh_calibrated_test.h"
 #include "archetypes/hadronic/bh_physics.h"
 #include "archetypes/hadronic/bh_sampler_host.h"
 #include "archetypes/hadronic/bh_sampler_io.h"
@@ -54,6 +72,7 @@
 #include <exception>
 #include <map>
 #include <memory>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -261,88 +280,196 @@ namespace {
   }
 
   // ---------------------------------------------------------------------- //
-  struct KsOut {
-    double ks, crit;
+  // one quantity's histogram in a fixture: the series the calibrated test needs
+  struct QHist {
+    std::vector<double> lo, hi, nu, nw, sw, sw2;
   };
 
-  // binned two-sample KS of two histograms given as per-bin weights, with effective sizes n1, n2
-  KsOut ks2(const std::vector<double>& a, double n1, const std::vector<double>& b, double n2) {
-    double A = 0.0, B = 0.0;
-    for (std::size_t i = 0; i < a.size(); ++i) {
-      A += a[i];
-      B += b[i];
+  QHist qhist(const Table& T, int q) {
+    QHist H;
+    for (std::size_t r = 0; r < T.f.rows.size(); ++r) {
+      if (static_cast<int>(T.at(r, "quantity_id")) != q) {
+        continue;
+      }
+      H.lo.push_back(T.at(r, "lo"));
+      H.hi.push_back(T.at(r, "hi"));
+      H.nu.push_back(T.at(r, "unweighted_count"));
+      H.nw.push_back(T.at(r, "weighted_packet_count"));
+      H.sw.push_back(T.at(r, "sum_1_over_D"));
+      H.sw2.push_back(T.at(r, "sum_1_over_D_squared"));
     }
-    double Fa = 0.0, Fb = 0.0, d = 0.0;
-    for (std::size_t i = 0; i < a.size(); ++i) {
-      Fa += a[i] / A;
-      Fb += b[i] / B;
-      d = std::max(d, std::abs(Fa - Fb));
+    return H;
+  }
+
+  struct CalRow {
+    std::string what;
+    cal::Result r;
+  };
+
+  std::string describe(const cal::Result& r) {
+    char b[256];
+    if (r.insufficient) {
+      std::snprintf(b, sizeof(b), "ESS_A %.0f ESS_B %.0f, 1 merged bin: INSUFFICIENT RESOLUTION (not a pass)", r.ess_a,
+                    r.ess_b);
+    } else {
+      std::snprintf(b, sizeof(b), "ESS_A %.0f ESS_B %.0f T_AD %.4e p %.5f q99 %.4e merged bins %zu%s", r.ess_a,
+                    r.ess_b, r.T_AD, r.p, r.q99, r.merged_bins, r.pass ? "" : " FAIL");
     }
-    return { d, 1.628 * std::sqrt((n1 + n2) / (n1 * n2)) };
+    return b;
+  }
+
+  // both chains of one quantity on the common partition (all four counts >= 100); C = C++, R = reference
+  void compare_quantity(const QHist& C, const QHist& R, int case_index, int q, const std::string& label,
+                        std::vector<CalRow>& out, double& w_edge) {
+    if (C.lo.size() != R.lo.size() || C.lo.empty()) {
+      throw std::runtime_error(label + ": the two histograms have different bins");
+    }
+    for (std::size_t i = 0; i < C.lo.size(); ++i) {
+      w_edge = std::max({ w_edge, rel(C.lo[i], R.lo[i]), rel(C.hi[i], R.hi[i]) });
+    }
+    const cal::Partition P = cal::merge_partition({ C.nu, R.nu, C.nw, R.nw }, 100.0);
+    const auto           a_u = cal::merge_sums(P, C.nu), b_u = cal::merge_sums(P, R.nu);
+    const auto           a_w = cal::merge_sums(P, C.sw), a2_w = cal::merge_sums(P, C.sw2);
+    const auto           b_w = cal::merge_sums(P, R.sw), b2_w = cal::merge_sums(P, R.sw2);
+    // unweighted events: the sums of weights and of squared weights both equal the count
+    out.push_back({ label + " unweighted", cal::calibrated(a_u, a_u, b_u, b_u, cal::comparison_seed(case_index, 0, q)) });
+    out.push_back({ label + " weighted", cal::calibrated(a_w, a2_w, b_w, b2_w, cal::comparison_seed(case_index, 1, q)) });
   }
 
   void test_hist() {
-    std::printf("\n== A10 item 3: hist_<bath>_G<Gamma>.txt, C++ vs reference, weighted two-sample KS at 99%% ==\n");
-    const char* const qname[5] = { "E-", "E+", "cos-", "cos+", "D" };
-    std::size_t       n_comb = 0, n_pass = 0;
-    std::string       fails;
-    double            w_edge = 0.0;
+    std::printf("\n== A10 item 3: histograms, C++ vs reference, the calibrated weighted two-sample test "
+                "(bhref-0.2.0-suppl1/COMPARISON.md) ==\n");
+    const char* const   qname[5] = { "E-", "E+", "cos-", "cos+", "D" };
+    std::vector<CalRow> fam, linD;
+    double              w_edge = 0.0;
+    int                 case_index = 0;
     for (const std::string bath : { "mono05", "powerlaw" }) {
       const std::vector<std::string> gs = bath == "mono05" ? std::vector<std::string> { "2.23125", "3", "10", "100" }
                                                            : std::vector<std::string> { "1.09375", "3", "10", "100" };
       for (const auto& gstr : gs) {
         const Table C = load("cpp-sampler-candidate/hist_" + bath + "_G" + gstr + ".txt");
         const Table R = load("bhref-0.2.0/hist_" + bath + "_G" + gstr + ".txt");
-        if (C.f.rows.size() != R.f.rows.size()) {
-          ++n_comb;
-          fails += " " + bath + " G" + gstr + ": row counts differ;";
-          continue;
-        }
-        const double Nc = std::stod(C.head("n_unweighted")), Nr = std::stod(R.head("N_unweighted"));
-        const double Ec = std::stod(C.head("weighted_ESS")), Er = std::stod(R.head("weighted_ESS"));
-        std::string  line;
+        const bool  logD = gstr == "10" || gstr == "100";
         for (int q = 0; q < 5; ++q) {
-          std::vector<double> cu, ru, cw, rw;
-          for (std::size_t r = 0; r < C.f.rows.size(); ++r) {
-            if (static_cast<int>(C.at(r, "quantity_id")) != q) {
-              continue;
-            }
-            w_edge = std::max({ w_edge, rel(C.at(r, "lo"), R.at(r, "lo")), rel(C.at(r, "hi"), R.at(r, "hi")) });
-            cu.push_back(C.at(r, "unweighted_count"));
-            ru.push_back(R.at(r, "unweighted_count"));
-            cw.push_back(C.at(r, "sum_1_over_D"));
-            rw.push_back(R.at(r, "sum_1_over_D"));
+          const std::string label = bath + " Gamma_p " + gstr + " " + qname[q];
+          if (q == 4 && logD) {
+            // the eight log-D substitutions (supplement); the linear-D comparison is a diagnostic only
+            const Table CL = load("cpp-sampler-candidate/hist_logD_" + bath + "_G" + gstr + ".txt");
+            const Table RL = load("bhref-0.2.0-suppl1/hist_logD_" + bath + "_G" + gstr + ".txt");
+            compare_quantity(qhist(CL, 4), qhist(RL, 4), case_index, q, label + " (log bins)", fam, w_edge);
+            compare_quantity(qhist(C, 4), qhist(R, 4), case_index, q, label + " (linear bins, diagnostic)", linD,
+                             w_edge);
+          } else {
+            compare_quantity(qhist(C, q), qhist(R, q), case_index, q, label, fam, w_edge);
           }
-          const KsOut u  = ks2(cu, Nc, ru, Nr);
-          const KsOut wt = ks2(cw, Ec, rw, Er);
-          for (int chain = 0; chain < 2; ++chain) {
-            const KsOut& k = chain == 0 ? u : wt;
-            ++n_comb;
-            if (k.ks <= k.crit) {
-              ++n_pass;
-            } else {
-              fails += " " + bath + " G" + gstr + " " + qname[q] + (chain == 0 ? " unweighted" : " weighted") +
-                       " (KS " + std::to_string(k.ks) + " > " + std::to_string(k.crit) + ");";
-            }
-          }
-          char b[160];
-          std::snprintf(b, sizeof(b), " %s %.5f/%.5f%s %.5f/%.5f%s", qname[q], u.ks, u.crit, u.ks <= u.crit ? "" : "!",
-                        wt.ks, wt.crit, wt.ks <= wt.crit ? "" : "!");
-          line += b;
         }
-        diag("hist %s Gamma_p %s (KS/critical, unweighted then weighted; ESS C++ %.0f, ref %.0f):%s", bath.c_str(),
-             gstr.c_str(), Ec, Er, line.c_str());
+        ++case_index;
       }
     }
-    check("hist: bin edges of the C++ fixtures = the reference's (taken from them by --bins-from)", w_edge <= 1.0e-12,
-          w_edge, 1.0e-12, "max rel. dev.");
-    const double frac = n_comb ? static_cast<double>(n_pass) / static_cast<double>(n_comb) : 0.0;
-    check("hist: fraction of the " + std::to_string(n_comb) +
-            " combinations (2 baths x 4 Gamma_p x 5 quantities x 2 chains) passing the weighted two-sample KS at 99%",
-          n_comb > 0 && frac >= 0.95, frac, 0.95, "fraction (>= 0.95 required)");
-    if (!fails.empty()) {
-      diag("hist: failing combinations:%s", fails.c_str());
+    std::size_t n_pass = 0;
+    std::string fails;
+    for (const auto& c : fam) {
+      diag("A10 hist %s: %s", c.what.c_str(), describe(c.r).c_str());
+      if (c.r.pass) {
+        ++n_pass;
+      } else {
+        fails += " " + c.what + (c.r.insufficient ? " (insufficient resolution)" : " (p " + std::to_string(c.r.p) + ")") +
+                 ";";
+      }
     }
+    for (const auto& c : linD) {
+      diag("A10 hist %s: %s (not counted)", c.what.c_str(), describe(c.r).c_str());
+    }
+    // diagnostic, not counted: within one file the weighted chain re-weighted by 1/D must reproduce that file's
+    // unweighted chain (the weighted density is D times the unweighted one); the same calibrated test, the partition
+    // from the file's own two counts; null seeds 2026102801 + 10 case + quantity (C++), + 5 (reference)
+    {
+      int ci = 0;
+      for (const std::string bath : { "mono05", "powerlaw" }) {
+        const std::vector<std::string> gs = bath == "mono05" ? std::vector<std::string> { "2.23125", "3", "10", "100" }
+                                                             : std::vector<std::string> { "1.09375", "3", "10", "100" };
+        for (const auto& gstr : gs) {
+          for (int side = 0; side < 2; ++side) {
+            const Table T = load(side == 0 ? "cpp-sampler-candidate/hist_" + bath + "_G" + gstr + ".txt"
+                                           : "bhref-0.2.0/hist_" + bath + "_G" + gstr + ".txt");
+            std::string line;
+            for (int q = 0; q < 5; ++q) {
+              const QHist          H = qhist(T, q);
+              const cal::Partition P = cal::merge_partition({ H.nu, H.nw }, 100.0);
+              const auto           u = cal::merge_sums(P, H.nu);
+              const cal::Result    r = cal::calibrated(cal::merge_sums(P, H.sw), cal::merge_sums(P, H.sw2), u, u,
+                                                       2026102801ULL + 10ULL * ci + 5ULL * side + q);
+              char b[64];
+              std::snprintf(b, sizeof(b), " %s p %.4f%s", qname[q], r.p, r.p < 0.01 ? " (< 0.01)" : "");
+              line += b;
+            }
+            diag("within-file consistency (diagnostic), %s %s Gamma_p %s, weighted (1/D) vs unweighted:%s",
+                 side == 0 ? "C++" : "reference", bath.c_str(), gstr.c_str(), line.c_str());
+          }
+          ++ci;
+        }
+      }
+    }
+    check("hist: bin edges of the C++ fixtures = the reference's (taken from them by --bins-from; the log-D edges "
+          "from the supplement's serialized edges)",
+          w_edge <= 1.0e-12, w_edge, 1.0e-12, "max rel. dev.");
+    // the referee's replay (COMPARISON.md): mono05 Gamma_p = 3 weighted linear D, 150 merged bins, p = 0.01805
+    for (const auto& c : fam) {
+      if (c.what == "mono05 Gamma_p 3 D weighted") {
+        check("hist: the referee's replay case (mono05 Gamma_p = 3, weighted D): merged-bin count 150 (deterministic "
+              "partition); p = " + std::to_string(c.r.p) + " against the replay's 0.01805 (a different Gaussian stream: "
+              "diagnostic)",
+              c.r.merged_bins == 150, static_cast<double>(c.r.merged_bins), 150.0, "merged bins");
+      }
+    }
+    const double frac = fam.empty() ? 0.0 : static_cast<double>(n_pass) / static_cast<double>(fam.size());
+    check("hist: fraction of the " + std::to_string(fam.size()) +
+            " comparisons (2 baths x 4 Gamma_p x 5 quantities x 2 chains; D on log bins at Gamma_p = 10 and 100) "
+            "passing the calibrated test at p >= 0.01",
+          !fam.empty() && frac >= 0.95, frac, 0.95, "fraction (>= 0.95 required)");
+    diag("hist: %zu of %zu pass; failures:%s", n_pass, fam.size(), fails.empty() ? " none" : fails.c_str());
+  }
+
+  // ---------------------------------------------------------------------- //
+  // implementation-chosen: the size of the calibrated test under its null
+  void test_calibration_null() {
+    std::printf("\n== the calibrated test under the null: synthetic weighted samples from one distribution ==\n");
+    // 100 comparisons of two weighted samples drawn from one distribution (x exponential with unit mean,
+    // binned on 60 bins of [0, 6] with the overflow in the last bin, weight w = 1/(0.5 + x) as a stand-in for
+    // 1/D), sizes 20,000 and 50,000; the production function with 19,999 replicates
+    const auto     t0 = std::chrono::steady_clock::now();
+    std::mt19937_64 gen(20261027ULL);
+    auto            unif = [&]() { return (static_cast<double>(gen() >> 11) + 0.5) * (1.0 / 9007199254740992.0); };
+    const int       NB = 60, reps = 100;
+    int             n_reject = 0;
+    double          psum = 0.0;
+    for (int r = 0; r < reps; ++r) {
+      std::vector<double> an(NB, 0), aw(NB, 0), aw2(NB, 0), bn(NB, 0), bw(NB, 0), bw2(NB, 0);
+      auto fill = [&](int n, std::vector<double>& cn, std::vector<double>& cw, std::vector<double>& cw2) {
+        for (int i = 0; i < n; ++i) {
+          const double x = -std::log(unif());
+          const int    b = std::min(NB - 1, static_cast<int>(x / 0.1));
+          const double w = 1.0 / (0.5 + x);
+          cn[b] += 1.0;
+          cw[b] += w;
+          cw2[b] += w * w;
+        }
+      };
+      fill(20000, an, aw, aw2);
+      fill(50000, bn, bw, bw2);
+      const cal::Partition P = cal::merge_partition({ an, bn }, 100.0);
+      const cal::Result    R = cal::calibrated(cal::merge_sums(P, aw), cal::merge_sums(P, aw2), cal::merge_sums(P, bw),
+                                               cal::merge_sums(P, bw2), 4000000ULL + static_cast<unsigned>(r));
+      psum += R.p;
+      n_reject += R.p < 0.01 ? 1 : 0;
+    }
+    diag("calibrated test under the null: %d comparisons, %d with p < 0.01 (expected 1; binomial 99.95%% bound 5), "
+         "mean p %.3f (expected 0.5, s.e. 0.029); %.1f s",
+         reps, n_reject, psum / reps, seconds_since(t0));
+    check("calibration null: rejections at p < 0.01 among 100 null comparisons (binomial(100, 0.01), P(>= 6) = 5e-4)",
+          n_reject <= 5, n_reject, 5.0, "rejections");
+    check("calibration null: mean p of the 100 null comparisons within 0.5 +- 0.1 (+-3.4 s.e.)",
+          std::abs(psum / reps - 0.5) <= 0.1, psum / reps - 0.5, 0.1, "mean p - 0.5");
   }
 
   // ---------------------------------------------------------------------- //
@@ -405,6 +532,9 @@ auto main(int argc, char* argv[]) -> int {
     }
     if (want("moments")) {
       test_moments();
+    }
+    if (want("calnull")) {
+      test_calibration_null();
     }
     if (want("hist")) {
       test_hist();
