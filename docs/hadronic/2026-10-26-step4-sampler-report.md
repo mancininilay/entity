@@ -608,7 +608,7 @@ is known here only through the brief's summary.
 | 3 | A8 against the reference's KA2008 CDF with the head-on map; the exact-chain quadrature renamed as a self-check; applicability corrected | 2 (P1) | done, `17c3f7d` |
 | 4 | A12 by decision (b): fixed N, literal tolerances, the reference's Born-chain <D>; the box spectrum against the reference's histograms | 4 (P1) | done, `113788a`; one registered failure (A12 cost, 1 node of 466) |
 | 5 | sampler counters in the MPI reduction and the ledger file; a forced-overflow test | 5 | done, `f34576b` |
-| 6 | A10 inside ctest; full ctest single and double; resolution log | all | done (this commit) |
+| 6 | A10 inside ctest; full ctest single and double; resolution log | all | done, `48cc0e2` |
 
 Decisions applied (Nilay, 2026-10-27): (a) q_k from the Born machinery in the
 production tables is a later step; until then A7 weighted against the step-1
@@ -1165,5 +1165,5 @@ Defects found in this round beyond the eight (stated):
 ## R2.4 Stages reached
 
 Stages 0 to 6 were all reached and completed; the table in R2.0 gives the
-commits. Stage 6 closes with this commit. Branch `dev/hadronic-sampler`; the report is this file.
-- stage 6 done, this commit, pushed.
+commits; stage 6 closed at `48cc0e2`. Branch `dev/hadronic-sampler`; the report is this file.
+- stage 6 done, commit `48cc0e2`, pushed.
