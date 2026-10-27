@@ -605,7 +605,7 @@ is known here only through the brief's summary.
 | 0 | source identifications corrected, verification flags removed, the asymptotic diagnostic | 8 | done, `88f868a` |
 | 1 | the threshold cancellation of the energy law in double; A2 registered for `double`; A1 to A5 for both instantiations; `qk_table.txt` vs the reference | 1 (P1) | done, `efb39a2` |
 | 2 | photon-energy marginal near threshold; standard errors in the moments fixtures; zero-variance columns; fixtures at fixed N; the full-sampled-density budget | 3, 7 | done, `d778eb0` |
-| 3 | A8 against the reference's KA2008 CDF with the head-on map; the exact-chain quadrature renamed as a self-check; applicability corrected | 2 (P1) | done (this commit) |
+| 3 | A8 against the reference's KA2008 CDF with the head-on map; the exact-chain quadrature renamed as a self-check; applicability corrected | 2 (P1) | done, `17c3f7d` |
 | 4 | A12 by decision (b): fixed N, literal tolerances, the reference's Born-chain <D>; the box spectrum against the reference's histograms | 4 (P1) | in progress (code `7dcd5b5`) |
 | 5 | sampler counters in the MPI reduction and the ledger file; a forced-overflow test | 5 | not started |
 | 6 | A10 inside ctest; full ctest single and double; resolution log | all | not started |
@@ -953,4 +953,8 @@ threshold error). A3 asymptotic diagnostic unchanged (stage 0).
   - The reference's data_sha256: verified.
 - Log: `logs-step4-r2-stage3-bh_ka2008.log` (`ARCHETYPES::bh_ka2008`, 269 s:
   3 contract items and 6 implementation-chosen checks, all pass).
-- stage 3 done, this commit, pushed.
+- stage 3 done, commit `17c3f7d`, pushed.
+
+### R2 stage 4 (finding 4, P1: A12 by decision (b), the spectrum against the reference)
+
+- stage 4 started, HEAD `17c3f7d` (code pushed early as `7dcd5b5`); the A12 run (N = 2e5 per node) is in progress.
