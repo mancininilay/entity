@@ -1217,6 +1217,7 @@ namespace user {
         prm.pair_weight         = setup.pair_weight;
         prm.max_events_per_step = setup.max_events_per_step;
         prm.kick                = setup.test_kick;
+        prm.max_sampler_attempts = setup.test_max_sampler_attempts;
 
         for (auto& sp : domain.species) {
           if (ion_mass.count(sp.index()) == 0 || sp.npart() == 0) {
@@ -1580,6 +1581,7 @@ namespace user {
                                       &G.C.n_capped_events, &G.C.n_above_table,   &G.C.n_latency,
                                       &G.C.n_resolution,    &G.C.n_processed,     &G.C.n_alive,
                                       &G.C.n_applied,       &G.C.n_rng,           &G.C.n_k0_trigger,
+                                      &G.C.n_sampler_attempts, &G.C.n_sampler_overflow, // round 2, finding 5
                                       &G.n_dead_host };
         constexpr int NC = sizeof(cnt) / sizeof(cnt[0]);
         unsigned long long cbuf[NC];
@@ -1691,7 +1693,9 @@ namespace user {
                "n_closing | n_capped | n_capped_events | n_above_table | n_latency | n_processed | "
                "n_applied | n_rng | n_k0_trigger | n_closing_at_rest [1, cumulative] | sum_wK [snapshot: sum over alive "
                "ions of w K in double from the stored u] | B_budget [cumulative single-precision "
-               "rounding budget of the transfers] | npart_minus | npart_plus [snapshots]\n";
+               "rounding budget of the transfers] | npart_minus | npart_plus [snapshots] | "
+               "n_sampler_attempts | n_sampler_overflow [1, cumulative: restframe trials of the chains and "
+               "packets whose rejection loop hit the bound; reduced over ranks; round 2]\n";
         H.file_started = true;
       }
       const auto& C = G.C;
@@ -1708,7 +1712,7 @@ namespace user {
           << C.n_capped_events << " " << C.n_above_table << " " << C.n_latency << " "
           << C.n_processed << " " << C.n_applied << " " << C.n_rng << " " << C.n_k0_trigger << " "
           << C.n_closing_at_rest << " " << swk << " " << C.B_budget.value() << " " << npm << " " << npp
-          << "\n";
+          << " " << C.n_sampler_attempts << " " << C.n_sampler_overflow << "\n";
     }
 
     npart_t pair_npart_minus { 0 }, pair_npart_plus { 0 };

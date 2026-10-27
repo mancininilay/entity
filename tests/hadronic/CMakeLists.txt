@@ -57,6 +57,10 @@ if("${pgen}" STREQUAL "bh_proto")
   add_test(NAME "HADRONIC::t12b_estimate"
            COMMAND bash ${BH_SCRIPTS}/t12b.sh ${BH_SINGLE_ENTITY} $<TARGET_FILE:bh_check>
                    ${BH_INPUTS} ${BH_WORK}/t12b)
+  # step 4 round 2 (finding 5): the sampler counters reach the ledger file (non-MPI code path)
+  add_test(NAME "HADRONIC::sampler_overflow"
+           COMMAND bash ${BH_SCRIPTS}/sampler_overflow.sh ${BH_SINGLE_ENTITY} $<TARGET_FILE:bh_check>
+                   ${BH_INPUTS} ${BH_WORK}/sampler_overflow)
   add_test(NAME "HADRONIC::t13_gauss"
            COMMAND bash ${BH_SCRIPTS}/t13.sh ${BH_SINGLE_ENTITY} $<TARGET_FILE:bh_check>
                    ${BH_INPUTS} ${BH_WORK}/t13)

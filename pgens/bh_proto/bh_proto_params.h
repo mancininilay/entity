@@ -57,6 +57,9 @@
  *   table_dump                  bool (default true): write the table file next to the run output
  *   test.nan_payloads           bool (default false): fill every real payload slot of every
  *                               species with NaN before any injection (T10b)
+ *   test.max_sampler_attempts   int in [1, 1e9] (default 1e5): the bound of the restframe weighted
+ *                               chain's rejection loop per packet (round 2, finding 5: a small value
+ *                               forces sampler overflows in the overflow test)
  *   test.kick                   float >= 0 (default 0): antisymmetric transverse kick of the
  *                               leptons (T13)
  *   test.gauss                  bool (default false): write the discrete Gauss residual (T13)
@@ -139,6 +142,7 @@ namespace user::bhproto {
     // test hooks
     bool               test_nan_payloads { false };
     double             test_kick { 0.0 };
+    int                test_max_sampler_attempts { 100000 };
     bool               test_gauss { false };
     double             background_ppc { 0.0 };
     double             background_temperature { 0.0 };
@@ -488,6 +492,7 @@ namespace user::bhproto {
       "envelope.gamma_min",    "envelope.gamma_max",
       "c_layer",               "comm_headroom",
       "test.nan_payloads",     "test.kick",
+      "test.max_sampler_attempts",
       "test.gauss",            "background.ppc",
       "background.temperature", "background.n_global"
     };
@@ -545,6 +550,7 @@ namespace user::bhproto {
     if (!(s.test_kick >= 0.0)) {
       fail("test.kick", "= " + fmt_double(s.test_kick) + " must be >= 0");
     }
+    s.test_max_sampler_attempts = get_int_in(setup, "test.max_sampler_attempts", 1, 1000000000, false, 100000);
     s.test_gauss     = get_bool_or(setup, "test.gauss", false);
     s.background_ppc = get_number_or(setup, "background.ppc", 0.0);
     if (!(s.background_ppc >= 0.0)) {

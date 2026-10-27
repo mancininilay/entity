@@ -51,6 +51,7 @@
  *
  *   step 3 (pair plumbing):
  *   ledger --file F [--tol T] [--expect_dropped 0|1] [--expect_npart N] [--min_spawned N] [--expect_rng N]
+ *          [--min_sampler_overflow N]
  *          [--expect_events N] [--expect_capped_events N]
  *          [--expect_nopairs 1]
  *         last row of a hadronic_ledger file: identity residual <= T (1e-12) x E_drag, optional counts
@@ -205,9 +206,9 @@ namespace {
       while (ss >> v) {
         r.cols.push_back(v);
       }
-      // step 2 wrote 15 columns; step 3 writes 43 (sum_wK is column 39, 0-based)
-      if (r.cols.size() != 15 && r.cols.size() != 43) {
-        throw std::runtime_error(path + ": expected 15 or 43 columns, got " + std::to_string(r.cols.size()));
+      // step 2 wrote 15 columns; step 3 writes 43, step 4 round 2 45 (sum_wK is column 39, 0-based)
+      if (r.cols.size() != 15 && r.cols.size() != 43 && r.cols.size() != 45) {
+        throw std::runtime_error(path + ": expected 15, 43 or 45 columns, got " + std::to_string(r.cols.size()));
       }
       rows.push_back(r);
     }
@@ -518,7 +519,7 @@ namespace {
       const auto rows = read_ledger(str(a, which));
       double     maxabs = 0.0;
       for (const auto& r : rows) {
-        const std::size_t sum_wK_col = (r.cols.size() == 43) ? 39 : r.cols.size() - 1;
+        const std::size_t sum_wK_col = (r.cols.size() >= 43) ? 39 : r.cols.size() - 1;
         for (std::size_t c = 2; c < r.cols.size(); ++c) { // all but step, time, sum_wK
           if (c == sum_wK_col) {
             continue;
@@ -548,7 +549,7 @@ namespace {
   }
 
   /* ---- step 3: ledger file (last row) ------------------------------------- */
-  constexpr std::size_t LEDGER_COLS = 43; // round 2 ledger file
+  constexpr std::size_t LEDGER_COLS = 45; // step-4 round-2 ledger file (n_sampler_attempts, n_sampler_overflow)
 
   struct LedgerLast {
     std::vector<double> c;
@@ -581,14 +582,13 @@ namespace {
     return r;
   }
 
-  // column indices of the step-3 ledger file
   // column indices of the step-3 ledger file (round 2: 43 columns; E_stochastic after E_round,
-  // n_closing_at_rest after n_k0_trigger)
+  // n_closing_at_rest after n_k0_trigger); step 4 round 2: 45, the sampler counters appended
   enum LedgerCol : int {
     L_STEP = 0, L_TIME = 1, L_EDRAG = 2, L_EPAIRS = 3, L_EABS = 4, L_EEXP = 5, L_EROUND = 6, L_ESTOCH = 7,
     L_ELOST = 8, L_PDISC = 9, L_DINIT = 10, L_DOUT = 20, L_POUT = 21, L_RES = 22, L_NEVENTS = 23, L_NSPAWNED = 24,
     L_NDROPPED = 25, L_NCLOSING = 29, L_NCAPPED = 30, L_NCAPEV = 31, L_NRNG = 36, L_NK0 = 37, L_NCLOSE0 = 38,
-    L_SUMWK = 39, L_B = 40, L_NPM = 41, L_NPP = 42
+    L_SUMWK = 39, L_B = 40, L_NPM = 41, L_NPP = 42, L_NSATT = 43, L_NSOVF = 44
   };
 
   int cmd_ledger(const Args& a) {
@@ -598,10 +598,11 @@ namespace {
     std::printf("LEDGER_ROW step %.0f n_events %.0f n_spawned %.0f n_dropped %.0f n_closing %.0f n_capped %.0f "
                 "n_capped_events %.0f n_rng %.0f npart_minus %.0f npart_plus %.0f E_drag %.17g E_pairs %.17g "
                 "E_absorbed %.17g E_exported %.17g E_round %.17g E_stochastic %.17g E_lost_nopairs %.17g "
-                "debt_outstanding %.17g residual %.6e B %.17g\n",
+                "debt_outstanding %.17g residual %.6e B %.17g n_sampler_attempts %.0f n_sampler_overflow %.0f\n",
                 r.c[L_STEP], r.c[L_NEVENTS], r.c[L_NSPAWNED], r.c[L_NDROPPED], r.c[L_NCLOSING], r.c[L_NCAPPED],
                 r.c[L_NCAPEV], r.c[L_NRNG], r.c[L_NPM], r.c[L_NPP], r.c[L_EDRAG], r.c[L_EPAIRS], r.c[L_EABS],
-                r.c[L_EEXP], r.c[L_EROUND], r.c[L_ESTOCH], r.c[L_ELOST], r.c[L_DOUT], r.c[L_RES], r.c[L_B]);
+                r.c[L_EEXP], r.c[L_EROUND], r.c[L_ESTOCH], r.c[L_ELOST], r.c[L_DOUT], r.c[L_RES], r.c[L_B],
+                r.c[L_NSATT], r.c[L_NSOVF]);
     verdict(std::abs(r.c[L_RES]) <= tol * E, "ledger identity residual / E_drag (last row)",
             E > 0.0 ? std::abs(r.c[L_RES]) / E : std::abs(r.c[L_RES]), tol);
     if (a.count("expect_dropped")) {
@@ -630,6 +631,13 @@ namespace {
     if (a.count("expect_capped_events")) {
       const double n = num(a, "expect_capped_events");
       verdict(r.c[L_NCAPEV] == n, "ledger: n_capped_events = " + a.at("expect_capped_events"), r.c[L_NCAPEV], n);
+    }
+    if (a.count("min_sampler_overflow")) {
+      verdict(r.c[L_NSOVF] >= num(a, "min_sampler_overflow"),
+              "ledger: n_sampler_overflow >= " + a.at("min_sampler_overflow"), r.c[L_NSOVF],
+              num(a, "min_sampler_overflow"));
+      verdict(r.c[L_NSATT] >= r.c[L_NSOVF], "ledger: n_sampler_attempts >= n_sampler_overflow", r.c[L_NSATT],
+              r.c[L_NSOVF]);
     }
     if (a.count("expect_nopairs") && num(a, "expect_nopairs") > 0.5) {
       verdict(r.c[L_NSPAWNED] == 0.0 && r.c[L_ELOST] == r.c[L_EDRAG], "ledger (none): no spawns and E_lost_nopairs = E_drag",
@@ -866,7 +874,8 @@ namespace {
       return 0;
     }
     auto is_counter = [](std::size_t c) {
-      return c == L_STEP || (c >= L_NEVENTS && c <= L_NCLOSE0) || c == L_NPM || c == L_NPP;
+      return c == L_STEP || (c >= L_NEVENTS && c <= L_NCLOSE0) || c == L_NPM || c == L_NPP || c == L_NSATT ||
+             c == L_NSOVF;
     };
     double      worst = 0.0, worst_cnt = 0.0;
     std::size_t worst_row = 0, worst_col = 0;
