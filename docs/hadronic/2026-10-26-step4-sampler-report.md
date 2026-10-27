@@ -1207,7 +1207,7 @@ three items, resolved here in four stages. Same staging discipline.
 | 1 | the generic-symmetry tolerance selected by significand width | done, `cf0363d` |
 | 2 | Claude 3's F8: the calibrated weighted two-sample test of `COMPARISON.md`; C++ log-D histograms; A10 and the source spectra | done, `50ffb6f` |
 | 3 | A8 wording | done, `fb04e0a` |
-| 4 | closure: full ctest single and double, the A10 table | done (this commit) |
+| 4 | closure: full ctest single and double, the A10 table | done, `5227621` |
 
 ## R3.1 Stage log
 
@@ -1508,4 +1508,4 @@ three items, resolved here in four stages. Same staging discipline.
   its weighted chain, re-weighted by 1/D, against its own unweighted chain
   gives E+ p = 0.0004 and D p = 0.0061. Every C++ file passes this check
   (p >= 0.018), and so does every other reference file (p >= 0.010).
-- stage 4 done, this commit, pushed. Round 3 complete.
+- stage 4 done, commit `5227621`, pushed. Round 3 complete.
