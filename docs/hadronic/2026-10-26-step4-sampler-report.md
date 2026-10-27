@@ -1206,8 +1206,8 @@ three items, resolved here in four stages. Same staging discipline.
 | --- | --- | --- |
 | 1 | the generic-symmetry tolerance selected by significand width | done, `cf0363d` |
 | 2 | Claude 3's F8: the calibrated weighted two-sample test of `COMPARISON.md`; C++ log-D histograms; A10 and the source spectra | done, `50ffb6f` |
-| 3 | A8 wording | done (this commit) |
-| 4 | closure: full ctest single and double, the A10 table | not started |
+| 3 | A8 wording | done, `fb04e0a` |
+| 4 | closure: full ctest single and double, the A10 table | in progress |
 
 ## R3.1 Stage log
 
@@ -1380,4 +1380,8 @@ three items, resolved here in four stages. Same staging discipline.
 - The exact-chain fixture headers keep their stage-3 law string ("whose
   head-on approximation the A8 anchor uses"). It is incomplete rather than
   wrong, and the fixtures are not regenerated in this round.
-- stage 3 done, this commit, pushed.
+- stage 3 done, commit `fb04e0a`, pushed.
+
+### R3 stage 4 (closure)
+
+- stage 4 started, HEAD `fb04e0a`.
