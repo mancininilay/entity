@@ -80,8 +80,8 @@ namespace checkpoint {
     }
 
     m_writer.BeginStep();
-    m_writer.Put(m_io.InquireVariable<timestep_t>("Step"), &step);
-    m_writer.Put(m_io.InquireVariable<simtime_t>("Time"), &time);
+    m_writer.Put(m_io.InquireVariable<timestep_t>("Step"), &step, adios2::Mode::Sync);
+    m_writer.Put(m_io.InquireVariable<simtime_t>("Time"), &time, adios2::Mode::Sync);
   }
 
   void Writer::endSaving() {

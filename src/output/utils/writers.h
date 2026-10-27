@@ -24,6 +24,7 @@
 
 namespace out {
 
+  // The scalar is copied before return; caller storage need not survive EndStep.
   template <typename T>
   void WriteVariable(adios2::IO&,
                      adios2::Engine&,

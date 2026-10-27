@@ -35,6 +35,7 @@ endfunction()
 gen_test(stats false)
 
 if(${output})
+  gen_test(scalar-lifetime ${mpi})
   gen_test(fields false)
   if(NOT ${mpi})
     gen_test(writer-nompi false)

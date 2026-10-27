@@ -618,8 +618,8 @@ namespace out {
       m_mode   = adios2::Mode::Write;
       m_writer = m_io.Open(filename, m_mode);
       m_writer.BeginStep();
-      m_writer.Put(m_io.InquireVariable<timestep_t>("Step"), &tstep);
-      m_writer.Put(m_io.InquireVariable<simtime_t>("Time"), &time);
+      m_writer.Put(m_io.InquireVariable<timestep_t>("Step"), &tstep, adios2::Mode::Sync);
+      m_writer.Put(m_io.InquireVariable<simtime_t>("Time"), &time, adios2::Mode::Sync);
       m_active_mode = write_mode;
     } catch (std::exception& e) {
       raise::Fatal(e.what(), HERE);

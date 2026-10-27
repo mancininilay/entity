@@ -22,7 +22,9 @@ namespace out {
     auto var = io.InquireVariable<T>(name);
     var.SetShape({ global_size });
     var.SetSelection(adios2::Box<adios2::Dims>({ local_offset }, { 1 }));
-    writer.Put(var, &data);
+    // Callers may pass temporaries (mesh extents, sizes, particle counts).
+    // Consume the value before returning; deferred puts outlive those values.
+    writer.Put(var, &data, adios2::Mode::Sync);
   }
 
   template <typename T>
