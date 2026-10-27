@@ -958,3 +958,4 @@ threshold error). A3 asymptotic diagnostic unchanged (stage 0).
 ### R2 stage 4 (finding 4, P1: A12 by decision (b), the spectrum against the reference)
 
 - stage 4 started, HEAD `17c3f7d` (code pushed early as `7dcd5b5`); the A12 run (N = 2e5 per node) is in progress.
+- A12's ctest timeout raised from 7200 to 14400 s: N = 2e5 per node is 10 times round 1's N, and round 1's A12 took 515 s in the double build.
