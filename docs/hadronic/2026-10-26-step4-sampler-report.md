@@ -607,8 +607,8 @@ is known here only through the brief's summary.
 | 2 | photon-energy marginal near threshold; standard errors in the moments fixtures; zero-variance columns; fixtures at fixed N; the full-sampled-density budget | 3, 7 | done, `d778eb0` |
 | 3 | A8 against the reference's KA2008 CDF with the head-on map; the exact-chain quadrature renamed as a self-check; applicability corrected | 2 (P1) | done, `17c3f7d` |
 | 4 | A12 by decision (b): fixed N, literal tolerances, the reference's Born-chain <D>; the box spectrum against the reference's histograms | 4 (P1) | done, `113788a`; one registered failure (A12 cost, 1 node of 466) |
-| 5 | sampler counters in the MPI reduction and the ledger file; a forced-overflow test | 5 | done (this commit) |
-| 6 | A10 inside ctest; full ctest single and double; resolution log | all | not started |
+| 5 | sampler counters in the MPI reduction and the ledger file; a forced-overflow test | 5 | done, `f34576b` |
+| 6 | A10 inside ctest; full ctest single and double; resolution log | all | in progress |
 
 Decisions applied (Nilay, 2026-10-27): (a) q_k from the Born machinery in the
 production tables is a later step; until then A7 weighted against the step-1
@@ -1062,4 +1062,8 @@ threshold error). A3 asymptotic diagnostic unchanged (stage 0).
 - **Not done here (stated).** The rank-asymmetric check of the reduction (one
   rank overflowing, the others not, the global counters equal to the sum) needs
   MPI. It belongs to the next Rusty job.
-- stage 5 done, this commit, pushed.
+- stage 5 done, commit `f34576b`, pushed.
+
+### R2 stage 6 (A10 inside ctest, full ctest, closure)
+
+- stage 6 started, HEAD `f34576b` (the A10 test pushed early as `43fabd3`).
