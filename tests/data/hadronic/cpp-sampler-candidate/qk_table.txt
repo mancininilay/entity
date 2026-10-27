@@ -1,10 +1,10 @@
 # format: "bh-qk-table"
 # format_revision: 1
 # producer: "entity-cpp"
-# version: "a689d4599116202e063d1e2c8629fa5a1e58d58a"
+# version: "31e82eb9e0629b8281447fa70adff1a7478e9bdb-mod"
 # status: "cpp_sampler_candidate"
 # grid: {"variable": "log10(eps_prime - 2)", "nodes_per_decade": 64, "delta_min": 1e-4, "eps_prime_max": 1000, "endpoint_appended": true}
-# laws: {"energy": "Motz, Olsen and Koch 1969 3D-1000 (Heitler 1954 p. 258 eq. 8), Z = 1 unscreened", "angular": "Sauter-Gluckstern-Hull, MOK 1969 3D-2000 = Blumenthal 1970 eq. 10 (definitions eq. 11), Z = 1 unscreened; checked against the numerical integral of MOK 3D-3000 (Heitler 1954 p. 257 eq. 6)", "verification": "algebra, signs and normalisation checked against the PDFs by the referee (Codex 1, 2026-10-27)", "q_k": "eps_prime - 2 <p cos theta>_h", "normalisation": "the laws' own integrals (sigma_from_g, int h); Maximon's sigma~ reported in sigma_maximon"}
+# laws: {"energy": "Motz, Olsen and Koch 1969 3D-1000 (Heitler 1954 p. 258 eq. 8), Z = 1 unscreened", "angular": "Sauter-Gluckstern-Hull, MOK 1969 3D-2000 = Blumenthal 1970 eq. 10 (definitions eq. 11), Z = 1 unscreened; checked against the numerical integral of MOK 3D-3000 (Heitler 1954 p. 257 eq. 6)", "verification": "algebra, signs and normalisation checked against the PDFs by the referee (Codex 1, 2026-10-27)", "q_k": "eps_prime - 2 <p cos theta>_h, computed as 2 <(E - p) + p (1 - cos theta)>_h (no cancellation; round 2)", "normalisation": "the laws' own integrals (sigma_from_g, int h); Maximon's sigma~ reported in sigma_maximon"}
 # quadrature: {"gl_order": 16, "energy_panels": 16, "energy_variable": "E = 1 + (eps_prime - 2) sin^2(pi s / 2)", "h_t_angle": 0.5, "angle_variable": "t = ln(1 - cos theta + (E - p)/p)", "columns_format": "%.12e"}
 # node_count: 449
 # columns: ["eps_prime", "q_k", "q_k_eq37", "mean_E_minus", "mean_p_cos_theta", "sigma_from_g", "sigma_maximon"]

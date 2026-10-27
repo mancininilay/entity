@@ -751,3 +751,9 @@ threshold error). A3 asymptotic diagnostic unchanged (stage 0).
 - stage 2 code committed before the fixtures are regenerated (the regeneration
   takes about an hour; the fixtures and the results follow in the stage-2
   closing commit).
+- fixtures part 1 committed: `qk_table.txt`, the eight `hist_*` files, and
+  `moments_{mono05_mu100,blackbody,powerlaw}.txt`, regenerated with the
+  stage-2 tool. `moments_{mono03,mono05}` are still running.
+- The code of stages 3 to 6 is committed and pushed as work in progress,
+  ahead of the stage-2 closing commit; each stage's results and report entry
+  follow in its own closing commit.
