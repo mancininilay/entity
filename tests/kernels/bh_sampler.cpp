@@ -154,9 +154,12 @@ namespace {
     return T;
   }
 
-  // the powerlaw bath's tables (the device photon-energy tables of a broad bath), built once on demand
+  // the powerlaw bath's tables (the device photon-energy tables of a broad bath), built once on demand;
+  // they hold Kokkos views, so main releases them before Kokkos::finalize
+  std::unique_ptr<Tables> g_powerlaw;
+
   const Tables& powerlaw_tables() {
-    static std::unique_ptr<Tables> T;
+    auto& T = g_powerlaw;
     if (!T) {
       bh::BathSpec spec;
       spec.type    = "powerlaw";
@@ -868,6 +871,7 @@ namespace {
     const rf::SampledChainD SD(*T.cum, [&](double k) { return qk16(k); }, 16);
     double      w_cost = 0.0, w_num = 0.0, w_en = 0.0, g_cost = 0.0, g_num = 0.0, g_en = 0.0, maxse = 0.0;
     double      w_ij = 0.0, w_nse_samp = 0.0, w_nse_ref = 0.0, n_min = 1.0e300;
+    double      exp_fail_cost = 0.0, exp_fail_num = 0.0; // expected failing nodes from the noise alone
     std::string fail_cost, fail_num, fail_en;
     int         n_fail_cost = 0, n_fail_num = 0, n_fail_en = 0;
     for (std::size_t i = 0; i < nn; ++i) {
@@ -885,6 +889,8 @@ namespace {
       const double se_c   = std::sqrt((se_inv / minv) * (se_inv / minv) + (R.se[i] / Dref) * (R.se[i] / Dref));
       const double Dsamp  = SD.Dmean_unweighted(*T.eps_tables, T.host.gamma[i], 16);
       w_nse_ref           = std::max(w_nse_ref, std::abs(cost / Dref - 1.0) / se_c);
+      exp_fail_cost += std::erfc(1.0e-2 / (se_c * std::sqrt(2.0)));
+      exp_fail_num += std::erfc(2.0e-2 / (se_c * std::sqrt(2.0)));
       w_nse_samp          = std::max(w_nse_samp, std::abs(minv - 1.0 / Dsamp) / se_inv);
       w_ij                = std::max(w_ij, std::abs(cost / T.host.Dmean[i] - 1.0));
       maxse               = std::max(maxse, se_inv / minv);
@@ -948,6 +954,9 @@ namespace {
          fmt("%.1f", w_nse_ref) + "; max |<1/D> - 1/<D>_sampled| / s.e. " + fmt("%.1f", w_nse_samp) +
          " (the host chain's sampled density, SampledChainD); diagnostic vs the step-1 I/J (eq. 3.7 fit, expected "
          "0.1 to 0.5% off the Born law, decision (a)): max |cost/(I/J) - 1| " + fmt("%.3e", w_ij));
+    diag("A12: nodes expected beyond the literal tolerance from the sampling noise alone (sum over the nodes of "
+         "erfc(tol / (sqrt(2) combined relative s.e.))): " + fmt("%.2f", exp_fail_cost) + " for the 1% cost, " +
+         fmt("%.2g", exp_fail_num) + " for the 2% pair number");
     for (const std::size_t i : { std::size_t(0), nn / 4, nn / 2, (3 * nn) / 4, nn - 1 }) {
       const double N = cnt[i], minv = sinv[i] / N;
       diag("A12 node Gamma_p " + fmt("%.5f", T.host.gamma[i]) + ": cost " + fmt("%.5f", 1.0 / minv) + ", <D>_ref " +
@@ -1143,6 +1152,7 @@ auto main(int argc, char* argv[]) -> int {
     std::fprintf(stderr, "bh_sampler: exception: %s\n", e.what());
     rc = 2;
   }
+  g_powerlaw.reset();
   Kokkos::finalize();
   return rc;
 }

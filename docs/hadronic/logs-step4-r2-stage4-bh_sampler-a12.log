@@ -1,0 +1,43 @@
+bh_sampler: real_t = float, Kokkos default execution space = OpenMP
+(diag) sampler tables: 113 eps' nodes, 256 x 256 cells, 5067 cumulative nodes, 30.09 MB on the device (budget 64 MB), built in 45.6 s
+---- A12 (decision (b)): mean cost, pair number and energy per unit paid energy at every rate-table node, N = 2e5, literal tolerances, the reference's Born-chain <D> ----
+PASS: A12: the reference's moments_mono05 nodes = this rate table's Gamma_p nodes (466 nodes, deterministic, 1e-12 relative) : 5.065948e-13 (tolerance 1.000e-12)
+(diag) A12: 93200000 pairs at 466 nodes in 2383 s; sampler attempts 1727584465 (18.5 per pair), overflow 0; reference moments_mono05 version "0.2.0", data_sha256 69b87f32ad4c52d68224da7e23dc557008976f1c17fd33ef1f565cbd47858f1d
+PASS: A12: packets per node (N = 2e5 fixed), the smallest node count : 2.000000e+05 (tolerance 2.000e+05)
+FAIL: A12: mean cost per pair vs the reference's Born-chain <D> (moments_mono05 Dmean), |cost/<D>_ref - 1| <= 1% at every node (max 1.285e-02 at Gamma_p 76.5312): failing nodes : 1.000000e+00 (tolerance 0.000e+00)
+(diag) A12 cost: failing nodes: Gamma_p 76.53124 (-1.285e-02, 2.9 s.e.);
+PASS: A12: pairs per unit paid energy vs 1/<D>_ref, |<1/D> <D>_ref - 1| <= 2% at every node (max 1.301e-02 at Gamma_p 76.5312): failing nodes : 0.000000e+00 (tolerance 0.000e+00)
+PASS: A12: pair energy per unit paid energy vs 1 + eps0/<D>_ref, <= 2% at every node (max 2.430e-04 at Gamma_p 5.3776): failing nodes : 0.000000e+00 (tolerance 0.000e+00)
+PASS: A12: pair payload Gamma_p = the parent's Gamma_p : 5.563661e-08 (tolerance 1.000e-06)
+(diag) A12: relative s.e. of the cost up to 3.37e-03; max |cost/<D>_ref - 1| / combined s.e. 3.0; max |<1/D> - 1/<D>_sampled| / s.e. 2.8 (the host chain's sampled density, SampledChainD); diagnostic vs the step-1 I/J (eq. 3.7 fit, expected 0.1 to 0.5% off the Born law, decision (a)): max |cost/(I/J) - 1| 1.026e-02
+(diag) A12 node Gamma_p 2.13001: cost 3.75866, <D>_ref 3.75897 +- 0.00009, I/J 3.75941, energy per paid energy 1.13303 vs 1.13302, pairs 200000
+(diag) A12 node Gamma_p 2.13922: cost 3.77553, <D>_ref 3.77597 +- 0.00015, I/J 3.77665, energy per paid energy 1.13243 vs 1.13242, pairs 200000
+(diag) A12 node Gamma_p 2.16573: cost 3.82410, <D>_ref 3.82314 +- 0.00025, I/J 3.82589, energy per paid energy 1.13075 vs 1.13078, pairs 200000
+(diag) A12 node Gamma_p 3.54687: cost 5.86380, <D>_ref 5.85725 +- 0.00228, I/J 5.87831, energy per paid energy 1.08527 vs 1.08536, pairs 200000
+(diag) A12 node Gamma_p 91.81022: cost 29.67557, <D>_ref 29.69896 +- 0.09659, I/J 29.75960, energy per paid energy 1.01685 vs 1.01684, pairs 200000
+---- the spectrum of created pairs vs the reference's weighted-chain histograms (bhref candidate), mono05 and powerlaw, every reference Gamma_p inside the rate table ----
+(diag) mono05 Gamma_p 2.23125: 100000 pairs (N_eff 98871), reference ESS 988795, values outside the reference's edges 0; E- KS 0.00187 E+ KS 0.00299 cos- KS 0.00085 cos+ KS 0.00189 D KS 0.00253; 99% critical 0.00543
+(diag) mono05 Gamma_p 3: 100000 pairs (N_eff 91536), reference ESS 916016, values outside the reference's edges 0; E- KS 0.00513 E+ KS 0.00316 cos- KS 0.00292 cos+ KS 0.00195 D KS 0.00396; 99% critical 0.00564
+(diag) mono05 Gamma_p 10: 100000 pairs (N_eff 62393), reference ESS 622220, values outside the reference's edges 0; E- KS 0.00442 E+ KS 0.00362 cos- KS 0.00366 cos+ KS 0.00450 D KS 0.00372; 99% critical 0.00684
+(diag) sampler tables: 113 eps' nodes, 256 x 256 cells, 5067 cumulative nodes, 39.40 MB on the device (budget 64 MB), built in 45.4 s
+(diag) powerlaw Gamma_p 1.09375: 100000 pairs (N_eff 97269), reference ESS 972520, values outside the reference's edges 0; E- KS 0.00169 E+ KS 0.00247 cos- KS 0.00499 cos+ KS 0.00256 D KS 0.00239; 99% critical 0.00547
+(diag) powerlaw Gamma_p 3: 100000 pairs (N_eff 70182), reference ESS 701205, values outside the reference's edges 0; E- KS 0.00176 E+ KS 0.00276 cos- KS 0.00227 cos+ KS 0.00370 D KS 0.00223; 99% critical 0.00645
+(diag) powerlaw Gamma_p 10: 100000 pairs (N_eff 49724), reference ESS 498793, values outside the reference's edges 0; E- KS 0.00297 E+ KS 0.00154 cos- KS 0.00267 cos+ KS 0.00253 D KS 0.00149; 99% critical 0.00766
+PASS: spectrum: the kernel's weighted pairs vs the reference's weighted-chain histograms (E-, E+, cos-, cos+, D; binned weighted two-sample KS at 99% with Kish effective sizes, the A10 test), fraction of the 30 combinations passing (>= 95% required) : 1.000000e+00 (tolerance 9.500e-01)
+(diag) spectrum: not reachable by the box (outside the bath's rate table): mono05 Gamma_p 100 (rate table [2.1300, 91.8102]); powerlaw Gamma_p 100 (rate table [1.0478, 30.6107]); the unweighted-chain histograms of the reference are not used here (the kernel draws the weighted chain)
+bh_sampler summary: 6 passed, 1 failed
+Kokkos allocation "bh_s_cdfw" is being deallocated after Kokkos::finalize was called
+
+Backtrace:
+[0x55a3de3bc4e9] 
+[0x55a3de3932b0] 
+[0x55a3de3bc4ac] 
+[0x55a3de34cfb5] 
+[0x55a3de321546] 
+[0x55a3de321735] 
+[0x7f4d90447a76] 
+[0x7f4d90447bbe] 
+[0x7f4d9042a1d1] 
+[0x7f4d9042a28b] __libc_start_main
+[0x55a3de31ef45] 
+exit 134

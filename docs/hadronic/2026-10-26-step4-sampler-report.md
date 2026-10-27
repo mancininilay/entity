@@ -606,7 +606,7 @@ is known here only through the brief's summary.
 | 1 | the threshold cancellation of the energy law in double; A2 registered for `double`; A1 to A5 for both instantiations; `qk_table.txt` vs the reference | 1 (P1) | done, `efb39a2` |
 | 2 | photon-energy marginal near threshold; standard errors in the moments fixtures; zero-variance columns; fixtures at fixed N; the full-sampled-density budget | 3, 7 | done, `d778eb0` |
 | 3 | A8 against the reference's KA2008 CDF with the head-on map; the exact-chain quadrature renamed as a self-check; applicability corrected | 2 (P1) | done, `17c3f7d` |
-| 4 | A12 by decision (b): fixed N, literal tolerances, the reference's Born-chain <D>; the box spectrum against the reference's histograms | 4 (P1) | in progress (code `7dcd5b5`) |
+| 4 | A12 by decision (b): fixed N, literal tolerances, the reference's Born-chain <D>; the box spectrum against the reference's histograms | 4 (P1) | done (this commit); one registered failure (A12 cost, 1 node of 466) |
 | 5 | sampler counters in the MPI reduction and the ledger file; a forced-overflow test | 5 | not started |
 | 6 | A10 inside ctest; full ctest single and double; resolution log | all | not started |
 
@@ -959,3 +959,67 @@ threshold error). A3 asymptotic diagnostic unchanged (stage 0).
 
 - stage 4 started, HEAD `17c3f7d` (code pushed early as `7dcd5b5`); the A12 run (N = 2e5 per node) is in progress.
 - A12's ctest timeout raised from 7200 to 14400 s: N = 2e5 per node is 10 times round 1's N, and round 1's A12 took 515 s in the double build.
+- **A12 by decision (b)** (`tests/kernels/bh_sampler.cpp`, `test_a12`; log
+  `logs-step4-r2-stage4-bh_sampler-a12.log`, single precision, OpenMP).
+  - The `rel <= tolerance || nse <= 4` escape is removed. A node passes only
+    if it is within the literal tolerance.
+  - N = 2e5 pairs per node, fixed (2 ions per node, 1000 packets, 100
+    launches; the smallest node count is checked): 9.32e7 pairs in 2383 s,
+    1.73e9 sampler attempts (18.5 per pair), no overflow.
+  - The reference is the Born-chain <D> of `bhref-0.2.0-candidate/moments_mono05.txt`.
+    Its 466 Gamma_p nodes equal this table's to 5.1e-13 (checked,
+    deterministic).
+
+  | item | measured | tolerance | verdict |
+  | --- | --- | --- | --- |
+  | mean cost per pair vs <D>_ref, every node | max 1.285e-2 (Gamma_p 76.53); **1 failing node of 466: Gamma_p 76.53124, -1.285e-2, 2.9 combined s.e.** | 1% | **FAIL (registered, listed)** |
+  | pairs per unit paid energy vs 1/<D>_ref, every node | max 1.301e-2 (Gamma_p 76.53) | 2% | pass |
+  | pair energy per unit paid energy vs 1 + eps0/<D>_ref, every node | max 2.43e-4 | 2% | pass |
+  | pair payload Gamma_p = the parent's | 5.6e-8 | 1e-6 | pass |
+
+  - *The failing node, read (interpretation, with the numbers that support
+    it).* At N = 2e5 the relative s.e. of the cost reaches 3.4e-3 at the upper
+    nodes, where the 1/D weights vary most. There the literal 1% is about
+    3 s.e.
+  - Over the 466 nodes the largest deviation from <D>_ref is 3.0 combined
+    s.e. Against the host chain's sampled density it is 2.8 s.e. Both are the
+    size of the largest of 466 normal deviates (about 3.2).
+  - So nothing in the data distinguishes the failing node from sampling noise
+    at that node, and no systematic offset is visible. The step-1 I/J
+    diagnostic is max 1.03e-2: the eq. 3.7 fit against the Born law
+    (decision (a)) plus noise.
+  - The double-precision run (stage 6) prints the number of nodes expected
+    beyond the literal tolerances from noise alone, a diagnostic added after
+    this run.
+  - Under decision (b) the node is a failure, and it is listed. The
+    tolerance is not adjusted.
+- **The spectrum test** (`test_spectrum`; log
+  `logs-step4-r2-stage4-bh_sampler-tables-spectrum.log`).
+  - The kernel's 1/D-weighted pairs (1e5 per run) are compared with the
+    reference's weighted-chain histograms (`bhref-0.2.0-candidate/hist_<bath>_G<Gamma>.txt`)
+    on the reference's bins. The test is the binned two-sample KS against the
+    99% critical value with Kish effective sizes, the A10 test.
+  - Coverage: E-, E+, cos theta-, cos theta+ and D, for mono05 at Gamma_p =
+    2.23125, 3, 10 and powerlaw at 1.09375, 3, 10, which is 30 combinations.
+  - Gamma_p = 100 is above both rate tables (mono05 up to 91.8, powerlaw up to
+    30.6), so the box cannot reach it.
+  - The reference's unweighted-chain histograms are not used, because the
+    kernel draws the weighted chain.
+  - Result: **30 of 30 pass** (>= 95% required). The largest KS/critical is
+    0.00513/0.00564 (mono05 Gamma_p 3, E-).
+  - Round 1's comparison with this code's own host fixture under a
+    Kish-scaled KS is gone.
+- **The device photon-energy tables of a broad bath** (changed in stage 2)
+  are now exercised by the `tables` group with the powerlaw bath at
+  Gamma_p = 1.05, 1.3, 3, 10, 25. Device against host <D> is within 0.35 s.e.
+  The weighted chain gives E_p[1/D] <D> = 1 within 0.8 s.e. The device tables
+  take 39.4 MB (budget 64 MB). The group passes 30 of 30, mono05 included.
+- *Defect found and fixed in this stage (stated).* The powerlaw tables were
+  first held in a function-local static. Its Kokkos views were then released
+  after `Kokkos::finalize`, and the program aborted at exit after printing
+  its verdicts. The double ctest caught it (`bh_sampler_tables` and
+  `bh_sampler_spectrum`, "Subprocess aborted"), and so did the single A12 run
+  (exit 134 after its summary). They are now released before finalize, and
+  the tables and spectrum groups exit with 0. The verdicts above are
+  unaffected.
+- stage 4 done, this commit, pushed (one registered failure: the A12 cost at Gamma_p 76.53).
