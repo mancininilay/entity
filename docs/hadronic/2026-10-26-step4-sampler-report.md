@@ -607,7 +607,7 @@ is known here only through the brief's summary.
 | 2 | photon-energy marginal near threshold; standard errors in the moments fixtures; zero-variance columns; fixtures at fixed N; the full-sampled-density budget | 3, 7 | done, `d778eb0` |
 | 3 | A8 against the reference's KA2008 CDF with the head-on map; the exact-chain quadrature renamed as a self-check; applicability corrected | 2 (P1) | done, `17c3f7d` |
 | 4 | A12 by decision (b): fixed N, literal tolerances, the reference's Born-chain <D>; the box spectrum against the reference's histograms | 4 (P1) | done, `113788a`; one registered failure (A12 cost, 1 node of 466) |
-| 5 | sampler counters in the MPI reduction and the ledger file; a forced-overflow test | 5 | not started |
+| 5 | sampler counters in the MPI reduction and the ledger file; a forced-overflow test | 5 | done (this commit) |
 | 6 | A10 inside ctest; full ctest single and double; resolution log | all | not started |
 
 Decisions applied (Nilay, 2026-10-27): (a) q_k from the Born machinery in the
@@ -1023,3 +1023,43 @@ threshold error). A3 asymptotic diagnostic unchanged (stage 0).
   the tables and spectrum groups exit with 0. The verdicts above are
   unaffected.
 - stage 4 done, commit `113788a`, pushed (one registered failure: the A12 cost at Gamma_p 76.53).
+
+### R2 stage 5 (finding 5: the sampler counters under MPI and in the ledger file)
+
+- stage 5 started, HEAD `3c63b4f` (code pushed early as `b316491`).
+- **Counters in the reduction (`pgens/bh_proto/pgen.hpp`).**
+  - `n_sampler_attempts` and `n_sampler_overflow` are added to the integer
+    `MPI_Allreduce` of `reduce_ledger` (64-bit unsigned, MPI_SUM).
+  - The run summary prints them from the reduced ledger, so under MPI they
+    are now global, like `n_spawned`, which they are divided by.
+- **Ledger file.**
+  - Two new columns are appended after `npart_plus`: `n_sampler_attempts` and
+    `n_sampler_overflow` (cumulative, reduced over ranks). The header's
+    columns line is updated, and the file now has 45 columns.
+  - `tests/hadronic/bh_check.cpp` reads 45 columns (`LEDGER_COLS`, the new
+    indices 43 and 44). The T14b comparison treats them as counter columns,
+    which must agree exactly, and the T8 reader accepts 15, 43 or 45 columns.
+  - New option `ledger --min_sampler_overflow N`, which also checks
+    attempts >= overflow.
+- **Forced overflow, non-MPI code path.**
+  - New test parameter `test.max_sampler_attempts`, an int in [1, 1e9] with
+    default 1e5. It is the kernel's `max_sampler_attempts`, the bound of the
+    weighted chain's rejection loop per packet.
+  - Input `pgens/bh_proto/inputs/sampler_overflow.toml`: budget source,
+    restframe spectrum, mono05, Gamma_p = 6, bound = 1 trial.
+  - Script `tests/hadronic/sampler_overflow.sh`, registered as
+    `HADRONIC::sampler_overflow` in a bh_proto build.
+  - Run here with `build-bhproto/src/entity.xc` (non-MPI, single precision)
+    and `build/tests/hadronic/bh_check`. That bh_proto build is configured
+    with `TESTS=OFF`, so the script was run by hand with the ctest command
+    line; log `logs-step4-r2-stage5-sampler_overflow.log`.
+  - Result: 244 pairs, **216 sampler overflows** and 244 attempts in the last
+    ledger row, equal to the run summary's counters. Identity residual 0.
+    All checks pass.
+  - The ledger-reading run tests `r2_tiny`, `t12` and `texp` were rerun with
+    the 45-column file and pass. `HADRONIC::bh_proto_params` passes 118 of
+    118.
+- **Not done here (stated).** The rank-asymmetric check of the reduction (one
+  rank overflowing, the others not, the global counters equal to the sum) needs
+  MPI. It belongs to the next Rusty job.
+- stage 5 done, this commit, pushed.
