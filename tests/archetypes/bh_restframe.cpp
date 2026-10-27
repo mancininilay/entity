@@ -40,6 +40,7 @@
 #include <exception>
 #include <fstream>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 using namespace arch::bh;
@@ -48,6 +49,9 @@ namespace {
 
   int g_pass_contract = 0, g_fail_contract = 0;
   int g_pass_impl = 0, g_fail_impl = 0;
+  // the floating type of the law evaluation, appended to every verdict and
+  // diagnostic of a type-dependent check (round 2: A1 to A5 for both)
+  std::string g_tag;
 
   enum Kind {
     CONTRACT,
@@ -68,10 +72,11 @@ namespace {
                    double             tol,
                    const std::string& what = "max |rel. dev.|") {
     const bool ok = std::isfinite(measured) && std::abs(measured) <= tol;
-    std::printf("[%s] %s%s: %s = %.6e (tol %.3e)\n",
+    std::printf("[%s] %s%s%s: %s = %.6e (tol %.3e)\n",
                 ok ? "PASS" : "FAIL",
                 k == IMPL ? "(impl) " : "",
                 name.c_str(),
+                g_tag.c_str(),
                 what.c_str(),
                 measured,
                 tol);
@@ -80,10 +85,11 @@ namespace {
   }
 
   bool check_true_k(Kind k, const std::string& name, bool ok, const std::string& what) {
-    std::printf("[%s] %s%s: %s\n",
+    std::printf("[%s] %s%s%s: %s\n",
                 ok ? "PASS" : "FAIL",
                 k == IMPL ? "(impl) " : "",
                 name.c_str(),
+                g_tag.c_str(),
                 what.c_str());
     tally(k, ok);
     return ok;
@@ -109,7 +115,7 @@ namespace {
 
   template <class... Args>
   void diag(const char* fmt, Args... args) {
-    std::printf("[DIAG] ");
+    std::printf("[DIAG]%s ", g_tag.c_str());
     std::printf(fmt, args...);
     std::printf("\n");
   }
@@ -169,12 +175,13 @@ namespace {
   // ---------------------------------------------------------------------- //
   // A1 and the symmetry of g
   // ---------------------------------------------------------------------- //
+  template <class T>
   void test_A1(const std::vector<double>& grid, const rf::RestFrameQuadrature& q) {
     std::printf("\n== A1: int g dE' = sigma~ Maximon ==\n");
     double worst = 0.0, worst_k = 0.0;
     double worst_all = 0.0, worst_all_k = 0.0;
     for (const double k : grid) {
-      const double s   = rf::sigma_from_energy_law(k, q);
+      const double s   = rf::sigma_from_energy_law<T>(k, q);
       const double dev = std::abs(s / sigma_tilde(k) - 1.0);
       if (k >= 2.001 && dev > worst) {
         worst   = dev;
@@ -190,14 +197,14 @@ namespace {
          worst_k, worst_all, worst_all_k);
     for (const double k : { 2.0001, 2.001, 2.5, 4.0, 10.0, 100.0, 1000.0 }) {
       diag("A1: eps' = %9.4f  int g = %.10e  sigma~ = %.10e  ratio - 1 = %+.3e",
-           k, rf::sigma_from_energy_law(k, q), sigma_tilde(k),
-           rf::sigma_from_energy_law(k, q) / sigma_tilde(k) - 1.0);
+           k, rf::sigma_from_energy_law<T>(k, q), sigma_tilde(k),
+           rf::sigma_from_energy_law<T>(k, q) / sigma_tilde(k) - 1.0);
     }
     // self-convergence of the energy quadrature
     double conv = 0.0;
     for (const double k : { 2.0001, 2.001, 2.01, 2.5, 4.0, 10.0, 100.0, 1000.0 }) {
-      const double s  = rf::sigma_from_energy_law(k, q);
-      const double sr = rf::sigma_from_energy_law(k, q.refined());
+      const double s  = rf::sigma_from_energy_law<T>(k, q);
+      const double sr = rf::sigma_from_energy_law<T>(k, q.refined());
       conv            = std::max(conv, std::abs(sr / s - 1.0));
     }
     impl_abs("A1 self-convergence: int g under refinement (order + 8, panels x 2), 8 nodes", conv, 1.0e-7);
@@ -208,23 +215,28 @@ namespace {
     for (const double k : { 3.0, 10.0, 100.0, 1000.0 }) {
       for (const double E : { 1.25, 1.5, 2.5 }) {
         if (E < k - 1.0) {
-          bitwise = bitwise && (rf::dsigma_dE(k, E) == rf::dsigma_dE(k, k - E));
+          bitwise = bitwise && (rf::dsigma_dE_as<T>(k, E) == rf::dsigma_dE_as<T>(k, k - E));
         }
       }
       for (const double x : x_nodes()) {
         const double E  = 1.0 + (k - 2.0) * x;
-        const double a  = rf::dsigma_dE(k, E), b = rf::dsigma_dE(k, k - E);
+        const double a  = rf::dsigma_dE_as<T>(k, E), b = rf::dsigma_dE_as<T>(k, k - E);
         gen             = std::max(gen, std::abs(a / b - 1.0));
       }
     }
     check_true_k(CONTRACT, "A2: e-/e+ symmetry of g, exactly complementary energies", bitwise,
                  "g(E') == g(eps' - E') bitwise at 12 (eps', E') pairs");
-    impl_abs("A2: e-/e+ symmetry of g at generic nodes (rounding of eps' - E' only)", gen, 1.0e-12);
+    // round 2: the tolerance is that of the instantiation's evaluation (1e-12 was
+    // set in round 1 for the 64-bit long double evaluation; in double the law is
+    // accurate to <= 1e-10, measured against __float128, report R2 stage 1)
+    impl_abs("A2: e-/e+ symmetry of g at generic nodes (input rounding of eps' - E' plus evaluation)", gen,
+             std::is_same_v<T, double> ? 1.0e-10 : 1.0e-12);
   }
 
   // ---------------------------------------------------------------------- //
   // A2: the angular law integrates to g; the transcription checks
   // ---------------------------------------------------------------------- //
+  template <class T>
   void test_A2(const std::vector<double>& grid, const rf::RestFrameQuadrature& q) {
     std::printf("\n== A2: int h dcos theta' = g at every (eps', E') node ==\n");
     const auto          xs = x_nodes();
@@ -235,8 +247,8 @@ namespace {
       double       w = 0.0;
       for (const double x : xs) {
         const double E = 1.0 + (k - 2.0) * x;
-        const double a = rf::dsigma_dE_from_angular_law(k, E, q);
-        const double g = rf::dsigma_dE(k, E);
+        const double a = rf::dsigma_dE_from_angular_law<T>(k, E, q);
+        const double g = rf::dsigma_dE_as<T>(k, E);
         w              = std::max(w, std::abs(a / g - 1.0));
       }
       worst[i] = w;
@@ -257,8 +269,8 @@ namespace {
     for (const double k : { 2.001, 2.1, 3.0, 10.0, 100.0, 1000.0 }) {
       for (const double x : { 0.01, 0.5, 0.99 }) {
         const double E  = 1.0 + (k - 2.0) * x;
-        const double a  = rf::dsigma_dE_from_angular_law(k, E, q);
-        const double ar = rf::dsigma_dE_from_angular_law(k, E, q.refined());
+        const double a  = rf::dsigma_dE_from_angular_law<T>(k, E, q);
+        const double ar = rf::dsigma_dE_from_angular_law<T>(k, E, q.refined());
         conv            = std::max(conv, std::abs(ar / a - 1.0));
       }
     }
@@ -275,7 +287,7 @@ namespace {
         const double E = 1.0 + (k - 2.0) * x;
         for (const double omc : { 1.0e-8, 1.0e-5, 1.0e-3, 0.03, 0.3, 1.0, 1.6, 1.99 }) {
           const double n = rf::dsigma_dE_dcos_numeric(k, E, omc, q.angular);
-          const double c = rf::dsigma_dE_dcos_closed(k, E, omc);
+          const double c = rf::dsigma_dE_dcos_as<T>(k, E, omc);
           const double r = std::abs(c / n - 1.0);
           ++n_pts;
           if (!(r <= wtr)) {
@@ -291,8 +303,10 @@ namespace {
                std::to_string(n_pts) + " points with x in [0.01, 0.95]",
              wtr, 1.0e-6);
     diag("transcription: worst at eps' = %g, x = %g, 1 - cos = %g", wtr_k, wtr_x, wtr_omc);
-    // the signs: every other combination disagrees (the same 12 points as the scratch run)
-    {
+    // the signs: every other combination disagrees (the same 12 points as the
+    // scratch run); law 2 alone: independent of the law's floating type, run in
+    // the double pass only
+    if constexpr (std::is_same_v<T, double>) {
       struct P {
         double k, E, omc;
       };
@@ -325,16 +339,16 @@ namespace {
                 "none of the 15 other sign combinations matches the numerical integral to 1e-3 at 12 points");
     }
     // the normalisation of law 2 on its own: its angular integral equals g
-    {
+    if constexpr (std::is_same_v<T, double>) {
       double w = 0.0;
       for (const double k : { 2.5, 10.0, 300.0 }) {
         const double E  = 1.0 + (k - 2.0) * 0.3;
         const double an = rf::dsigma_dE_from_angular_law_numeric(k, E, q);
-        w               = std::max(w, std::abs(an / rf::dsigma_dE(k, E) - 1.0));
+        w               = std::max(w, std::abs(an / rf::dsigma_dE_as<T>(k, E) - 1.0));
       }
       impl_abs("normalisation of law 2: int (numerical law) dcos vs g at 3 nodes", w, 1.0e-6);
     }
-    {
+    if constexpr (std::is_same_v<T, double>) {
       double conv = 0.0;
       for (const double k : { 2.5, 10.0, 1000.0 }) {
         for (const double omc : { 1.0e-6, 0.1, 1.5 }) {
@@ -356,12 +370,13 @@ namespace {
     std::vector<rf::Moments> m;
   };
 
+  template <class T>
   GridMoments compute_moments(const std::vector<double>& grid, const rf::RestFrameQuadrature& q) {
     GridMoments G;
     G.grid = grid;
     G.m.resize(grid.size());
     const auto t0 = std::chrono::steady_clock::now();
-    rf::parallel_for_index(grid.size(), [&](std::size_t i) { G.m[i] = rf::moments(grid[i], q); });
+    rf::parallel_for_index(grid.size(), [&](std::size_t i) { G.m[i] = rf::moments<T>(grid[i], q); });
     diag("moments at %zu nodes in %.1f s (%u threads)", grid.size(), seconds_since(t0),
          std::max(1u, std::thread::hardware_concurrency()));
     return G;
@@ -419,16 +434,17 @@ namespace {
     return sum;
   }
 
+  template <class T>
   void test_A3_A4_A5(const GridMoments& G, const rf::RestFrameQuadrature& q) {
     std::printf("\n== A3: threshold limits ==\n");
     {
-      const rf::Moments m = rf::moments(2.001, q);
+      const rf::Moments m = rf::moments<T>(2.001, q);
       check_abs("A3: q_k -> 2 at eps' - 2 = 1e-3", m.q_k - 2.0, 1.0e-3, "|q_k - 2|");
       check_abs("A3: <E'-> -> 1 at eps' - 2 = 1e-3", m.mean_E - 1.0, 1.0e-3, "|<E'-> - 1|");
       diag("A3: eps' = 2.001: q_k = %.8f (eq. 3.7: %.8f), <E'-> = %.8f, <p cos> = %.6e", m.q_k,
            q_k(2.001), m.mean_E, m.mean_pcos);
       for (const double k : { 2.0001, 2.00001 }) {
-        const rf::Moments mm = rf::moments(k, q);
+        const rf::Moments mm = rf::moments<T>(k, q);
         diag("A3: eps' = %.6f: q_k = %.10f, 2 - q_k = %.3e, (eps' - 2) = %.1e", k, mm.q_k, 2.0 - mm.q_k, k - 2.0);
       }
     }
@@ -440,7 +456,7 @@ namespace {
       // of relative order 1/ln k, so the limit is approached slowly)
       std::string s = "A3: q_k eps'/(4 ln^2 eps') at eps' = ";
       for (const double k : { 10.0, 30.0, 100.0, 300.0, 1000.0 }) {
-        const rf::Moments m = rf::moments(k, q);
+        const rf::Moments m = rf::moments<T>(k, q);
         char              buf[80];
         const double      L = std::log(k);
         std::snprintf(buf, sizeof(buf), "%g: %.5f; ", k, m.q_k * k / (4.0 * L * L));
@@ -477,14 +493,14 @@ namespace {
       check_abs("A4: q_k machinery vs phi_fit'/(kappa sigma~), eps' nodes in [2.05, 1000]", wphi, 2.0e-2);
       diag("A4: worst vs eq. 3.7 at eps' = %.4f, worst vs phi_fit' at eps' = %.4f", k37, kphi);
       for (const double k : { 2.05, 2.5, 3.0, 5.0, 10.0, 20.0, 50.0, 100.0, 1000.0 }) {
-        const rf::Moments m = rf::moments(k, q);
+        const rf::Moments m = rf::moments<T>(k, q);
         diag("A4: eps' = %7.2f  q_k = %.6f  eq. 3.7 = %.6f  (ratio - 1 = %+.3e)  <p cos> = %.6f", k, m.q_k,
              q_k(k), m.q_k / q_k(k) - 1.0, m.mean_pcos);
       }
       // convergence of q_k under refinement
       double conv = 0.0;
       for (const double k : { 2.0001, 2.001, 2.1, 3.0, 10.0, 100.0, 1000.0 }) {
-        const rf::Moments a = rf::moments(k, q), b = rf::moments(k, q.refined());
+        const rf::Moments a = rf::moments<T>(k, q), b = rf::moments<T>(k, q.refined());
         conv                = std::max(conv, std::abs(b.q_k / a.q_k - 1.0));
         conv                = std::max(conv, std::abs(b.mean_pcos / a.mean_pcos - 1.0));
       }
@@ -570,6 +586,216 @@ namespace {
     }
   }
 
+
+  // ---------------------------------------------------------------------- //
+  // round 2, finding 1: the threshold cancellation in double
+  // ---------------------------------------------------------------------- //
+  template <class T>
+  void test_finding1(const rf::RestFrameQuadrature& q) {
+    std::printf("\n== finding 1: the referee's threshold point and the region switches ==\n");
+    // the point at which native arm64 (53-bit long double) failed A2 at 0.0838
+    const double k = 2.0001113973859996, E = 1.0000002682044309;
+    const double hp = 4.0538069e-10; // the referee's high-precision value (8 digits)
+    const double g  = rf::dsigma_dE_as<T>(k, E);
+    const double a  = rf::dsigma_dE_from_angular_law<T>(k, E, q);
+    check_abs("finding 1: energy law at the referee's point (k = 2.0001113973859996, E = 1.0000002682044309) vs "
+              "the referee's value 4.0538069e-10 (8 digits)",
+              g / hp - 1.0, 2.0e-8, "|g/g_ref - 1|");
+    check_abs("finding 1: A2 at the referee's point, |int h dcos / g - 1|", a / g - 1.0, 1.0e-6, "|ratio - 1|");
+    diag("finding 1: energy law %.10e, its angular integral %.10e; the round-1 form in double gives %.10e "
+         "(%+.3e), in long double %.10e (%+.3e)",
+         g, a, static_cast<double>(rf::dsigma_dE_round1_T<double>(k, E)),
+         static_cast<double>(rf::dsigma_dE_round1_T<double>(k, E)) / hp - 1.0,
+         static_cast<double>(rf::dsigma_dE_round1_T<long double>(k, E)),
+         static_cast<double>(rf::dsigma_dE_round1_T<long double>(k, E)) / hp - 1.0);
+    namespace st = rf::stable;
+    auto mom = [](T p) { return p; };
+    (void)mom;
+    // continuity across the region switches: the two representations valid on
+    // either side, evaluated at the same point near the boundary
+    // continuity across the region switches: on each switch, the representation
+    // used on one side against the one used on the other side, at the same point
+    double w1 = 0.0;
+    {
+      // law 1, threshold switch p- = P_SW: series vs the slow series (p+ < P_SLOW)
+      // or the general form (p+ >= P_SLOW), the representations used for p- > P_SW
+      const T pm = T(st::P_SW), b = pm * pm, Em = std::sqrt(T(1) + b);
+      for (const T pp : { T(0.01), T(0.05), T(0.1), T(0.15) }) {
+        const T a = pp * pp, Ep = std::sqrt(T(1) + a);
+        const T Bs = st::series_B(a, b);
+        const T Bo = pp < T(st::P_SLOW) ? st::energy_B_slow(pp, pm, Em, b)
+                                         : st::energy_Q_general(Ep, Em, pp, pm, a, b) / (a * b);
+        w1 = std::max(w1, static_cast<double>(std::abs(Bs / Bo - T(1))));
+      }
+    }
+    check_abs("finding 1: law 1, threshold switch p- = P_SW: series vs the representation beyond it (p+ = 0.01 to "
+              "0.15)",
+              w1, 1.0e-9);
+    double w2 = 0.0;
+    {
+      // law 1, slow switch p+ = P_SLOW: slow series vs general form
+      const T pp = T(st::P_SLOW), a = pp * pp, Ep = std::sqrt(T(1) + a);
+      for (const T pm : { T(0.151), T(0.3), T(1), T(30), T(500) }) {
+        const T b = pm * pm, Em = std::sqrt(T(1) + b);
+        const T Bs = st::energy_B_slow(pp, pm, Em, b), Bg = st::energy_Q_general(Ep, Em, pp, pm, a, b) / (a * b);
+        w2 = std::max(w2, static_cast<double>(std::abs(Bs / Bg - T(1))));
+      }
+    }
+    check_abs("finding 1: law 1, slow switch p+ = P_SLOW: slow series vs general form (p- = 0.151 to 500)", w2,
+              1.0e-10);
+    // law 3: max |dK| / max |K| over the angle
+    auto kdiff = [](auto f1, auto f2) {
+      T mx = T(0), md = T(0);
+      for (const T omc : { T(0), T(1e-8), T(1e-4), T(0.01), T(0.3), T(1), T(1.5), T(1.99), T(2) }) {
+        const T k1 = f1(omc), k2 = f2(omc);
+        mx = std::max(mx, std::abs(k2));
+        md = std::max(md, std::abs(k1 - k2));
+      }
+      return static_cast<double>(md / mx);
+    };
+    double w3 = 0.0;
+    {
+      // law 3, threshold switch (either momentum = P_SW): series vs the representation beyond it
+      struct P {
+        T pp, pm;
+      };
+      for (const P& c : { P { T(0.05), T(st::P_SW) }, P { T(0.15), T(st::P_SW) }, P { T(st::P_SW), T(0.05) },
+                          P { T(st::P_SW), T(0.001) } }) {
+        const T pp = c.pp, pm = c.pm, b = pm * pm, Ep = std::sqrt(T(1) + pp * pp), Em = std::sqrt(T(1) + b);
+        w3 = std::max(w3, kdiff([&](T omc) { return st::series_K(pp, b, T(1) - omc); },
+                                [&](T omc) {
+                                  return pp < T(st::P_SLOW)
+                                           ? st::angle_K_slow(pp, pm, Em, omc)
+                                           : st::angle_K_general(Ep, Em, pp, pm, omc, T(-1), T(1), T(1));
+                                }));
+      }
+    }
+    check_abs("finding 1: law 3, threshold switch: series vs the representation beyond it (max |dK| / max |K| over "
+              "the angle)",
+              w3, 1.0e-9);
+    double w4 = 0.0;
+    {
+      // law 3, slow switch p+ = P_SLOW: slow series vs general form
+      const T pp = T(st::P_SLOW), Ep = std::sqrt(T(1) + pp * pp);
+      for (const T pm : { T(0.151), T(0.3), T(1), T(30), T(500) }) {
+        const T Em = std::sqrt(T(1) + pm * pm);
+        w4 = std::max(w4, kdiff([&](T omc) { return st::angle_K_slow(pp, pm, Em, omc); },
+                                [&](T omc) { return st::angle_K_general(Ep, Em, pp, pm, omc, T(-1), T(1), T(1)); }));
+      }
+    }
+    check_abs("finding 1: law 3, slow switch p+ = P_SLOW: slow series vs general form (max |dK| / max |K|)", w4,
+              1.0e-10);
+    diag("finding 1: switch differences: law 1 series/general %.2e, slow/general %.2e; law 3 series/general %.2e, "
+         "slow/general %.2e",
+         w1, w2, w3, w4);
+  }
+
+  /// double against long double over the whole domain (both stable)
+  void test_double_vs_long_double() {
+    std::printf("\n== finding 1: the stable laws in double vs long double ==\n");
+    const auto          grid = rf::qk_grid();
+    const auto          xs   = x_nodes();
+    std::vector<double> w1(grid.size(), 0.0), w3(grid.size(), 0.0);
+    rf::parallel_for_index(grid.size(), [&](std::size_t i) {
+      const double k = grid[i];
+      for (const double x : xs) {
+        const double E  = 1.0 + (k - 2.0) * x;
+        const double gd = rf::dsigma_dE_as<double>(k, E), gl = rf::dsigma_dE_as<long double>(k, E);
+        w1[i]           = std::max(w1[i], std::abs(gd / gl - 1.0));
+        // law 3: the angular CDF metric int |h_d - h_l| / int |h_l| and the first
+        // moment (the quantities the sampler and q_k use); pointwise relative
+        // differences are not meaningful where h nearly vanishes in angle
+        const rf::RestFrameQuadrature qa;
+        const double I_d = rf::integrate_angle(E, [&](double omc) { return std::abs(rf::dsigma_dE_dcos_as<double>(k, E, omc) - rf::dsigma_dE_dcos_as<long double>(k, E, omc)); }, qa);
+        const double I_l = rf::integrate_angle(E, [&](double omc) { return std::abs(rf::dsigma_dE_dcos_as<long double>(k, E, omc)); }, qa);
+        const double M_d = rf::integrate_angle(E, [&](double omc) { return (1.0 - omc) * (rf::dsigma_dE_dcos_as<double>(k, E, omc) - rf::dsigma_dE_dcos_as<long double>(k, E, omc)); }, qa);
+        w3[i] = std::max(w3[i], std::max(I_d / I_l, std::abs(M_d) / I_l));
+      }
+    });
+    double m1 = 0.0, m3 = 0.0, k1 = 0.0, k3 = 0.0;
+    for (std::size_t i = 0; i < grid.size(); ++i) {
+      if (w1[i] > m1) {
+        m1 = w1[i];
+        k1 = grid[i];
+      }
+      if (w3[i] > m3) {
+        m3 = w3[i];
+        k3 = grid[i];
+      }
+    }
+    impl_abs("finding 1: law 1 in double vs long double, 449 x 31 nodes, max relative difference", m1, 1.0e-10);
+    impl_abs("finding 1: law 3 in double vs long double, 449 x 31 nodes, max of int |dh| / int |h| and |int cos dh| / "
+             "int |h| over the angle",
+             m3, 1.0e-10);
+    diag("finding 1: worst eps' %.6f (law 1), %.6f (law 3)", k1, k3);
+  }
+
+  /// A10 item 1 (round-2 brief, stage 1): the live moments against the reference's qk_table.txt
+  void test_reference_qk(const GridMoments& G) {
+    std::printf("\n== the reference's qk_table.txt (bhref 0.2.0 candidate), A10 item 1 at 1e-4 ==\n");
+    const std::string path = std::string(BH_TEST_DATA_DIR) + "/bhref-0.2.0-candidate/qk_table.txt";
+    std::ifstream     probe(path);
+    if (!probe) {
+      check_true_k(CONTRACT, "A10 item 1: reference qk_table.txt present", false, path);
+      return;
+    }
+    probe.close();
+    const FixtureContents R = read_fixture_file(path);
+    const std::vector<std::string> cols = { "eps_prime", "qk_machinery", "qk_eq3_7", "mean_Eminus_prime",
+                                            "mean_pcos", "sigma_energy_law", "sigma_Maximon" };
+    if (R.columns != cols || R.rows.size() != G.grid.size()) {
+      check_true_k(CONTRACT, "A10 item 1: reference qk_table.txt has the expected columns and 449 rows", false,
+                 std::to_string(R.rows.size()) + " rows");
+      return;
+    }
+    double wk = 0.0, ws = 0.0, wq = 0.0, wE = 0.0, wp = 0.0;
+    double ks = 0, kq = 0, kE = 0, kp = 0;
+    for (std::size_t i = 0; i < G.grid.size(); ++i) {
+      const auto& r = R.rows[i];
+      const auto& m = G.m[i];
+      wk            = std::max(wk, std::abs(r[0] / G.grid[i] - 1.0));
+      auto upd = [&](double& w, double& kw, double v) {
+        if (v > w) {
+          w  = v;
+          kw = G.grid[i];
+        }
+      };
+      upd(ws, ks, std::abs(m.sigma_g / r[5] - 1.0));
+      upd(wq, kq, std::abs(m.q_k / r[1] - 1.0));
+      upd(wE, kE, std::abs(m.mean_E / r[3] - 1.0));
+      upd(wp, kp, std::abs(m.mean_pcos / r[4] - 1.0));
+    }
+    impl_abs("A10 item 1: eps' nodes identical to the reference's", wk, 1.0e-12);
+    check_abs("A10 item 1: sigma from the energy law vs the reference, 449 nodes", ws, 1.0e-4);
+    check_abs("A10 item 1: q_k vs the reference, 449 nodes", wq, 1.0e-4);
+    check_abs("A10 item 1: <E'-> vs the reference, 449 nodes", wE, 1.0e-4);
+    check_abs("A10 item 1: <p' cos theta'> vs the reference, 449 nodes", wp, 1.0e-4);
+    diag("A10 item 1: worst at eps' = %.6f (sigma %.2e), %.6f (q_k %.2e), %.6f (<E> %.2e), %.6f (<p cos> %.2e)", ks,
+         ws, kq, wq, kE, wE, kp, wp);
+    for (std::size_t i = 0; i < 5; ++i) {
+      const auto& r = R.rows[i];
+      const auto& m = G.m[i];
+      diag("A10 item 1: threshold node %zu, eps' = %.12f: sigma %+.2e, q_k %+.2e, <E> %+.2e, <p cos> %+.2e "
+           "(relative differences)",
+           i, G.grid[i], m.sigma_g / r[5] - 1.0, m.q_k / r[1] - 1.0, m.mean_E / r[3] - 1.0, m.mean_pcos / r[4] - 1.0);
+    }
+  }
+
+  template <class T>
+  void run_instantiation(const std::vector<double>& grid, const rf::RestFrameQuadrature& q, const char* tag) {
+    g_tag = tag;
+    std::printf("\n########## the laws evaluated in%s ##########\n", tag);
+    const auto t0 = std::chrono::steady_clock::now();
+    test_A1<T>(grid, q);
+    test_A2<T>(grid, q);
+    const GridMoments G = compute_moments<T>(grid, q);
+    test_A3_A4_A5<T>(G, q);
+    test_fixture(G);
+    test_reference_qk(G);
+    test_finding1<T>(q);
+    diag("instantiation done in %.1f s", seconds_since(t0));
+    g_tag.clear();
+  }
 } // namespace
 
 auto main() -> int {
@@ -581,11 +807,9 @@ auto main() -> int {
                 "energy panels %d, h_t %.2f; angular gl %d, max panels %.2f / %.2f\n",
                 grid.size(), grid.front(), grid[grid.size() - 2], grid.back(), q.gl_order, q.energy_panels,
                 q.h_t_angle, q.angular.gl_order, q.angular.max_panel_u, q.angular.max_panel_psi);
-    test_A1(grid, q);
-    test_A2(grid, q);
-    const GridMoments G = compute_moments(grid, q);
-    test_A3_A4_A5(G, q);
-    test_fixture(G);
+    run_instantiation<double>(grid, q, " [T=double]");
+    run_instantiation<long double>(grid, q, " [T=long double]");
+    test_double_vs_long_double();
     std::printf("\nbh_restframe summary: contract items %d passed, %d failed; implementation-chosen checks "
                 "%d passed, %d failed; %.1f s\n",
                 g_pass_contract, g_fail_contract, g_pass_impl, g_fail_impl, seconds_since(t_start));

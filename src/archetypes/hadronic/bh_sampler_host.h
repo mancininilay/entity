@@ -296,7 +296,10 @@ namespace arch::bh::rf {
     int                 n_s { 256 };
     int                 n_tau { 256 };
     int                 nodes_per_decade { 16 };
-    double              p_closed_min { 1.0e-3 }; // below this p', the law 2 integral is used
+    // below this p' the numerical law-2 integral replaced the closed form in round 1
+    // (its long double evaluation lost digits there); round 2: the closed form is
+    // stable in double everywhere (bh_restframe.h, namespace stable), switch off
+    double              p_closed_min { 0.0 };
     // CDFs at the edges: cdf_E[ik][js], cdf_A[ik][js][jt]
     std::vector<double> cdf_E;
     std::vector<double> cdf_A;
