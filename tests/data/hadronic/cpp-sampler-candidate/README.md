@@ -12,7 +12,8 @@ two file against file (contract A10).
 Round 2 (2026-10-27). The `qk_table`, `moments_*` and `hist_*` files were
 regenerated with the tool as committed in `3d17ee1` (stage 2). Their `version`
 header reads `31e82eb...-mod`: that is the build's configure-time hash, one
-commit older than the tool's code.
+commit older than the tool's code. The exact-chain CDFs were renamed in
+stage 3; their `version` header names the build that regenerated them.
 
 - `qk_table.txt` (section 4 item 1): the 449 eps' nodes (64 per decade in
   log10(eps' - 2) from 1e-4 while eps' <= 1000, then eps' = 1000), q_k from
@@ -51,10 +52,15 @@ commit older than the tool's code.
     Gamma_p = 100) and `weighted_ESS`.
   - Generation: 64 chunks with seeds of their own, so the result does not
     depend on the thread count.
-- `ka2008_mono05_G100.txt`, `ka2008_mono05_G1000.txt` (item 4, round 1;
-  renamed in round-2 stage 3, finding 2): the lab e- spectrum of the exact
-  boost of the rest-frame laws by quadrature, as a CDF at the upper edges of
-  200 log-spaced E- bins.
+- `exact_chain_cdf_mono05_G100.txt`, `exact_chain_cdf_mono05_G1000.txt`
+  (round 1: `ka2008_mono05_G*.txt`, renamed in round 2):
+  - What it is: the exact-chain self-check of the lab e- spectrum. It is the
+    quadrature of the rest-frame laws with the exact photon direction and the
+    exact boost (`bh_exact_chain_cdf.h`), given as a CDF at the upper edges of
+    200 log-spaced bins.
+  - What it is not: the Kelner and Aharonian 2008 CDF. The A8 anchor compares
+    with the reference's transcription of the paper (head-on approximation),
+    `../bhref-0.2.0-candidate/ka2008_*.txt`.
 - Regenerate everything with
   `tools/bh_sampler_fixtures.sh build/tools/bh_sampler_dump tests/data/hadronic/cpp-sampler-candidate`
   (about 40 minutes on 4 cores).

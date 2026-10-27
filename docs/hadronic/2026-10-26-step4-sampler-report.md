@@ -345,6 +345,11 @@ against the reference's transcription of eqs. 58 to 64.]
 `tools/bh_sampler_dump ka2008 --bath mono05 --gamma G` writes the fixture
 (item 4); `tests/archetypes/bh_ka2008.cpp` (`ARCHETYPES::bh_ka2008`, 276 s,
 of which 254 s is the refined quadrature of the convergence check) is A8.
+[Round 2, stage 3: the header is renamed `bh_exact_chain_cdf.h`
+(`rf::exact_chain_lab_cdf`, `rf::ExactChainQuadrature`), the subcommand
+`exact_chain_cdf`, the fixtures `exact_chain_cdf_mono05_G*.txt`; the rows
+labelled A8 in the table below are the exact-chain self-check, not A8, which
+is now the head-on comparison with the reference's KA2008 CDF (R2 stage 3).]
 
 | item | quantity | measured | tolerance | verdict |
 | --- | --- | --- | --- | --- |
@@ -600,8 +605,8 @@ is known here only through the brief's summary.
 | 0 | source identifications corrected, verification flags removed, the asymptotic diagnostic | 8 | done, `88f868a` |
 | 1 | the threshold cancellation of the energy law in double; A2 registered for `double`; A1 to A5 for both instantiations; `qk_table.txt` vs the reference | 1 (P1) | done, `efb39a2` |
 | 2 | photon-energy marginal near threshold; standard errors in the moments fixtures; zero-variance columns; fixtures at fixed N; the full-sampled-density budget | 3, 7 | done, `d778eb0` |
-| 3 | A8 against the reference's KA2008 CDF with the head-on map; the exact-chain quadrature renamed as a self-check; applicability corrected | 2 (P1) | not started |
-| 4 | A12 by decision (b): fixed N, literal tolerances, the reference's Born-chain <D>; the box spectrum against the reference's histograms | 4 (P1) | not started |
+| 3 | A8 against the reference's KA2008 CDF with the head-on map; the exact-chain quadrature renamed as a self-check; applicability corrected | 2 (P1) | done (this commit) |
+| 4 | A12 by decision (b): fixed N, literal tolerances, the reference's Born-chain <D>; the box spectrum against the reference's histograms | 4 (P1) | in progress (code `7dcd5b5`) |
 | 5 | sampler counters in the MPI reduction and the ledger file; a forced-overflow test | 5 | not started |
 | 6 | A10 inside ctest; full ctest single and double; resolution log | all | not started |
 
@@ -880,3 +885,72 @@ threshold error). A3 asymptotic diagnostic unchanged (stage 0).
   budget groups, 126 s, 7 contract and 2 implementation-chosen checks, all
   pass) and `logs-step4-r2-stage2-fixture-regeneration.log`.
 - stage 2 done, commit `d778eb0`, pushed.
+
+### R2 stage 3 (finding 2, P1: A8 against the paper CDF)
+
+- stage 3 started, HEAD `44c5220` (its code was pushed early as `523894e`, work in progress).
+- **What round 1 called A8 (fact).**
+  - Round 1's `bh_lab_spectrum.h` integrates the rest-frame law with the
+    exact photon direction and the exact boost. Its CDF agrees with the
+    sampler's exact lab events to KS 0.001.
+  - It is therefore a self-check of the sampling chain, not the paper's CDF.
+    Kelner and Aharonian 2008 (eqs. 58 to 64) take the photon head-on in the
+    proton rest frame.
+  - Renamed `bh_exact_chain_cdf.h`. In it, `lab_electron_cdf` is now
+    `exact_chain_lab_cdf` and `LabSpectrumQuadrature` is now
+    `ExactChainQuadrature`. The header states the distinction.
+  - It gained the head-on map (`LabMap::HeadOn`) for a deterministic
+    comparison with the reference's transcription.
+  - The dump subcommand `ka2008` is now `exact_chain_cdf` (format
+    `bh-exact-chain-lab-cdf`). The fixtures are renamed
+    `exact_chain_cdf_mono05_G100.txt` and `_G1000.txt` and regenerated (same
+    data, new header: the law string and the corrected applicability ratios).
+- **A8 (contract, approved reading; `tests/archetypes/bh_ka2008.cpp`).**
+  - Rest-frame events of the sampler are mapped head-on,
+    E = Gamma (E' - p' cos theta'_gamma), with theta'_gamma the e- angle to
+    the photon direction, N = 1e6.
+  - They are compared with the reference's KA2008 CDF
+    (`bhref-0.2.0-candidate/ka2008_<bath>_G<Gamma>.txt`, data_sha256 verified)
+    at its 201 edges. The head-on map can give E < 1; that mass, 5.7% at
+    mono05, sits below the first edge in both CDFs and agrees (0.0566 against
+    0.0567).
+
+  | case | eps'_hi/mu_r | eps Gamma_p/mu_r | KS (tol 0.02) |
+  | --- | --- | --- | --- |
+  | mono05, Gamma_p = 100 | 0.0545 | 0.0272 | **1.32e-3** |
+  | mono05, Gamma_p = 1000 | 0.5446 (outside the small-eps' regime: a formal mathematical comparison only) | 0.2723 | **7.98e-4** |
+  | mono005, Gamma_p = 1000 | 0.0545 | 0.0272 | **5.79e-4** |
+
+- **Original reading (labelled failed diagnostic).**
+  - Exact-chain events against the KA2008 CDF give KS 0.0734 (mono05,
+    Gamma_p = 100) and 0.0727 (Gamma_p = 1000). The referee measured 0.073.
+    For mono005 the value is 0.0013.
+  - Mechanism (verified): the head-on map drops the photon's rest-frame
+    direction cos theta'_k = (eps/(Gamma eps') - 1)/beta. Averaged over the
+    azimuth, the two maps differ by eps p' cos theta'_gamma / eps' per event,
+    which tends to eps/2 when eps' >> 1.
+  - Measured mean differences 0.2497, 0.2499, 0.0266. The per-event
+    prediction gives 0.2484, 0.2499, 0.0248, and eps/2 gives 0.25, 0.25,
+    0.025.
+  - The exact map also never gives E < 1, while the paper CDF has 5.7% there.
+    That is where the KS of the failed reading peaks (E = 1.28).
+- **Applicability (corrected).**
+  - The static-source law holds for eps' << mu_r, equivalently
+    eps Gamma_p << mu_r. Round 1 wrote eps' Gamma_p << mu_r.
+  - Both ratios are printed for each case (table above) and written in the
+    exact-chain fixture headers (`eps_prime_hi_over_mu_r`,
+    `eps_gamma_over_mu_r`).
+- **Implementation-chosen checks (all pass).**
+  - The head-on CDF of this code's law by deterministic quadrature against
+    the reference's: max |dF| = 4.55e-4 over the three cases (tol 1e-3). These
+    are two independent transcriptions: MOK 3D-2000 here, KA2008 eqs. 58 to 64
+    there.
+  - The exact-chain self-check: KS 0.00107 and 0.00086 at Gamma_p = 100 and
+    1000, against the one-sample 99% critical value 1.628/sqrt(N) plus the
+    quadrature change, 0.00167 and 0.00166. Quadrature self-convergence
+    4.5e-5 (tol 1e-3). Mean lab energy 0.3 and 0.5 s.e. from the sample.
+  - The exact-chain fixtures against the live quadrature: 4.7e-13 (tol 1e-10). The new data blocks differ from round 1 in the last digits (data_sha256 `fc1169b9...` and `717ead20...`), because the law is now evaluated with the stable double representation of stage 1.
+  - The reference's data_sha256: verified.
+- Log: `logs-step4-r2-stage3-bh_ka2008.log` (`ARCHETYPES::bh_ka2008`, 269 s:
+  3 contract items and 6 implementation-chosen checks, all pass).
+- stage 3 done, this commit, pushed.
