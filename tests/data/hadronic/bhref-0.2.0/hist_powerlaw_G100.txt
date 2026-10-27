@@ -2,7 +2,7 @@
 # format_revision: 1
 # producer: "bhref"
 # version: "0.2.0"
-# status: "candidate:awaiting-Claude-1-review"
+# status: "frozen:0.2.0"
 # gamma_p: 100.0
 # photon_field: {"type": "powerlaw", "eps_min": 0.1, "eps_max": 1.5, "index": 2.0}
 # N_unweighted: 1000000
@@ -15,6 +15,8 @@
 # columns: ["quantity_id", "bin", "lo", "hi", "unweighted_count", "weighted_packet_count", "sum_1_over_D", "sum_1_over_D_squared", "normalized_packet_weight"]
 # node_count: 1000
 # data_sha256: "3bbf8fe0dcbc1d349b3bc471e37a99c50f73671ea00cfa10391a8ce16a4fc5e7"
+# freeze_addendum: "../FREEZE.md"
+# physical_envelope: {"inside": false, "gamma_envelope": 30.610669267216732, "status": "formal benchmark outside production envelope; no finite-mass acceptance"}
 0.000000000000e+00 0.000000000000e+00 1.000000000000e+00 1.056533789751e+00 3.200000000000e+03 9.580000000000e+02 7.505759738598e+01 2.946881903171e+01 3.452900706983e-03
 0.000000000000e+00 1.000000000000e+00 1.056533789751e+00 1.116263648887e+00 5.598000000000e+03 1.837000000000e+03 1.238886098206e+02 4.013764116053e+01 5.699290722523e-03
 0.000000000000e+00 2.000000000000e+00 1.116263648887e+00 1.179370263320e+00 7.155000000000e+03 2.324000000000e+03 1.530031478106e+02 4.711240928163e+01 7.038656920086e-03

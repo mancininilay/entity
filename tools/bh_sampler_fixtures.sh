@@ -9,7 +9,7 @@
 # Round 2: the weighted chains run to a fixed number of accepted packets (1e5
 # per node for the moments, 1e6 per histogram; the attempts are reported), and
 # the histograms take their bin edges from the reference's file of the same
-# bath and Gamma_p when it is present (tests/data/hadronic/bhref-0.2.0-candidate).
+# bath and Gamma_p when it is present (tests/data/hadronic/bhref-0.2.0).
 #
 # Usage: bh_sampler_fixtures.sh <bh_sampler_dump> <outdir> [--n N] [--n-weighted N] [--seed S] [--threads N]
 set -u
@@ -29,7 +29,7 @@ mkdir -p "$OUT" || exit 1
 DUMP="$(cd "$(dirname "$DUMP")" && pwd)/$(basename "$DUMP")"
 OUT="$(cd "$OUT" && pwd)"
 cd "$(dirname "$0")/.." || exit 1
-REF="tests/data/hadronic/bhref-0.2.0-candidate"
+REF="tests/data/hadronic/bhref-0.2.0"
 bins_from() {
   if [ -f "$REF/hist_$1_G$2.txt" ]; then echo "--bins-from $REF/hist_$1_G$2.txt"; fi
 }

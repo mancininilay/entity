@@ -1,5 +1,0 @@
-# bhref 0.2.0 candidate fixtures (unfrozen)
-
-Fixtures of the Python reference sampler `bhref` 0.2.0 (author Codex 1, 2026-10-26; contract `Resources/p2-hadronic/notes/2026-10-26-claude1-sampler-contract.md` revision 1.0 with the A8 head-on amendment and the applicability correction approved by Nilay). **Candidate, not frozen:** Claude 3's referee review of bhref 0.2 is in progress; if it requires changes these files are replaced by a new directory and this one is kept for history. Copied by Claude 1 on 2026-10-27; every file hash checked against bhref's `CANDIDATE_SHA256SUMS` (the package's manifest), recorded in `SHA256SUMS` here.
-
-Contents: `qk_table.txt` (deterministic recoil table, contract §4 item 1), `moments_<bath>.txt` (five step-1 baths, Monte Carlo moments with standard errors), `hist_<bath>_G<Gamma>.txt` (mono05 and powerlaw, four Gamma_p each, both chains), `ka2008_<bath>_G<Gamma>.txt` (the lab electron CDF of Kelner and Aharonian 2008 eqs. 58 to 64, transcribed by Codex 1 from the paper; the paper's head-on approximation). These are data for the C++ comparison tests (A8, A10, A12); no Python enters ctest (D18).

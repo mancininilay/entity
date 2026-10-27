@@ -732,8 +732,8 @@ namespace {
 
   /// A10 item 1 (round-2 brief, stage 1): the live moments against the reference's qk_table.txt
   void test_reference_qk(const GridMoments& G) {
-    std::printf("\n== the reference's qk_table.txt (bhref 0.2.0 candidate), A10 item 1 at 1e-4 ==\n");
-    const std::string path = std::string(BH_TEST_DATA_DIR) + "/bhref-0.2.0-candidate/qk_table.txt";
+    std::printf("\n== the reference's qk_table.txt (bhref 0.2.0 (frozen)), A10 item 1 at 1e-4 ==\n");
+    const std::string path = std::string(BH_TEST_DATA_DIR) + "/bhref-0.2.0/qk_table.txt";
     std::ifstream     probe(path);
     if (!probe) {
       check_true_k(CONTRACT, "A10 item 1: reference qk_table.txt present", false, path);

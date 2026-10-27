@@ -2,7 +2,7 @@
 # format_revision: 1
 # producer: "bhref"
 # version: "0.2.0"
-# status: "candidate:awaiting-Claude-1-review"
+# status: "frozen:0.2.0"
 # gamma_p: 100.0
 # photon_field: {"type": "mono", "eps0": 0.5}
 # equations: "Kelner-Aharonian 2008 58-64"
@@ -11,6 +11,9 @@
 # columns: ["Eminus_edge", "cdf"]
 # node_count: 201
 # data_sha256: "24f38765694c76d373e20a5ac14625c0621dc9e9a5851172cc34900cb2da6591"
+# freeze_addendum: "../FREEZE.md"
+# ka_comparison_map: "KA UR map (head-on photon and V_p = 1, E_lab = Gamma_p (E' - p' cos theta'_gamma))"
+# freeze_applicability: {"static_source": "eps_prime << mu_r (lab eps*Gamma_p << mu_r), KA2008 p11", "KA_UR_map": "E_e >> m_e c^2; fails for approximately 6% of mono05", "production_envelope": "outside; formal static-source benchmark"}
 1.000000000000e+00 5.673323179367e-02
 1.050710715674e+00 6.731813147502e-02
 1.103993008032e+00 7.873107350693e-02

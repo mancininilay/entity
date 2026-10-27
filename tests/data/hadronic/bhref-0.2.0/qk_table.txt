@@ -2,13 +2,14 @@
 # format_revision: 1
 # producer: "bhref"
 # version: "0.2.0"
-# status: "candidate:awaiting-Claude-1-review"
+# status: "frozen:0.2.0"
 # quadrature: {"energy_order": 160, "angle_order": 160, "energy_variable": "sin2(pi*t/2)", "angle_variable": "log(E-p*cos(theta))"}
 # formula_identifications: {"energy": "Motz 3D-1000", "energy_angle": "Blumenthal 10 / Motz 3D-2000"}
 # grid: {"delta_min": 0.0001, "intervals_per_decade": 64, "kmax": 1000}
 # columns: ["eps_prime", "qk_machinery", "qk_eq3_7", "mean_Eminus_prime", "mean_pcos", "sigma_energy_law", "sigma_Maximon"]
 # node_count: 449
 # data_sha256: "43e3035173104bb41fd35d7513621ea58607c0146a94f77abcfd3eb312c4a476"
+# freeze_addendum: "../FREEZE.md"
 2.000100000000e+00 1.999974999939e+00 1.999979159084e+00 1.000050000000e+00 6.250003070873e-05 2.617633938331e-13 2.617633938331e-13
 2.000103663293e+00 1.999974084102e+00 1.999978395586e+00 1.000051831646e+00 6.478959561851e-05 2.915961095328e-13 2.915961095328e-13
 2.000107460783e+00 1.999973134729e+00 1.999977604115e+00 1.000053730391e+00 6.716302708742e-05 3.248287476779e-13 3.248287476778e-13

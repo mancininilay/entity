@@ -2,8 +2,8 @@
  * @file tests/archetypes/bh_sampler_fixtures.cpp
  * @brief Contract A10 inside ctest (P2 step 4, round 2, stage 6): the C++
  *        sampler fixtures (`tests/data/hadronic/cpp-sampler-candidate/`)
- *        against the Python reference's (`tests/data/hadronic/bhref-0.2.0-candidate/`,
- *        bhref 0.2.0 candidate, unfrozen), file against file; no Python.
+ *        against the Python reference's (`tests/data/hadronic/bhref-0.2.0/`,
+ *        bhref 0.2.0 (frozen), unfrozen), file against file; no Python.
  *
  * Contract items (tolerances of contract A10 and of the round-2 brief, never
  * adjusted here):
@@ -119,7 +119,7 @@ namespace {
   void test_qk() {
     std::printf("\n== A10 item 1: qk_table.txt, C++ vs reference ==\n");
     const Table C = load("cpp-sampler-candidate/qk_table.txt");
-    const Table R = load("bhref-0.2.0-candidate/qk_table.txt");
+    const Table R = load("bhref-0.2.0/qk_table.txt");
     const bool  same_n = C.f.rows.size() == R.f.rows.size();
     check("qk: node count", same_n, static_cast<double>(C.f.rows.size()), static_cast<double>(R.f.rows.size()),
           "C++ nodes (reference count as tol)");
@@ -175,7 +175,7 @@ namespace {
     std::string fails, worst_where;
     for (const std::string bath : { "mono05", "mono03", "powerlaw", "blackbody", "mono05_mu100" }) {
       const Table C = load("cpp-sampler-candidate/moments_" + bath + ".txt");
-      const Table R = load("bhref-0.2.0-candidate/moments_" + bath + ".txt");
+      const Table R = load("bhref-0.2.0/moments_" + bath + ".txt");
       const bool  mono = C.head("photon_field").find("\"mono\"") != std::string::npos;
       if (C.f.rows.size() != R.f.rows.size()) {
         ++n_det_fail;
@@ -292,7 +292,7 @@ namespace {
                                                            : std::vector<std::string> { "1.09375", "3", "10", "100" };
       for (const auto& gstr : gs) {
         const Table C = load("cpp-sampler-candidate/hist_" + bath + "_G" + gstr + ".txt");
-        const Table R = load("bhref-0.2.0-candidate/hist_" + bath + "_G" + gstr + ".txt");
+        const Table R = load("bhref-0.2.0/hist_" + bath + "_G" + gstr + ".txt");
         if (C.f.rows.size() != R.f.rows.size()) {
           ++n_comb;
           fails += " " + bath + " G" + gstr + ": row counts differ;";
@@ -370,7 +370,7 @@ namespace {
       const auto        H = build_tables(rates, 1836.15);
       auto B = std::make_shared<const rf::BathEpsTables>(rf::BathEpsTables::build(*bath, H, *cum));
       rf::HostSampler S(bath, H, T, cum, B);
-      const Table     R = load("bhref-0.2.0-candidate/ka2008_" + c.bath + "_G" + c.gs + ".txt");
+      const Table     R = load("bhref-0.2.0/ka2008_" + c.bath + "_G" + c.gs + ".txt");
       std::vector<double> E(N);
       rf::SplitMix64      rng(8080u + j);
       for (std::size_t n = 0; n < N; ++n) {

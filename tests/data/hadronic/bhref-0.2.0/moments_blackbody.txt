@@ -2,7 +2,7 @@
 # format_revision: 1
 # producer: "bhref"
 # version: "0.2.0"
-# status: "candidate:awaiting-Claude-1-review"
+# status: "frozen:0.2.0"
 # photon_field: {"type": "blackbody", "theta": 0.1, "eps_min": 0.0, "eps_max": 1.9}
 # physical_mass_ratio: 1836.15
 # rate_table_data_sha256: "055cceb88046d51a9f008ca700dccef95f7ab726cb2ef0b24acf031f0424789b"
@@ -10,10 +10,11 @@
 # N_weighted: 100000
 # seed_scheme: "PCG64DXSM; SHA256(2026102602/bath/kind/node/chain), first 16 bytes little-endian; node JSON carries exact seeds"
 # weighted_uncertainty: "independent unweighted mean and weighted inverse mean; delta-method product variance"
-# candidate_status: "not frozen"
+# candidate_status: "frozen:0.2.0"
 # columns: ["gamma_p", "Dmean", "Dmean_se", "D2mean", "Eminus_mean", "Eplus_mean", "cosminus_lab_mean", "eps_mean", "Dmin_unweighted", "Dmax_unweighted", "weighted_invD_times_Dmean", "weighted_product_se", "acceptance_efficiency", "max_weight_over_w_rpacket", "Dmin_weighted", "proposal_count", "accepted_count"]
 # node_count: 406
 # data_sha256: "a7fe2bff550f791c8a58cd7bc30b4c4d98239e898a803fcda13e6c05fac72640"
+# freeze_addendum: "../FREEZE.md"
 1.012206256547e+00 2.799831059550e-01 4.835361494176e-05 8.072860936006e-02 1.069649849944e+00 1.069779211659e+00 1.879493338292e-01 1.859445955649e+00 1.112822116038e-01 4.828605397988e-01 9.997511100798e-01 5.894180700339e-04 6.633453087473e-01 8.703167559396e+00 1.149006948534e-01 1.511430000000e+05 1.002600000000e+05
 1.012304652406e+00 2.808853642499e-01 4.869623294809e-05 8.126790858183e-02 1.069971437337e+00 1.070076142442e+00 1.873285342179e-01 1.859162215529e+00 1.050152048580e-01 4.829228580796e-01 9.985780539063e-01 5.874812680603e-04 6.618248083614e-01 8.369261674355e+00 1.194848528950e-01 1.514570000000e+05 1.002380000000e+05
 1.012403937275e+00 2.819642401090e-01 4.899889592154e-05 8.190472210086e-02 1.070467780390e+00 1.070375228292e+00 1.875449061162e-01 1.858878768573e+00 1.075557454491e-01 4.837511422675e-01 9.992437866542e-01 5.905162451072e-04 6.617389869658e-01 8.210283553118e+00 1.217984730406e-01 1.515250000000e+05 1.002700000000e+05

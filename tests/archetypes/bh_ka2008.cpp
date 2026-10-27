@@ -3,7 +3,7 @@
  * @brief Contract A8 of the rest-frame sampler (P2 step 4; round 2, finding 2):
  *        the lab electron spectrum against the Kelner and Aharonian 2008 CDF
  *        (eqs. (58) to (64), the paper's head-on approximation) as transcribed
- *        by the reference (`bhref-0.2.0-candidate/ka2008_<bath>_G<Gamma>.txt`).
+ *        by the reference (`bhref-0.2.0/ka2008_<bath>_G<Gamma>.txt`).
  *
  * Contract item (A8, approved reading): rest-frame events of the sampler
  * (eps', E'-, the angle theta'_gamma of the e- to the photon direction) mapped
@@ -142,7 +142,7 @@ auto main() -> int {
       auto B = std::make_shared<const rf::BathEpsTables>(rf::BathEpsTables::build(*bath, H, *cum));
       rf::HostSampler S(bath, H, T, cum, B);
       // the reference's CDF
-      const std::string path = std::string(BH_TEST_DATA_DIR) + "/bhref-0.2.0-candidate/ka2008_" + c.bath + "_G" +
+      const std::string path = std::string(BH_TEST_DATA_DIR) + "/bhref-0.2.0/ka2008_" + c.bath + "_G" +
                                (g == 100.0 ? std::string("100") : std::string("1000")) + ".txt";
       const FixtureContents ref = read_fixture_file(path);
       const bool sha_ok = ref.header.count("data_sha256") && ref.header.at("data_sha256") == "\"" + ref.data_sha256 + "\"";

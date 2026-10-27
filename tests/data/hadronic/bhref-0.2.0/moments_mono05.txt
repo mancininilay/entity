@@ -2,7 +2,7 @@
 # format_revision: 1
 # producer: "bhref"
 # version: "0.2.0"
-# status: "candidate:awaiting-Claude-1-review"
+# status: "frozen:0.2.0"
 # photon_field: {"type": "mono", "eps0": 0.5}
 # physical_mass_ratio: 1836.15
 # rate_table_data_sha256: "2b9f20e618d04b347cfb15ca76f8b21908da5bb2876188c663f1eb25d3e8021b"
@@ -10,10 +10,11 @@
 # N_weighted: 100000
 # seed_scheme: "PCG64DXSM; SHA256(2026102602/bath/kind/node/chain), first 16 bytes little-endian; node JSON carries exact seeds"
 # weighted_uncertainty: "independent unweighted mean and weighted inverse mean; delta-method product variance"
-# candidate_status: "not frozen"
+# candidate_status: "frozen:0.2.0"
 # columns: ["gamma_p", "Dmean", "Dmean_se", "D2mean", "Eminus_mean", "Eplus_mean", "cosminus_lab_mean", "eps_mean", "Dmin_unweighted", "Dmax_unweighted", "weighted_invD_times_Dmean", "weighted_product_se", "acceptance_efficiency", "max_weight_over_w_rpacket", "Dmin_weighted", "proposal_count", "accepted_count"]
 # node_count: 466
 # data_sha256: "69b87f32ad4c52d68224da7e23dc557008976f1c17fd33ef1f565cbd47858f1d"
+# freeze_addendum: "../FREEZE.md"
 2.130008807841e+00 3.758970704202e+00 8.681645433660e-05 1.413739784426e+01 2.129492541242e+00 2.129478162960e+00 9.995467906080e-01 5.000000000000e-01 3.500828852527e+00 4.040966694204e+00 9.998877924078e-01 7.676427133106e-05 9.368315134349e-01 2.851951290780e-01 3.506371245655e+00 1.073320000000e+05 1.005520000000e+05
 2.130054062644e+00 3.759209246672e+00 8.734828249846e-05 1.413928387509e+01 2.129623260041e+00 2.129585986631e+00 9.995423498117e-01 5.000000000000e-01 3.500180927118e+00 4.043241038601e+00 1.000020177995e+00 7.717525723586e-05 9.356958067338e-01 2.855974585677e-01 3.501431717968e+00 1.074580000000e+05 1.005480000000e+05
 2.130099726327e+00 3.759128482201e+00 8.762407082805e-05 1.413872491580e+01 2.129539933519e+00 2.129588548682e+00 9.995383400189e-01 5.000000000000e-01 3.499949179710e+00 4.043509955079e+00 1.000029811538e+00 7.729181836928e-05 9.358266873877e-01 2.849907975397e-01 3.508885229393e+00 1.074590000000e+05 1.005630000000e+05

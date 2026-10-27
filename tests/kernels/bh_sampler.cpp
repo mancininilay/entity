@@ -27,7 +27,7 @@
  *     D_j = gamma- + gamma+ - eps from the stored values. Literal tolerances,
  *     no uncertainty escape: mean cost within 1%, pairs per unit paid energy
  *     and pair energy per unit paid energy within 2%, of the reference's
- *     Born-chain values (bhref-0.2.0-candidate/moments_mono05.txt: <D>; its
+ *     Born-chain values (bhref-0.2.0/moments_mono05.txt: <D>; its
  *     nodes must be this table's nodes to 1e-12); every failing node listed.
  *     The step-1 I/J (eq. 3.7 fit, 0.1 to 0.5% off the Born law) and the host
  *     chain's sampled <D> are diagnostics.
@@ -37,7 +37,7 @@
  *     above both tables and is not reachable by the box), 100 ions at Gamma_p
  *     (K = mu_r (Gamma_p - 1), to the real_t rounding of u), 1e5 pairs with
  *     weights 1/D (r_packet constant), compared with the reference's
- *     weighted-chain histograms (bhref-0.2.0-candidate/hist_<bath>_G<Gamma>.txt,
+ *     weighted-chain histograms (bhref-0.2.0/hist_<bath>_G<Gamma>.txt,
  *     sum_1_over_D normalised) in E-, E+, cos theta-, cos theta+ and D on the
  *     reference's bins, by the A10 weighted two-sample test: the binned
  *     two-sample KS statistic against the 99% critical value
@@ -771,14 +771,14 @@ namespace {
     }
   }
 
-  // the reference's Born-chain moments of a bath (bhref candidate fixtures): gamma_p -> (Dmean, Dmean_se)
+  // the reference's Born-chain moments of a bath (bhref 0.2.0 frozen fixtures): gamma_p -> (Dmean, Dmean_se)
   struct RefMoments {
     std::vector<double> gamma, D, se;
     std::string         version, sha;
   };
 
   RefMoments read_ref_moments(const std::string& bath) {
-    const std::string         path = std::string(BH_TEST_DATA_DIR) + "/bhref-0.2.0-candidate/moments_" + bath + ".txt";
+    const std::string         path = std::string(BH_TEST_DATA_DIR) + "/bhref-0.2.0/moments_" + bath + ".txt";
     const bh::FixtureContents F    = bh::read_fixture_file(path);
     auto col = [&](const std::string& n) {
       for (std::size_t c = 0; c < F.columns.size(); ++c) {
@@ -994,7 +994,7 @@ namespace {
   }
 
   void test_spectrum(const Tables& Tmono) {
-    std::printf("---- the spectrum of created pairs vs the reference's weighted-chain histograms (bhref candidate), "
+    std::printf("---- the spectrum of created pairs vs the reference's weighted-chain histograms (bhref 0.2.0, frozen), "
                 "mono05 and powerlaw, every reference Gamma_p inside the rate table ----\n");
     struct Combo {
       std::string what;
@@ -1014,7 +1014,7 @@ namespace {
                                 fmt("%.4f", T.host.gamma_max) + "])");
           continue;
         }
-        const std::string path = std::string(BH_TEST_DATA_DIR) + "/bhref-0.2.0-candidate/hist_" + bath + "_G" + gs[jg] +
+        const std::string path = std::string(BH_TEST_DATA_DIR) + "/bhref-0.2.0/hist_" + bath + "_G" + gs[jg] +
                                  ".txt";
         const bh::FixtureContents F = bh::read_fixture_file(path);
         // the reference's bins and normalised weighted-chain histograms, quantity by quantity
