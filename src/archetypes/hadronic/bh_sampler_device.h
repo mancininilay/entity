@@ -79,9 +79,9 @@ namespace arch::bh {
     bool             mono { true };
     double           eps0 { 0.0 }, gamma_th { 0.0 };
     int              n_gamma { 0 }, n_eps { 0 };
+    double           eps_min_bath { 0.0 }, ln_eps_hi { 0.0 }; // the per-node grids (round 2)
     array_t<double*> y_nodes; // log10(Gamma - Gamma_th)
-    array_t<double*> ln_eps;  // n_eps + 1 edges
-    array_t<float*>  cdf_u, cdf_w; // [n_gamma][n_eps + 1]
+    array_t<float*>  cdf_u, cdf_w; // [n_gamma][n_eps + 1] at x_j = j/n_eps
     // bookkeeping
     std::size_t bytes { 0 };
 
@@ -320,12 +320,10 @@ namespace arch::bh {
       const std::size_t o0  = static_cast<std::size_t>(i) * (n_eps + 1);
       const std::size_t o1  = static_cast<std::size_t>(i + 1) * (n_eps + 1);
       const double      pos = invert2(o0, o1, 1.0 - w, w, n_eps, u, weighted ? cdf_w : cdf_u);
-      int               j   = static_cast<int>(pos);
-      if (j > n_eps - 1) {
-        j = n_eps - 1;
-      }
-      const double f = pos - static_cast<double>(j);
-      return math::exp(ln_eps(j) + f * (ln_eps(j + 1) - ln_eps(j)));
+      // x = pos/n_eps on the grid of this Gamma: [eps_lo(Gamma), eps_max] in ln eps
+      const double A      = gamma + math::sqrt((gamma - 1.0) * (gamma + 1.0));
+      const double ln_lo  = math::log(eps_min_bath > 2.0 / A ? eps_min_bath : 2.0 / A);
+      return math::exp(ln_lo + (pos / n_eps) * (ln_eps_hi - ln_lo));
     }
 
     // ---------------------------------------------------------------------- //
@@ -519,31 +517,27 @@ namespace arch::bh {
       if (B.gamma.size() < 2 || B.n_eps < 1 || B.cdf_u.size() != B.gamma.size() * static_cast<std::size_t>(B.n_eps + 1)) {
         throw std::invalid_argument("mirror_sampler_to_device: inconsistent photon-energy tables");
       }
-      D.n_gamma = static_cast<int>(B.gamma.size());
-      D.n_eps   = B.n_eps;
-      D.y_nodes = array_t<double*> { "bh_s_y", B.y.size() };
-      D.ln_eps  = array_t<double*> { "bh_s_lneps", B.ln_eps.size() };
-      D.cdf_u   = array_t<float*> { "bh_s_cdfu", B.cdf_u.size() };
-      D.cdf_w   = array_t<float*> { "bh_s_cdfw", B.cdf_w.size() };
+      D.n_gamma      = static_cast<int>(B.gamma.size());
+      D.n_eps        = B.n_eps;
+      D.eps_min_bath = B.eps_min_bath;
+      D.ln_eps_hi    = B.ln_eps_hi;
+      D.y_nodes      = array_t<double*> { "bh_s_y", B.y.size() };
+      D.cdf_u        = array_t<float*> { "bh_s_cdfu", B.cdf_u.size() };
+      D.cdf_w        = array_t<float*> { "bh_s_cdfw", B.cdf_w.size() };
       auto hy = Kokkos::create_mirror_view(D.y_nodes);
-      auto he = Kokkos::create_mirror_view(D.ln_eps);
       auto hu = Kokkos::create_mirror_view(D.cdf_u);
       auto hw = Kokkos::create_mirror_view(D.cdf_w);
       for (std::size_t i = 0; i < B.y.size(); ++i) {
         hy(i) = B.y[i];
-      }
-      for (std::size_t i = 0; i < B.ln_eps.size(); ++i) {
-        he(i) = B.ln_eps[i];
       }
       for (std::size_t i = 0; i < B.cdf_u.size(); ++i) {
         hu(i) = static_cast<float>(B.cdf_u[i]);
         hw(i) = static_cast<float>(B.cdf_w[i]);
       }
       Kokkos::deep_copy(D.y_nodes, hy);
-      Kokkos::deep_copy(D.ln_eps, he);
       Kokkos::deep_copy(D.cdf_u, hu);
       Kokkos::deep_copy(D.cdf_w, hw);
-      bath_bytes = (B.y.size() + B.ln_eps.size()) * sizeof(double) + 2 * B.cdf_u.size() * sizeof(float);
+      bath_bytes = B.y.size() * sizeof(double) + 2 * B.cdf_u.size() * sizeof(float);
     }
     D.bytes = T.n_k() * sizeof(double) + (T.cdf_E.size() + T.cdf_A.size()) * sizeof(float) +
               3 * C.size() * sizeof(double) + bath_bytes;

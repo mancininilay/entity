@@ -9,9 +9,14 @@
  * Contract items (tolerances registered in the contract, never adjusted here):
  *   budget  <E'->, <p' cos theta'>, q_k from the interpolated CDFs vs direct
  *           quadrature of the laws, <= 1e-3 at every eps' node of the tables;
- *           <D> at every Gamma_p node of every rate table <= 1e-3 by quadrature
- *           over the chain (the table-defined q_k against the laws' q_k in the
- *           direct-boost rate, both with the step-1 outer quadrature)
+ *           <D> at every Gamma_p node of every rate table <= 1e-3: round 2
+ *           (finding 7), the mean of the density the unweighted chain samples
+ *           (photon table, eps' interpolant, tables' q_k; rf::SampledChainD)
+ *           against <D> of the laws (I with the laws' q_k over J), with its
+ *           convergence under doubled quadrature orders
+ *   photon  round 2 (finding 3, brief stage 2 (i)): <eps> of the photon-energy
+ *           table vs the marginal by quadrature, < 1e-6 at every node of the
+ *           broad baths, both chains (group `epsbias`)
  *   A5b     the direct-boost loss table I (laws' q_k) vs I_exact of step 1
  *           (eq. 3.7 q_k) <= 0.5% at every node (spec T3b)
  *   A7      <D>_MC = I/J at every rate-table node, N = 1e6 unweighted draws,
@@ -20,8 +25,8 @@
  *           <D> = I/J (as registered)
  *   A9      D >= 2 - eps_max over 1e7 draws per bath, zero violations; 1/min D
  *
- * Implementation-chosen checks (prefix "(impl)"): <D>_MC against the chain's
- * own quadrature within 5 s.e. at every node; E_p[1/D] <D>_chain = 1 within 4
+ * Implementation-chosen checks (prefix "(impl)"): <D>_MC against the sampled
+ * chain's quadrature within 5 s.e. at every node; E_p[1/D] <D>_sampled = 1 within 4
  * s.e.; D inside [D_min, D_max]; the lab four-momenta on shell and the inverse
  * boost returning the rest-frame energies; bitwise determinism for a fixed
  * seed. Diagnostics ([DIAG]): efficiency of the weighted chain vs Gamma_p,
@@ -175,54 +180,168 @@ namespace {
   // <D> by quadrature over the chain at every Gamma node; A5b
   // ---------------------------------------------------------------------- //
   void test_budget_gamma(const std::vector<BathSetup>& setups, const rf::QkCumulatives& cum_laws,
-                         const rf::QkCumulatives& cum_tab) {
-    std::printf("\n== accuracy budget: <D> at every Gamma_p node by quadrature over the chain; A5b ==\n");
-    double w_budget = 0.0, w_a5b = 0.0, w_tab_vs_exact = 0.0;
-    std::string n_budget, n_a5b;
+                         const rf::QkCumulatives& cum_tab, const rf::SamplerCumulatives& cum,
+                         const rf::QkFineGrid& qk_tab, const rf::RestFrameTables& T) {
+    std::printf("\n== accuracy budget: <D> of the sampled chain at every Gamma_p node by quadrature over the tables; "
+                "A5b ==\n");
+    // round 2 (finding 7): the registered budget is held against the density the sampler draws from (the photon
+    // table, the eps' interpolant and the tables' q_k), by quadrature with the tables' q_k on 16 sub-nodes per eps'
+    // interval and Gauss-Legendre order 16; the convergence estimate doubles the sub-nodes (32) and raises the
+    // orders to 24, and the verdict adds it to the deviation at every node
+    (void)qk_tab;
+    const auto              t_q  = std::chrono::steady_clock::now();
+    const rf::QkFineGrid    qk16 = rf::table_qk_fine_grid(T, 16);
+    const rf::QkFineGrid    qk32 = rf::table_qk_fine_grid(T, 32);
+    const rf::SampledChainD SD(cum, [&](double k) { return qk16(k); }, 16);
+    const rf::SampledChainD SDr(cum, [&](double k) { return qk32(k); }, 24);
+    diag("sampled-chain quadrature: tables' q_k on 16 and 32 sub-nodes per eps' interval, %.1f s", seconds_since(t_q));
+    double      w_s = 0.0, w_conv = 0.0, w_cert = 0.0, w_qonly = 0.0, w_a5b = 0.0, w_tab_vs_exact = 0.0;
+    std::string n_s, n_a5b, n_qonly;
+    double      g_s = 0.0;
+    std::size_t n_nodes = 0;
     for (const auto& S : setups) {
-      std::vector<double> rb(S.H.size()), ra(S.H.size()), rt(S.H.size());
-      rf::parallel_for_index(S.H.size(), [&](std::size_t i) {
+      const auto          t0 = std::chrono::steady_clock::now();
+      const std::size_t   ng = S.H.size();
+      std::vector<double> rs(ng), rc(ng), rb(ng), ra(ng), rt(ng), Ds(ng), Dl(ng);
+      rf::parallel_for_index(ng, [&](std::size_t i) {
         const double g      = S.H.gamma[i];
         const double I_laws = rf::direct_boost_I(*S.bath, cum_laws, g);
         const double I_tab  = rf::direct_boost_I(*S.bath, cum_tab, g);
+        const double D_s    = SD.Dmean_unweighted(*S.eps_tables, g, 16);
+        const double D_sr   = SDr.Dmean_unweighted(*S.eps_tables, g, 24);
+        Ds[i]               = D_s;
+        Dl[i]               = I_laws / S.H.J[i];
+        rs[i]               = D_s / Dl[i] - 1.0;
+        rc[i]               = D_sr / D_s - 1.0;
         rb[i]               = I_tab / I_laws - 1.0;
         ra[i]               = I_laws / S.H.I[i] - 1.0;
         rt[i]               = I_tab / S.H.I[i] - 1.0;
       });
-      double wb = 0.0, wa = 0.0, wt = 0.0, gb = 0.0, ga = 0.0;
-      for (std::size_t i = 0; i < S.H.size(); ++i) {
-        if (std::abs(rb[i]) > wb) {
-          wb = std::abs(rb[i]);
-          gb = S.H.gamma[i];
+      double ws = 0.0, wc = 0.0, wb = 0.0, wa = 0.0, wt = 0.0, gs = 0.0, ga = 0.0;
+      for (std::size_t i = 0; i < ng; ++i) {
+        w_cert = std::max(w_cert, std::abs(rs[i]) + std::abs(rc[i]));
+        if (std::abs(rs[i]) > ws) {
+          ws = std::abs(rs[i]);
+          gs = S.H.gamma[i];
         }
         if (std::abs(ra[i]) > wa) {
           wa = std::abs(ra[i]);
           ga = S.H.gamma[i];
         }
+        wc = std::max(wc, std::abs(rc[i]));
+        wb = std::max(wb, std::abs(rb[i]));
         wt = std::max(wt, std::abs(rt[i]));
       }
-      diag("%s: %zu nodes; <D>_tables/<D>_laws - 1 max %.3e at Gamma %.5f; I_laws/I_exact - 1 max %.3e at Gamma %.5f; "
-           "I_tables/I_exact - 1 max %.3e; samples: Gamma %.4f %+.2e / %+.2e, Gamma %.4f %+.2e / %+.2e, Gamma %.4f %+.2e / %+.2e",
-           S.cb.name.c_str(), S.H.size(), wb, gb, wa, ga, wt, S.H.gamma[S.H.size() / 8], rb[S.H.size() / 8],
-           ra[S.H.size() / 8], S.H.gamma[S.H.size() / 2], rb[S.H.size() / 2], ra[S.H.size() / 2], S.H.gamma.back(),
-           rb.back(), ra.back());
-      if (wb > w_budget) {
-        w_budget = wb;
-        n_budget = S.cb.name;
+      n_nodes += ng;
+      diag("%s: %zu nodes in %.1f s; <D>_sampled/<D>_laws - 1 max %.3e at Gamma %.5f (convergence %.1e); q_k part "
+           "alone (round-1 budget) %.3e; I_laws/I_exact - 1 max %.3e at Gamma %.5f; I_tables/I_exact - 1 max %.3e; "
+           "samples (Gamma, <D>_sampled, <D>_laws): %.4f %.8f %.8f | %.4f %.8f %.8f | %.4f %.6f %.6f",
+           S.cb.name.c_str(), ng, seconds_since(t0), ws, gs, wc, wb, wa, ga, wt, S.H.gamma[0], Ds[0], Dl[0],
+           S.H.gamma[ng / 2], Ds[ng / 2], Dl[ng / 2], S.H.gamma.back(), Ds.back(), Dl.back());
+      if (ws > w_s) {
+        w_s = ws;
+        n_s = S.cb.name;
+        g_s = gs;
+      }
+      if (wb > w_qonly) {
+        w_qonly = wb;
+        n_qonly = S.cb.name;
       }
       if (wa > w_a5b) {
         w_a5b = wa;
         n_a5b = S.cb.name;
       }
+      w_conv         = std::max(w_conv, wc);
       w_tab_vs_exact = std::max(w_tab_vs_exact, wt);
     }
-    check_abs("budget: <D> from the tables vs <D> from the laws by quadrature over the chain, every Gamma_p node "
-              "of the five rate tables",
-              w_budget, 1.0e-3);
+    check_abs("budget: <D> of the sampled chain (photon table, eps' interpolant, tables' q_k) vs <D> of the laws, "
+              "every Gamma_p node of the five rate tables (" + std::to_string(n_nodes) + " nodes; worst " + n_s +
+                " Gamma " + std::to_string(g_s) + ")",
+              w_s, 1.0e-3);
+    check_abs("budget: the same with the quadrature's convergence estimate added at every node, |dev| + |change "
+              "under refinement| (q_k sub-nodes 16 -> 32, Gauss-Legendre orders 16 -> 24)",
+              w_cert, 1.0e-3, "max (|dev| + |change|)");
+    diag("budget: sampled-chain quadrature, max |rel. change| under refinement %.2e over all nodes", w_conv);
     check_abs("A5b: direct-boost loss table I (laws' q_k) vs I_exact of step 1, every node of the five tables", w_a5b,
               5.0e-3);
-    diag("budget worst bath %s; A5b worst bath %s; I_tables vs I_exact worst %.3e", n_budget.c_str(), n_a5b.c_str(),
-         w_tab_vs_exact);
+    diag("budget: the q_k part alone (round 1's check: tables' q_k in the analytic chain vs the laws) max %.3e (bath "
+         "%s); A5b worst bath %s; I_tables vs I_exact worst %.3e",
+         w_qonly, n_qonly.c_str(), n_a5b.c_str(), w_tab_vs_exact);
+  }
+
+  // ---------------------------------------------------------------------- //
+  // round 2 (finding 3): the photon-energy table's mean against the marginal
+  // ---------------------------------------------------------------------- //
+  void test_eps_marginal(const std::vector<BathSetup>& setups, const rf::SamplerCumulatives& cum) {
+    std::printf("\n== photon-energy tables: <eps> of the sampled table vs the marginal by quadrature, every node ==\n");
+    double      worst = 0.0, worst_conv = 0.0, worst2 = 0.0;
+    std::string wname;
+    double      wgamma = 0.0;
+    bool        wweighted = false;
+    std::size_t n_checked = 0;
+    for (const auto& S : setups) {
+      if (S.eps_tables->mono) {
+        continue;
+      }
+      const auto          t0 = std::chrono::steady_clock::now();
+      const std::size_t   ng = S.H.size();
+      std::vector<double> bias(2 * ng), conv(2 * ng), bias2(2 * ng);
+      rf::parallel_for_index(2 * ng, [&](std::size_t n) {
+        const std::size_t i  = n / 2;
+        const bool        wt = (n % 2) == 1;
+        const double      g  = S.H.gamma[i];
+        const auto        m  = rf::photon_marginal_moments(*S.bath, cum, g, wt, 16384, 16);
+        const auto        mr = rf::photon_marginal_moments(*S.bath, cum, g, wt, 32768, 16);
+        bias[n]              = S.eps_tables->table_moment(i, wt, 1) / m.mean - 1.0;
+        bias2[n]             = S.eps_tables->table_moment(i, wt, 2) / m.mean2 - 1.0;
+        conv[n]              = mr.mean / m.mean - 1.0;
+      });
+      double wb = 0.0, wc = 0.0, wb2 = 0.0, gb = 0.0;
+      bool   wbw = false;
+      for (std::size_t n = 0; n < 2 * ng; ++n) {
+        if (std::abs(bias[n]) > wb) {
+          wb  = std::abs(bias[n]);
+          gb  = S.H.gamma[n / 2];
+          wbw = (n % 2) == 1;
+        }
+        wc  = std::max(wc, std::abs(conv[n]));
+        wb2 = std::max(wb2, std::abs(bias2[n]));
+      }
+      n_checked += 2 * ng;
+      diag("%s: %zu nodes x 2 chains in %.1f s; max |<eps>_table/<eps>_marginal - 1| = %.3e at Gamma %.9f (%s chain); "
+           "<eps^2> %.3e; quadrature refinement (16384 -> 32768 panels) %.1e; first nodes (unweighted): %+.2e %+.2e "
+           "%+.2e; last %+.2e",
+           S.cb.name.c_str(), ng, seconds_since(t0), wb, gb, wbw ? "weighted" : "unweighted", wb2, wc, bias[0], bias[2],
+           bias[4], bias[2 * ng - 2]);
+      if (wb > worst) {
+        worst     = wb;
+        wname     = S.cb.name;
+        wgamma    = gb;
+        wweighted = wbw;
+      }
+      worst_conv = std::max(worst_conv, wc);
+      worst2     = std::max(worst2, wb2);
+      if (S.cb.name == "powerlaw") {
+        // the referee's node (finding 3): Gamma = 1.048099570984, the paper marginal by quadrature 1.4946719776559543
+        for (std::size_t i = 0; i < ng; ++i) {
+          if (std::abs(S.H.gamma[i] / 1.048099570984 - 1.0) < 1.0e-11) {
+            const double tm = S.eps_tables->table_moment(i, false, 1);
+            impl_abs("photon table: <eps> at the referee's powerlaw node Gamma = 1.048099570984 vs the referee's "
+                     "quadrature of the paper marginal 1.4946719776559543 (round 1: 1.494613576097, -3.9e-5)",
+                     tm / 1.4946719776559543 - 1.0, 1.0e-6, "rel. dev.");
+            diag("photon table at Gamma = %.12f: <eps> table %.13f, own quadrature %.13f",
+                 S.H.gamma[i], tm, rf::photon_marginal_moments(*S.bath, cum, S.H.gamma[i], false).mean);
+          }
+        }
+      }
+    }
+    check_abs("photon table (round-2 brief stage 2 (i)): |<eps>_table / <eps>_marginal - 1| at every node of the "
+              "broad baths, both chains (" + std::to_string(n_checked) + " node-chains; worst " + wname + " Gamma " +
+                std::to_string(wgamma) + (wweighted ? " weighted)" : " unweighted)"),
+              worst, 1.0e-6);
+    impl_abs("photon table: the marginal's quadrature under refinement (16384 -> 32768 panels), every node", worst_conv,
+             1.0e-9, "max |rel. change|");
+    diag("photon table: max |<eps^2>_table/<eps^2>_marginal - 1| = %.3e", worst2);
   }
 
   // ---------------------------------------------------------------------- //
@@ -248,13 +367,14 @@ namespace {
     return r;
   }
 
-  void test_A7(const std::vector<BathSetup>& setups, const rf::QkCumulatives& cum_tab) {
+  void test_A7(const std::vector<BathSetup>& setups, const rf::SamplerCumulatives& cum, const rf::QkFineGrid& qk_tab) {
     std::printf("\n== A7: <D>_MC at every rate-table node, N = 1e6 ==\n");
-    const std::size_t N = 1000000;
+    const std::size_t       N = 1000000;
+    const rf::SampledChainD SD(cum, [&](double k) { return qk_tab(k); }, 8);
     double worst_rel = 0.0, worst_se_exact = 0.0, worst_se_chain = 0.0;
     std::string wname;
     double      wgamma = 0.0;
-    std::size_t total_nodes = 0;
+    std::size_t total_nodes = 0, total_fail = 0;
     for (std::size_t b = 0; b < setups.size(); ++b) {
       const auto&         S = setups[b];
       std::vector<NodeMC> R(S.H.size());
@@ -262,7 +382,7 @@ namespace {
       const auto          t0 = std::chrono::steady_clock::now();
       rf::parallel_for_index(S.H.size(), [&](std::size_t i) {
         R[i]      = mc_unweighted(*S.sampler, S.H.gamma[i], N, 1000003ULL * b + i);
-        Dchain[i] = rf::direct_boost_I(*S.bath, cum_tab, S.H.gamma[i]) / S.H.J[i];
+        Dchain[i] = SD.Dmean_unweighted(*S.eps_tables, S.H.gamma[i], 8); // the sampled density's mean
       });
       double wr = 0.0, wse = 0.0, wsc = 0.0, g_wr = 0.0;
       int    n_fail_rel = 0;
@@ -282,8 +402,9 @@ namespace {
         wsc = std::max(wsc, nsc);
       }
       total_nodes += S.H.size();
+      total_fail += static_cast<std::size_t>(n_fail_rel);
       diag("A7 %s: %zu nodes x 1e6 draws in %.0f s; max |<D>_MC/(I/J) - 1| = %.3e at Gamma %.5f; max |dev|/s.e. vs I/J "
-           "%.1f, vs the chain's quadrature %.1f; nodes failing max(1%%, 4 s.e.): %d; samples (Gamma, <D>_MC, I/J, "
+           "%.1f, vs the sampled chain's quadrature %.1f; nodes failing max(1%%, 4 s.e.): %d; samples (Gamma, <D>_MC, I/J, "
            "<D>_chain): %.4f %.5f %.5f %.5f | %.4f %.5f %.5f %.5f | %.4f %.4f %.4f %.4f",
            S.cb.name.c_str(), S.H.size(), seconds_since(t0), wr, g_wr, wse, wsc, n_fail_rel, S.H.gamma[1], R[1].mean,
            S.H.Dmean[1], Dchain[1], S.H.gamma[S.H.size() / 2], R[S.H.size() / 2].mean, S.H.Dmean[S.H.size() / 2],
@@ -296,20 +417,24 @@ namespace {
       worst_se_exact = std::max(worst_se_exact, wse);
       worst_se_chain = std::max(worst_se_chain, wsc);
     }
-    // the registered criterion: every node within max(1%, 4 s.e.) of I/J
+    // the registered criterion: every node within max(1%, 4 s.e.) of I/J (round 2: the per-node count is the
+    // verdict; round 1 printed it but the verdict line could not fail)
     check_true("A7: |<D>_MC - I/J| <= max(1%, 4 s.e.) at every rate-table node of the five baths (N = 1e6)",
-               worst_rel <= 1.0e-2 || true /* per-node criterion counted above */, "see the per-bath failing-node counts");
+               total_fail == 0, std::to_string(total_fail) + " of " + std::to_string(total_nodes) + " nodes fail");
     check_abs("A7: max |<D>_MC/(I/J) - 1| over the " + std::to_string(total_nodes) + " nodes (bath " + wname +
                 ", Gamma " + std::to_string(wgamma) + ")",
               worst_rel, 1.0e-2);
-    impl_abs("A7: max |<D>_MC - <D>_chain| / s.e. over all nodes (the chain's own quadrature)", worst_se_chain, 5.0,
-             "max |dev| / s.e.");
+    impl_abs("A7: max |<D>_MC - <D>_sampled| / s.e. over all nodes (the quadrature of the density the chain samples, "
+             "SampledChainD)",
+             worst_se_chain, 5.0, "max |dev| / s.e.");
     diag("A7: max |<D>_MC - I/J| / s.e. over all nodes = %.1f (the eq. 3.7 fit of step 1 vs the Born laws, not a "
          "sampling error; see A5b)",
          worst_se_exact);
   }
 
-  void test_A7_weighted(const std::vector<BathSetup>& setups, const rf::QkCumulatives& cum_tab) {
+  void test_A7_weighted(const std::vector<BathSetup>& setups, const rf::SamplerCumulatives& cum,
+                        const rf::QkFineGrid& qk_tab) {
+    const rf::SampledChainD SD(cum, [&](double k) { return qk_tab(k); }, 8);
     std::printf("\n== A7: the weighted chain, E_p[1/D] <D> = 1 at Gamma_p in {1.05 Gamma_th, 3, 10} ==\n");
     double worst_exact = 0.0, worst_chain = 0.0;
     for (std::size_t b = 0; b < setups.size(); ++b) {
@@ -349,7 +474,7 @@ namespace {
         const double se = std::sqrt(std::max(0.0, s2 / n - m * m) / n);
         const auto   R  = S.rates->at_gamma(g);
         res[j]          = Res { m, se, static_cast<double>(n) / att, R.Dmean,
-                       rf::direct_boost_I(*S.bath, cum_tab, g) / R.J, n, minD };
+                       SD.Dmean_unweighted(*S.eps_tables, g, 8), n, minD };
       });
       for (std::size_t j = 0; j < gammas.size(); ++j) {
         const auto&  r  = res[j];
@@ -357,14 +482,14 @@ namespace {
         const double ne = std::abs(pe - 1.0) / (r.se * r.Dexact), nc = std::abs(pc - 1.0) / (r.se * r.Dchain);
         worst_exact     = std::max(worst_exact, ne);
         worst_chain     = std::max(worst_chain, nc);
-        diag("A7 weighted %s Gamma %.5f: N_acc %zu, E_p[1/D] (I/J) = %.5f (%.1f s.e.), E_p[1/D] <D>_chain = %.5f (%.1f "
+        diag("A7 weighted %s Gamma %.5f: N_acc %zu, E_p[1/D] (I/J) = %.5f (%.1f s.e.), E_p[1/D] <D>_sampled = %.5f (%.1f "
              "s.e.), efficiency %.4f, 1/min D = %.4f",
              S.cb.name.c_str(), gammas[j], r.n_acc, pe, ne, pc, nc, r.eff, 1.0 / r.minD);
       }
     }
     check_abs("A7: E_p[1/D] (I/J) = 1 within 4 s.e., weighted chain, Gamma_p in {1.05 Gamma_th, 3, 10}, five baths",
               worst_exact, 4.0, "max |dev| / s.e.");
-    impl_abs("A7: E_p[1/D] <D>_chain = 1 within 4 s.e. (the chain's own quadrature)", worst_chain, 4.0,
+    impl_abs("A7: E_p[1/D] <D>_sampled = 1 within 4 s.e. (<D> of the density the unweighted chain samples)", worst_chain, 4.0,
              "max |dev| / s.e.");
   }
 
@@ -544,12 +669,15 @@ auto main(int argc, char* argv[]) -> int {
       const auto& S = setups.back();
       diag("bath %s: %zu Gamma nodes in [%.6f, %.6f], Gamma_th %.6f; eps tables %s", cb.name.c_str(), S.H.size(),
            S.H.gamma_min, S.H.gamma_max, S.H.gamma_th,
-           S.eps_tables->mono ? "mono (none)" : (std::to_string(S.eps_tables->n_eps) + " cells in ln eps").c_str());
+           S.eps_tables->mono ? "mono (none)" : (std::to_string(S.eps_tables->n_eps) + " cells per node in ln eps").c_str());
     }
 
+    if (want("epsbias")) {
+      test_eps_marginal(setups, *cum);
+    }
     if (want("budget")) {
       test_budget_nodes(*T);
-      test_budget_gamma(setups, cum_laws, cum_tab);
+      test_budget_gamma(setups, cum_laws, cum_tab, *cum, qk_tab, *T);
     }
     if (want("kinematics")) {
       std::size_t ib = 0;
@@ -567,10 +695,10 @@ auto main(int argc, char* argv[]) -> int {
       test_A9(setups);
     }
     if (want("a7w")) {
-      test_A7_weighted(setups, cum_tab);
+      test_A7_weighted(setups, *cum, qk_tab);
     }
     if (want("a7")) {
-      test_A7(setups, cum_tab);
+      test_A7(setups, *cum, qk_tab);
     }
 
     std::printf("\nbh_chain summary: contract items %d passed, %d failed; implementation-chosen checks %d passed, %d "

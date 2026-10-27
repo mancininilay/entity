@@ -6,9 +6,9 @@
  * Usage:
  *   bh_sampler_dump qk_table --out FILE [--status STATUS] [--threads N]
  *   bh_sampler_dump moments  --bath NAME --out FILE [--seed S] [--n N]
- *                            [--n-weighted-attempts N] [--status STATUS] [--threads N]
+ *                            [--n-weighted N] [--status STATUS] [--threads N]
  *   bh_sampler_dump hist     --bath NAME --gamma G --out FILE [--seed S] [--n N]
- *                            [--n-weighted-attempts N] [--status STATUS]
+ *                            [--n-weighted N] [--bins-from FILE] [--status STATUS] [--threads N]
  *   bh_sampler_dump ka2008   --bath NAME --gamma G --out FILE [--status STATUS]
  *
  * `qk_table` (section 4 item 1): the eps' nodes of the step-1 grid (64 per
@@ -18,21 +18,26 @@
  * and Maximon's sigma~. Deterministic quadrature (bh_restframe.h).
  *
  * `moments` (item 2): at every Gamma_p node of the bath's rate table, N
- * unweighted draws (default 1e6): <D> with its standard error, <D^2>, <E->,
- * <E+>, <cos theta-> (lab, to u^), <eps>, min D, max D; from the weighted
- * chain, with a budget of `--n-weighted-attempts` trials per node (default
- * 1e6; the acceptance efficiency falls to 1e-3 at the upper table edge, so
- * 1e6 accepted draws per node are not affordable there, see the report):
- * E_p[1/D] (I/J) with its standard error, the acceptance efficiency, 1/min D.
+ * unweighted draws (default 1e6): <D>, <D^2>, <E->, <E+>, <cos theta-> (lab,
+ * to u^), <eps>, each with its standard error (round 2, finding 7), min D,
+ * max D; the weighted chain run to a fixed number of accepted packets
+ * (`--n-weighted`, default 1e5; round 2, the contract's fixed N; the attempts
+ * used are reported): E_p[1/D] with its standard error, times I/J and times
+ * <D>_MC (delta-method s.e.), the acceptance efficiency with its s.e., 1/min D;
+ * and the deterministic <D> of the density the chain samples (Dmean_sampled).
  * Seeds: SplitMix64(seed + i) unweighted and SplitMix64(seed + 500000 + i)
  * weighted at node i.
  *
- * `hist` (item 3): at one Gamma_p, N draws of each chain (the weighted chain
- * within the attempts budget): 200 log-spaced bins in E- and in E+ over the
- * kinematic lab range [1, Gamma (E'_max + beta p'_max)], 200 linear bins in
- * cos theta- and cos theta+ (lab, to u^), 200 linear bins in D over
- * [D_min, D_max] of the bath at this Gamma_p; counts of the unweighted chain
- * and 1/D-weighted, normalised weights of the weighted chain.
+ * `hist` (item 3): at one Gamma_p, N unweighted draws (default 1e6) and a
+ * fixed number of accepted weighted packets (`--n-weighted`, default 1e6),
+ * in 64 chunks with seeds of their own (thread-count independent): 200
+ * log-spaced bins in E- and in E+ over the kinematic lab range
+ * [1, Gamma (E'_max + beta p'_max)], 200 linear bins in cos theta- and
+ * cos theta+ (lab, to u^), 200 linear bins in D over [D_min, D_max] of the
+ * bath at this Gamma_p, or the edges of another fixture (`--bins-from`); the
+ * layout of the bh-sampler-fixture histograms (quantity_id, bin, lo, hi,
+ * unweighted_count, weighted_packet_count, sum_1_over_D,
+ * sum_1_over_D_squared, normalized_packet_weight).
  *
  * `ka2008` (item 4): the lab e- spectrum of the UR anchor (bh_lab_spectrum.h,
  * Kelner and Aharonian 2008 eqs. 58 to 64 as the exact boost of the
@@ -48,6 +53,7 @@
 #include "archetypes/hadronic/bh_sampler_host.h"
 #include "archetypes/hadronic/bh_sampler_io.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -68,7 +74,9 @@ namespace {
     double        gamma { 0.0 };
     std::uint64_t seed { 20261026ULL };
     std::size_t   n { 1000000 };
-    std::size_t   n_weighted_attempts { 1000000 };
+    std::size_t   n_weighted { 0 };                       // accepted packets; 0: the command's default
+    std::size_t   max_weighted_attempts { 100000000000ULL }; // a safety cap only (exceeding it is an error)
+    std::string   bins_from;                              // hist: take the bin edges from this fixture
     unsigned      threads { 0 };
   };
 
@@ -111,8 +119,12 @@ namespace {
         o.seed = static_cast<std::uint64_t>(parse_count(key, val));
       } else if (key == "--n") {
         o.n = parse_count(key, val);
-      } else if (key == "--n-weighted-attempts") {
-        o.n_weighted_attempts = parse_count(key, val);
+      } else if (key == "--n-weighted") {
+        o.n_weighted = parse_count(key, val);
+      } else if (key == "--max-weighted-attempts") {
+        o.max_weighted_attempts = parse_count(key, val);
+      } else if (key == "--bins-from") {
+        o.bins_from = val;
       } else if (key == "--threads") {
         o.threads = static_cast<unsigned>(parse_count(key, val));
       } else {
@@ -127,6 +139,10 @@ namespace {
     }
     if ((o.command == "hist" || o.command == "ka2008") && !(o.gamma > 1.0)) {
       throw std::invalid_argument("--gamma is required");
+    }
+    if (o.n_weighted == 0) {
+      // the contract's fixed N: 1e5 accepted packets per node for the moments, 1e6 for a histogram
+      o.n_weighted = o.command == "moments" ? 100000 : 1000000;
     }
     return o;
   }
@@ -184,7 +200,8 @@ namespace {
         "Z = 1 unscreened; checked against the numerical integral of MOK 3D-3000 (Heitler 1954 p. 257 eq. 6)\", "
         "\"verification\": \"algebra, signs and normalisation checked against the PDFs by the referee (Codex 1, "
         "2026-10-27)\", "
-        "\"q_k\": \"eps_prime - 2 <p cos theta>_h\", \"normalisation\": \"the laws' own integrals (sigma_from_g, "
+        "\"q_k\": \"eps_prime - 2 <p cos theta>_h, computed as 2 <(E - p) + p (1 - cos theta)>_h (no cancellation; "
+        "round 2)\", \"normalisation\": \"the laws' own integrals (sigma_from_g, "
         "int h); Maximon's sigma~ reported in sigma_maximon\"}" });
     t.header.push_back({ "quadrature",
                          "{\"gl_order\": " + std::to_string(q.gl_order) +
@@ -237,15 +254,38 @@ namespace {
     return s;
   }
 
+  // running mean and variance (Welford 1962): a constant sample returns the constant exactly and a zero
+  // variance, so the zero-variance columns of a mono bath (eps = eps0) are exact
+  struct Welford {
+    double n { 0.0 }, mean { 0.0 }, m2 { 0.0 };
+
+    void add(double x) {
+      n += 1.0;
+      const double d = x - mean;
+      mean += d / n;
+      m2 += d * (x - mean);
+    }
+
+    double se() const {
+      return n > 1.0 ? std::sqrt(std::max(0.0, m2 / (n - 1.0)) / n) : 0.0;
+    }
+  };
+
   int run_moments(const Options& o) {
     using namespace arch::bh;
     const auto t0 = std::chrono::steady_clock::now();
     Setup      s  = make_setup(o, nullptr);
     const std::size_t ng = s.H.size();
+    // <D> of the density the unweighted chain samples (round 2, finding 7), deterministic
+    const rf::QkFineGrid    qk16 = rf::table_qk_fine_grid(*s.T, 16, o.threads);
+    const rf::SampledChainD SD(*s.cum, [&](double k) { return qk16(k); }, 16);
     struct Row {
-      double Dmean, Dse, D2, Em, Ep, cosm, eps, Dmin, Dmax;
-      double Einv, Einv_se, eff, invminD;
+      double      Dsampled;
+      Welford     D, D2, Em, Ep, cosm, eps;
+      double      Dmin, Dmax;
+      Welford     invD;
       std::size_t n_acc, n_att;
+      double      minDw;
     };
     std::vector<Row> rows(ng);
     rf::parallel_for_index(
@@ -253,52 +293,40 @@ namespace {
       [&](std::size_t i) {
         const double g = s.H.gamma[i];
         Row          r {};
+        r.Dsampled = SD.Dmean_unweighted(*s.B, g, 16);
         {
           rf::SplitMix64 rng(o.seed + i);
-          double sD = 0, sD2 = 0, sEm = 0, sEp = 0, sc = 0, se = 0, mn = 1e300, mx = -1e300;
+          r.Dmin = 1.0e300;
+          r.Dmax = -1.0e300;
           for (std::size_t n = 0; n < o.n; ++n) {
-            const auto e = s.S->draw(g, false, rng);
-            sD += e.D;
-            sD2 += e.D * e.D;
-            sEm += e.lab_m.E;
-            sEp += e.lab_p.E;
-            const double pm = std::sqrt(e.lab_m.p.x * e.lab_m.p.x + e.lab_m.p.y * e.lab_m.p.y + e.lab_m.p.z * e.lab_m.p.z);
-            sc += e.lab_m.p.z / pm;
-            se += e.eps;
-            mn = std::min(mn, e.D);
-            mx = std::max(mx, e.D);
+            const auto   e  = s.S->draw(g, false, rng);
+            const double pm = std::sqrt(e.lab_m.p.x * e.lab_m.p.x + e.lab_m.p.y * e.lab_m.p.y +
+                                        e.lab_m.p.z * e.lab_m.p.z);
+            r.D.add(e.D);
+            r.D2.add(e.D * e.D);
+            r.Em.add(e.lab_m.E);
+            r.Ep.add(e.lab_p.E);
+            r.cosm.add(e.lab_m.p.z / pm);
+            r.eps.add(e.eps);
+            r.Dmin = std::min(r.Dmin, e.D);
+            r.Dmax = std::max(r.Dmax, e.D);
           }
-          const double N = static_cast<double>(o.n);
-          r.Dmean        = sD / N;
-          r.Dse          = std::sqrt(std::max(0.0, sD2 / N - r.Dmean * r.Dmean) / N);
-          r.D2           = sD2 / N;
-          r.Em           = sEm / N;
-          r.Ep           = sEp / N;
-          r.cosm         = sc / N;
-          r.eps          = se / N;
-          r.Dmin         = mn;
-          r.Dmax         = mx;
         }
         {
           rf::SplitMix64 rng(o.seed + 500000 + i);
-          double         s1 = 0, s2 = 0, mn = 1e300;
-          std::size_t    n = 0, att = 0;
-          while (att < o.n_weighted_attempts && n < o.n) {
+          r.minDw = 1.0e300;
+          r.n_acc = r.n_att = 0;
+          while (r.n_acc < o.n_weighted) {
             const auto e = s.S->draw(g, true, rng);
-            att += static_cast<std::size_t>(e.attempts);
-            const double y = 1.0 / e.D;
-            s1 += y;
-            s2 += y * y;
-            mn = std::min(mn, e.D);
-            ++n;
+            r.n_att += static_cast<std::size_t>(e.attempts);
+            if (r.n_att > o.max_weighted_attempts) {
+              throw std::runtime_error("moments: the weighted chain exceeded --max-weighted-attempts at Gamma " +
+                                       std::to_string(g));
+            }
+            r.invD.add(1.0 / e.D);
+            r.minDw = std::min(r.minDw, e.D);
+            ++r.n_acc;
           }
-          const double m = s1 / n;
-          r.Einv         = m * s.H.Dmean[i];
-          r.Einv_se      = std::sqrt(std::max(0.0, s2 / n - m * m) / n) * s.H.Dmean[i];
-          r.eff          = static_cast<double>(n) / att;
-          r.invminD      = 1.0 / mn;
-          r.n_acc        = n;
-          r.n_att        = att;
         }
         rows[i] = r;
       },
@@ -311,33 +339,66 @@ namespace {
     t.header.push_back({ "gamma_th", json_number(s.H.gamma_th) });
     t.header.push_back({ "seed", std::to_string(o.seed) });
     t.header.push_back({ "n_unweighted", std::to_string(o.n) });
-    t.header.push_back({ "n_weighted_attempts_budget", std::to_string(o.n_weighted_attempts) });
+    t.header.push_back({ "n_weighted_accepted", std::to_string(o.n_weighted) });
     t.header.push_back({ "rng", json_string("SplitMix64(seed + i) unweighted, SplitMix64(seed + 500000 + i) weighted, "
                                             "node i; uniform = (bits >> 11 + 0.5) 2^-53") });
     t.header.push_back({ "chains",
                          json_string("unweighted: eps ~ n/eps^2 Phi(eps'_hi), eps'|eps ~ eps' sigma~ on [2, eps'_hi], "
                                      "E'- ~ g, angles ~ h independently, rotation and boost along u^ = z; weighted: "
                                      "eps ~ n/eps^2 F(eps'_hi), eps'|eps ~ eps' sigma~ D_max, unweighted conditionals, "
-                                     "accept with D/D_max") });
+                                     "accept with D/D_max, run to a fixed number of accepted packets") });
     t.header.push_back({ "tables", tables_json(*s.T, *s.cum, *s.B) });
     t.header.push_back({ "Dmean_table_definition", json_string("I/J of the step-1 rate table at the node") });
-    t.header.push_back({ "node_count", std::to_string(ng) });
-    t.columns = { "gamma_p", "beta_p", "J", "I", "Dmean_table", "n_unweighted", "Dmean_mc", "Dmean_se", "D2mean",
-                  "Emean_minus", "Emean_plus", "cos_minus_lab_mean", "eps_mean_mc", "D_min", "D_max",
-                  "n_weighted_accepted", "n_weighted_attempts", "Einv_Dmean", "Einv_Dmean_se", "efficiency",
-                  "inv_min_D_weighted" };
-    for (std::size_t i = 0; i < ng; ++i) {
-      const auto& r = rows[i];
-      t.rows.push_back({ s.H.gamma[i], s.H.beta[i], s.H.J[i], s.H.I[i], s.H.Dmean[i], static_cast<double>(o.n),
-                         r.Dmean, r.Dse, r.D2, r.Em, r.Ep, r.cosm, r.eps, r.Dmin, r.Dmax,
-                         static_cast<double>(r.n_acc), static_cast<double>(r.n_att), r.Einv, r.Einv_se, r.eff,
-                         r.invminD });
+    t.header.push_back(
+      { "Dmean_sampled_definition",
+        json_string("<D> of the density the unweighted chain samples (photon table, eps' interpolant, the tables' "
+                    "q_k on 16 sub-nodes per eps' interval), by quadrature (rf::SampledChainD, Gauss-Legendre 16): "
+                    "the value Dmean_mc converges to") });
+    t.header.push_back(
+      { "standard_errors",
+        json_string("every Monte Carlo mean carries <column>_se = sqrt(s^2/N), s^2 the unbiased sample variance "
+                    "(Welford's update); Einv_Dmean_mc_se by the delta method from the independent unweighted and "
+                    "weighted chains; efficiency_se = efficiency sqrt((1 - efficiency)/n_weighted_accepted)") });
+    std::string det = "[\"gamma_p\", \"beta_p\", \"J\", \"I\", \"Dmean_table\", \"Dmean_sampled\"";
+    if (s.B->mono) {
+      det += ", \"eps_mean_mc\"";
     }
+    det += "]";
+    t.header.push_back({ "deterministic_columns", det });
+    if (s.B->mono) {
+      t.header.push_back(
+        { "zero_variance_columns",
+          json_string("eps_mean_mc: eps = eps0 exactly in a mono bath; Welford's update returns eps0 exactly and "
+                      "eps_mean_mc_se = 0; compare at 1e-12 relative, not by a standard-error criterion") });
+    }
+    t.header.push_back({ "node_count", std::to_string(ng) });
+    t.columns = { "gamma_p", "beta_p", "J", "I", "Dmean_table", "Dmean_sampled", "n_unweighted", "Dmean_mc",
+                  "Dmean_se", "D2mean", "D2mean_se", "Emean_minus", "Emean_minus_se", "Emean_plus", "Emean_plus_se",
+                  "cos_minus_lab_mean", "cos_minus_lab_mean_se", "eps_mean_mc", "eps_mean_mc_se", "D_min", "D_max",
+                  "n_weighted_accepted", "n_weighted_attempts", "Einv", "Einv_se", "Einv_Dmean", "Einv_Dmean_se",
+                  "Einv_Dmean_mc", "Einv_Dmean_mc_se", "efficiency", "efficiency_se", "inv_min_D_weighted" };
+    std::size_t att_total = 0, att_max = 0;
+    for (std::size_t i = 0; i < ng; ++i) {
+      const auto&  r   = rows[i];
+      const double a   = r.invD.mean, sa = r.invD.se(), b = r.D.mean, sb = r.D.se();
+      const double eff = static_cast<double>(r.n_acc) / static_cast<double>(r.n_att);
+      att_total += r.n_att;
+      att_max = std::max(att_max, r.n_att);
+      t.rows.push_back({ s.H.gamma[i], s.H.beta[i], s.H.J[i], s.H.I[i], s.H.Dmean[i], r.Dsampled,
+                         static_cast<double>(o.n), r.D.mean, r.D.se(), r.D2.mean, r.D2.se(), r.Em.mean, r.Em.se(),
+                         r.Ep.mean, r.Ep.se(), r.cosm.mean, r.cosm.se(), r.eps.mean, r.eps.se(), r.Dmin, r.Dmax,
+                         static_cast<double>(r.n_acc), static_cast<double>(r.n_att), a, sa, a * s.H.Dmean[i],
+                         sa * s.H.Dmean[i], a * b, std::sqrt(b * b * sa * sa + a * a * sb * sb), eff,
+                         eff * std::sqrt(std::max(0.0, 1.0 - eff) / static_cast<double>(r.n_acc)), 1.0 / r.minDw });
+    }
+    t.header.push_back({ "n_weighted_attempts_total", std::to_string(att_total) });
     write_fixture_file(o.out, t);
     const FixtureContents c = read_fixture_file(o.out);
-    std::printf("bh_sampler_dump moments %s: %zu nodes written to %s in %.0f s (data_sha256 %s)\n", o.bath.c_str(),
-                c.rows.size(), o.out.c_str(),
-                std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count(), c.data_sha256.c_str());
+    std::printf("bh_sampler_dump moments %s: %zu nodes written to %s in %.0f s; weighted chain %zu accepted per node, "
+                "%zu attempts in total, at most %zu at one node (data_sha256 %s)\n",
+                o.bath.c_str(), c.rows.size(), o.out.c_str(),
+                std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count(), o.n_weighted, att_total,
+                att_max, c.data_sha256.c_str());
     return 0;
   }
 
@@ -418,85 +479,168 @@ namespace {
     if (khi > constants::K_MAX) {
       throw std::runtime_error("hist: eps'_hi = " + std::to_string(khi) + " exceeds the kernel cap 1000");
     }
-    // kinematic ranges
-    const double Epmax = khi - 1.0, ppmax = rf::momentum(Epmax);
-    const double E_lo = 1.0, E_hi = g * Epmax + gb * ppmax;
-    // D range over the bath: scan eps and eps'
-    double Dlo = 1.0e300, Dhi = -1.0e300;
-    {
-      const double eps_min = s.bath->is_mono() ? eps_max : std::max(s.bath->eps_min(), 2.0 / A);
-      for (int i = 0; i <= 2000; ++i) {
-        const double eps = eps_min + (eps_max - eps_min) * i / 2000.0;
-        const double kh  = eps * A;
-        if (!(kh > 2.0)) {
-          continue;
+    const int                        NQ = 5;
+    const char* const                qname[NQ] = { "Eminus", "Eplus", "cosminus", "cosplus", "D" };
+    std::vector<std::vector<double>> edges(NQ);
+    std::string                      bins_json;
+    if (!o.bins_from.empty()) {
+      // the bin edges of another fixture in the bh-sampler-fixture layout (quantity_id, bin, lo, hi, ...)
+      const FixtureContents ref = read_fixture_file(o.bins_from);
+      auto col = [&](const std::string& n) {
+        for (std::size_t c = 0; c < ref.columns.size(); ++c) {
+          if (ref.columns[c] == n) {
+            return c;
+          }
         }
-        for (int j = 0; j <= 2000; ++j) {
-          const double k = 2.0 + (kh - 2.0) * j / 2000.0;
-          double       a, b;
-          rf::HostSampler::bounds(g, gb, eps, k, a, b);
-          Dlo = std::min(Dlo, a);
-          Dhi = std::max(Dhi, b);
+        throw std::runtime_error("hist: --bins-from file has no column " + n);
+      };
+      const std::size_t cq = col("quantity_id"), cl = col("lo"), ch = col("hi");
+      for (const auto& row : ref.rows) {
+        const int q = static_cast<int>(row[cq]);
+        if (q < 0 || q >= NQ) {
+          throw std::runtime_error("hist: --bins-from quantity_id out of range");
+        }
+        if (edges[q].empty()) {
+          edges[q].push_back(row[cl]);
+        }
+        edges[q].push_back(row[ch]);
+      }
+      for (int q = 0; q < NQ; ++q) {
+        if (edges[q].size() < 2 || !std::is_sorted(edges[q].begin(), edges[q].end())) {
+          throw std::runtime_error("hist: --bins-from edges missing or not increasing");
+        }
+      }
+      bins_json = "{\"source\": " + json_string(o.bins_from) + "}";
+    } else {
+      // kinematic ranges
+      const double Epmax = khi - 1.0, ppmax = rf::momentum(Epmax);
+      const double E_lo = 1.0, E_hi = g * Epmax + gb * ppmax;
+      // D range over the bath: scan eps and eps'
+      double Dlo = 1.0e300, Dhi = -1.0e300;
+      {
+        const double eps_min = s.bath->is_mono() ? eps_max : std::max(s.bath->eps_min(), 2.0 / A);
+        for (int i = 0; i <= 2000; ++i) {
+          const double eps = eps_min + (eps_max - eps_min) * i / 2000.0;
+          const double kh  = eps * A;
+          if (!(kh > 2.0)) {
+            continue;
+          }
+          for (int j = 0; j <= 2000; ++j) {
+            const double k = 2.0 + (kh - 2.0) * j / 2000.0;
+            double       a, b;
+            rf::HostSampler::bounds(g, gb, eps, k, a, b);
+            Dlo = std::min(Dlo, a);
+            Dhi = std::max(Dhi, b);
+          }
+        }
+      }
+      const int NB = 200;
+      for (int q = 0; q < NQ; ++q) {
+        edges[q].resize(NB + 1);
+      }
+      for (int i = 0; i <= NB; ++i) {
+        edges[0][i] = edges[1][i] = E_lo * std::pow(E_hi / E_lo, static_cast<double>(i) / NB);
+        edges[2][i] = edges[3][i] = -1.0 + 2.0 * i / NB;
+        edges[4][i]               = Dlo + (Dhi - Dlo) * i / NB;
+      }
+      bins_json = "{\"E\": {\"n\": 200, \"spacing\": \"log\", \"lo\": " + json_number(E_lo) + ", \"hi\": " +
+                  json_number(E_hi) +
+                  "}, \"cos\": {\"n\": 200, \"spacing\": \"linear\", \"lo\": -1, \"hi\": 1}, \"D\": {\"n\": 200, "
+                  "\"spacing\": \"linear\", \"lo\": " +
+                  json_number(Dlo) + ", \"hi\": " + json_number(Dhi) + "}}";
+    }
+    // values outside the edges are counted in the first or last bin (and reported)
+    auto bin_of = [&](int q, double v, std::size_t& clamped) {
+      const auto& e  = edges[q];
+      const int   nb = static_cast<int>(e.size()) - 1;
+      if (v < e.front() || v > e.back()) {
+        ++clamped;
+      }
+      const int i = static_cast<int>(std::upper_bound(e.begin(), e.end(), v) - e.begin()) - 1;
+      return std::min(nb - 1, std::max(0, i));
+    };
+    auto values = [](const rf::PairEvent& e, double (&v)[NQ]) {
+      auto cosl = [](const rf::FourMomentum& q) {
+        return q.p.z / std::sqrt(q.p.x * q.p.x + q.p.y * q.p.y + q.p.z * q.p.z);
+      };
+      v[0] = e.lab_m.E;
+      v[1] = e.lab_p.E;
+      v[2] = cosl(e.lab_m);
+      v[3] = cosl(e.lab_p);
+      v[4] = e.D;
+    };
+    // 64 chunks with seeds of their own, merged in chunk order: the result does not depend on the thread count
+    const std::size_t NC = 64;
+    struct Chunk {
+      std::vector<std::vector<double>> nu, nw, sw, sw2;
+      std::size_t                      att { 0 }, clamped { 0 };
+    };
+    std::vector<Chunk> chunks(NC);
+    rf::parallel_for_index(
+      NC,
+      [&](std::size_t c) {
+        Chunk& ch = chunks[c];
+        for (auto* v : { &ch.nu, &ch.nw, &ch.sw, &ch.sw2 }) {
+          v->assign(NQ, {});
+          for (int q = 0; q < NQ; ++q) {
+            (*v)[q].assign(edges[q].size() - 1, 0.0);
+          }
+        }
+        const std::size_t nu = o.n / NC + (c < o.n % NC ? 1 : 0);
+        const std::size_t nw = o.n_weighted / NC + (c < o.n_weighted % NC ? 1 : 0);
+        double            v[NQ];
+        {
+          rf::SplitMix64 rng(o.seed + 1000003ULL * c);
+          for (std::size_t n = 0; n < nu; ++n) {
+            values(s.S->draw(g, false, rng), v);
+            for (int q = 0; q < NQ; ++q) {
+              ch.nu[q][bin_of(q, v[q], ch.clamped)] += 1.0;
+            }
+          }
+        }
+        {
+          rf::SplitMix64 rng(o.seed + 500000ULL + 1000003ULL * c);
+          for (std::size_t n = 0; n < nw; ++n) {
+            const auto e = s.S->draw(g, true, rng);
+            ch.att += static_cast<std::size_t>(e.attempts);
+            if (ch.att > o.max_weighted_attempts / NC + 1) {
+              throw std::runtime_error("hist: the weighted chain exceeded --max-weighted-attempts");
+            }
+            values(e, v);
+            const double w = 1.0 / e.D;
+            for (int q = 0; q < NQ; ++q) {
+              const int i = bin_of(q, v[q], ch.clamped);
+              ch.nw[q][i] += 1.0;
+              ch.sw[q][i] += w;
+              ch.sw2[q][i] += w * w;
+            }
+          }
+        }
+      },
+      o.threads);
+    // merge in chunk order
+    std::vector<std::vector<double>> nu(NQ), nw(NQ), sw(NQ), sw2(NQ);
+    std::size_t                      n_att = 0, clamped = 0;
+    for (int q = 0; q < NQ; ++q) {
+      nu[q].assign(edges[q].size() - 1, 0.0);
+      nw[q] = sw[q] = sw2[q] = nu[q];
+    }
+    for (const auto& ch : chunks) {
+      n_att += ch.att;
+      clamped += ch.clamped;
+      for (int q = 0; q < NQ; ++q) {
+        for (std::size_t i = 0; i < nu[q].size(); ++i) {
+          nu[q][i] += ch.nu[q][i];
+          nw[q][i] += ch.nw[q][i];
+          sw[q][i] += ch.sw[q][i];
+          sw2[q][i] += ch.sw2[q][i];
         }
       }
     }
-    const int           NB = 200;
-    std::vector<double> edgesE(NB + 1), edgesC(NB + 1), edgesD(NB + 1);
-    for (int i = 0; i <= NB; ++i) {
-      edgesE[i] = E_lo * std::pow(E_hi / E_lo, static_cast<double>(i) / NB);
-      edgesC[i] = -1.0 + 2.0 * i / NB;
-      edgesD[i] = Dlo + (Dhi - Dlo) * i / NB;
-    }
-    auto bin_log = [&](double v) {
-      const int i = static_cast<int>(std::floor(std::log(v / E_lo) / std::log(E_hi / E_lo) * NB));
-      return std::min(NB - 1, std::max(0, i));
-    };
-    auto bin_lin = [&](double v, double lo, double hi) {
-      const int i = static_cast<int>(std::floor((v - lo) / (hi - lo) * NB));
-      return std::min(NB - 1, std::max(0, i));
-    };
-    std::vector<double> nEm(NB, 0), nEp(NB, 0), nCm(NB, 0), nCp(NB, 0), nD(NB, 0);
-    std::vector<double> wEm(NB, 0), wEp(NB, 0), wCm(NB, 0), wCp(NB, 0), wD(NB, 0);
-    std::size_t         n_acc = 0, n_att = 0;
-    {
-      rf::SplitMix64 rng(o.seed);
-      for (std::size_t n = 0; n < o.n; ++n) {
-        const auto e = s.S->draw(g, false, rng);
-        auto       cosl = [](const rf::FourMomentum& q) {
-          return q.p.z / std::sqrt(q.p.x * q.p.x + q.p.y * q.p.y + q.p.z * q.p.z);
-        };
-        nEm[bin_log(e.lab_m.E)] += 1.0;
-        nEp[bin_log(e.lab_p.E)] += 1.0;
-        nCm[bin_lin(cosl(e.lab_m), -1.0, 1.0)] += 1.0;
-        nCp[bin_lin(cosl(e.lab_p), -1.0, 1.0)] += 1.0;
-        nD[bin_lin(e.D, Dlo, Dhi)] += 1.0;
-      }
-    }
-    {
-      rf::SplitMix64 rng(o.seed + 500000);
-      double         wsum = 0.0;
-      while (n_att < o.n_weighted_attempts && n_acc < o.n) {
-        const auto e = s.S->draw(g, true, rng);
-        n_att += static_cast<std::size_t>(e.attempts);
-        ++n_acc;
-        const double w = 1.0 / e.D;
-        wsum += w;
-        auto cosl = [](const rf::FourMomentum& q) {
-          return q.p.z / std::sqrt(q.p.x * q.p.x + q.p.y * q.p.y + q.p.z * q.p.z);
-        };
-        wEm[bin_log(e.lab_m.E)] += w;
-        wEp[bin_log(e.lab_p.E)] += w;
-        wCm[bin_lin(cosl(e.lab_m), -1.0, 1.0)] += w;
-        wCp[bin_lin(cosl(e.lab_p), -1.0, 1.0)] += w;
-        wD[bin_lin(e.D, Dlo, Dhi)] += w;
-      }
-      for (int i = 0; i < NB; ++i) {
-        wEm[i] /= wsum;
-        wEp[i] /= wsum;
-        wCm[i] /= wsum;
-        wCp[i] /= wsum;
-        wD[i] /= wsum;
-      }
+    double W = 0.0, W2 = 0.0;
+    for (std::size_t i = 0; i < sw[0].size(); ++i) {
+      W += sw[0][i];
+      W2 += sw2[0][i];
     }
     FixtureTable t;
     t.header = common_header("bh-sampler-hist", o);
@@ -509,34 +653,40 @@ namespace {
     t.header.push_back({ "eps_prime_hi_max", json_number(khi) });
     t.header.push_back({ "seed", std::to_string(o.seed) });
     t.header.push_back({ "n_unweighted", std::to_string(o.n) });
-    t.header.push_back({ "n_weighted_accepted", std::to_string(n_acc) });
+    t.header.push_back({ "n_weighted_accepted", std::to_string(o.n_weighted) });
     t.header.push_back({ "n_weighted_attempts", std::to_string(n_att) });
-    t.header.push_back({ "rng", json_string("SplitMix64(seed) unweighted, SplitMix64(seed + 500000) weighted") });
-    t.header.push_back({ "bins",
-                         "{\"E\": {\"n\": 200, \"spacing\": \"log\", \"lo\": " + json_number(E_lo) +
-                           ", \"hi\": " + json_number(E_hi) + "}, \"cos\": {\"n\": 200, \"spacing\": \"linear\", \"lo\": -1, \"hi\": 1}, "
-                           "\"D\": {\"n\": 200, \"spacing\": \"linear\", \"lo\": " +
-                           json_number(Dlo) + ", \"hi\": " + json_number(Dhi) + "}}" });
-    t.header.push_back({ "weights", json_string("unweighted chain: counts; weighted chain: sum of 1/D per bin divided "
-                                                "by the total sum of 1/D (packet weights, normalised)") });
-    t.header.push_back({ "lab_frame", json_string("u^ = +z; cos theta relative to u^; lepton energies in m_e c^2") });
+    t.header.push_back({ "weighted_ESS", json_number(W * W / W2) });
+    t.header.push_back({ "values_outside_edges", std::to_string(clamped) });
+    t.header.push_back({ "rng", json_string("64 chunks c = 0..63 (n/64 draws each, remainder to the first): "
+                                            "SplitMix64(seed + 1000003 c) unweighted, SplitMix64(seed + 500000 + "
+                                            "1000003 c) weighted; merged in chunk order") });
+    t.header.push_back({ "quantities", "[\"Eminus\", \"Eplus\", \"cosminus\", \"cosplus\", \"D\"]" });
+    t.header.push_back({ "bins", bins_json });
+    t.header.push_back({ "weights", json_string("weighted chain: packet weight 1/D; normalized_packet_weight = "
+                                                "sum_1_over_D of the bin / the total sum of 1/D") });
+    t.header.push_back({ "lab_frame", json_string("u^ = +z; cos theta relative to u^; lepton energies in m_e c^2; "
+                                                  "values outside the edges counted in the first or last bin") });
     t.header.push_back({ "tables", tables_json(*s.T, *s.cum, *s.B) });
-    t.header.push_back({ "node_count", std::to_string(NB) });
-    t.columns = { "E_minus_lo", "E_minus_hi", "n_unw_E_minus", "w_wt_E_minus", "E_plus_lo", "E_plus_hi", "n_unw_E_plus",
-                  "w_wt_E_plus", "cos_minus_lo", "cos_minus_hi", "n_unw_cos_minus", "w_wt_cos_minus", "cos_plus_lo",
-                  "cos_plus_hi", "n_unw_cos_plus", "w_wt_cos_plus", "D_lo", "D_hi", "n_unw_D", "w_wt_D" };
-    for (int i = 0; i < NB; ++i) {
-      t.rows.push_back({ edgesE[i], edgesE[i + 1], nEm[i], wEm[i], edgesE[i], edgesE[i + 1], nEp[i], wEp[i], edgesC[i],
-                         edgesC[i + 1], nCm[i], wCm[i], edgesC[i], edgesC[i + 1], nCp[i], wCp[i], edgesD[i],
-                         edgesD[i + 1], nD[i], wD[i] });
+    std::size_t nrows = 0;
+    for (int q = 0; q < NQ; ++q) {
+      nrows += nu[q].size();
+    }
+    t.header.push_back({ "node_count", std::to_string(nrows) });
+    t.columns = { "quantity_id", "bin", "lo", "hi", "unweighted_count", "weighted_packet_count", "sum_1_over_D",
+                  "sum_1_over_D_squared", "normalized_packet_weight" };
+    for (int q = 0; q < NQ; ++q) {
+      for (std::size_t i = 0; i < nu[q].size(); ++i) {
+        t.rows.push_back({ static_cast<double>(q), static_cast<double>(i), edges[q][i], edges[q][i + 1], nu[q][i],
+                           nw[q][i], sw[q][i], sw2[q][i], sw[q][i] / W });
+      }
     }
     write_fixture_file(o.out, t);
     const FixtureContents c = read_fixture_file(o.out);
-    std::printf("bh_sampler_dump hist %s Gamma %g: %zu bins written to %s in %.0f s; weighted %zu accepted of %zu "
-                "attempts (data_sha256 %s)\n",
-                o.bath.c_str(), g, c.rows.size(), o.out.c_str(),
-                std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count(), n_acc, n_att,
-                c.data_sha256.c_str());
+    std::printf("bh_sampler_dump hist %s Gamma %g: %zu rows (%s) written to %s in %.0f s; weighted %zu accepted of %zu "
+                "attempts, ESS %.0f; %zu values outside the edges (data_sha256 %s)\n",
+                o.bath.c_str(), g, c.rows.size(), qname[0], o.out.c_str(),
+                std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count(), o.n_weighted, n_att,
+                W * W / W2, clamped, c.data_sha256.c_str());
     return 0;
   }
 
@@ -550,9 +700,9 @@ int main(int argc, char** argv) {
     std::fprintf(stderr, "bh_sampler_dump: option error: %s\n", e.what());
     std::fprintf(stderr,
                  "usage: bh_sampler_dump qk_table --out FILE [--status S] [--threads N]\n"
-                 "       bh_sampler_dump moments --bath NAME --out FILE [--seed S] [--n N] [--n-weighted-attempts N]\n"
+                 "       bh_sampler_dump moments --bath NAME --out FILE [--seed S] [--n N] [--n-weighted N]\n"
                  "       bh_sampler_dump hist --bath NAME --gamma G --out FILE [--seed S] [--n N] "
-                 "[--n-weighted-attempts N]\n"
+                 "[--n-weighted N] [--bins-from FILE]\n"
                  "       bh_sampler_dump ka2008 --bath NAME --gamma G --out FILE\n");
     return 2;
   }

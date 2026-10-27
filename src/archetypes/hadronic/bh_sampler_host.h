@@ -27,9 +27,10 @@
  *     ln Psir = ln int k sigma~ sqrt(k^2 - 4) dk on a fine grid in
  *     t = ln(k - 2) (h = 0.005 from k - 2 = 1e-8 to 998), linear in t;
  *   - a broad bath's eps marginal is tabulated at every Gamma node of the
- *     step-1 rate table on a common grid in ln eps (`n_eps` cells, default
- *     512), for both chains, and mixed linearly in y = log10(Gamma - Gamma_th)
- *     between nodes.
+ *     step-1 rate table, for both chains, on a grid of its own uniform in
+ *     x = ln(eps/eps_lo)/ln(eps_max/eps_lo), eps_lo = max(eps_min, 2/(Gamma
+ *     (1 + beta))) (at least 2048 cells, at most 1e-3 wide in ln eps; round 2), and mixed linearly
+ *     in y = log10(Gamma - Gamma_th) between nodes, in x.
  *
  * @namespaces:
  *   - arch::bh::rf::
@@ -703,19 +704,53 @@ namespace arch::bh::rf {
   // ------------------------------------------------------------------------ //
   // The photon-energy tables of a broad bath (both chains) at the Gamma nodes
   // ------------------------------------------------------------------------ //
+  /**
+   * Round 2 (finding 3): each Gamma node has its own grid, adapted to the
+   * photon interval that is active there, [eps_lo(Gamma), eps_max] with
+   * eps_lo(Gamma) = max(eps_min of the bath, 2/(Gamma (1 + beta))), uniform in
+   * x = ln(eps/eps_lo)/ln(eps_max/eps_lo) in [0, 1] (`n_eps` cells). Round 1
+   * used one grid in ln eps common to all nodes: near threshold the active
+   * interval spanned a few cells and the threshold fell inside a cell, which
+   * biased <eps> by up to 3.5e-5. At continuous Gamma the bracketing nodes'
+   * CDFs are mixed in x (weights linear in y = log10(Gamma - Gamma_th)) and x
+   * is mapped to eps with eps_lo of that Gamma, so the threshold is respected
+   * at every Gamma, not only at the nodes. Inside a cell the sampled density
+   * is uniform in x (in ln eps); the bias of <eps> this leaves is
+   * O(h^2) in the cell width h in ln eps (measured 2.9e-7 at h = 1.9e-3, the
+   * blackbody's widest node with 2048 cells), so the cell count is
+   * max(`n_eps`, ceil(widest node range / `h_max`)), h_max = 1e-3 by default:
+   * the width, not the count, is held fixed when the Gamma range grows.
+   */
   struct BathEpsTables {
     bool                mono { true };
     double              eps0 { 0.0 };
     double              gamma_th { 0.0 };
+    double              eps_min_bath { 0.0 }; // the bath's lower edge (0 if none)
+    double              ln_eps_hi { 0.0 };    // ln eps_max
     std::vector<double> y;      // log10(Gamma - Gamma_th) at the rate-table nodes
     std::vector<double> gamma;  // the nodes
-    std::vector<double> ln_eps; // n_eps + 1 edges
     int                 n_eps { 2048 };
-    std::vector<double> cdf_u; // [n_gamma][n_eps + 1] unweighted chain
+    std::vector<double> cdf_u; // [n_gamma][n_eps + 1] unweighted chain, at x_j = j/n_eps
     std::vector<double> cdf_w; // [n_gamma][n_eps + 1] D_max-weighted chain
 
     const double* cdf(bool weighted, std::size_t ig) const {
       return (weighted ? cdf_w : cdf_u).data() + ig * static_cast<std::size_t>(n_eps + 1);
+    }
+
+    /// ln eps_lo(Gamma) = ln max(eps_min, 2/(Gamma (1 + beta)))
+    static double ln_eps_lo_of(double g, double eps_min_bath) {
+      const double A = g + std::sqrt((g - 1.0) * (g + 1.0));
+      return std::log(std::max(eps_min_bath, 2.0 / A));
+    }
+
+    double ln_eps_lo(double g) const {
+      return ln_eps_lo_of(g, eps_min_bath);
+    }
+
+    /// ln eps at the cell position pos in [0, n_eps] for the grid of Gamma
+    double ln_eps_at(double g, double pos) const {
+      const double lo = ln_eps_lo(g);
+      return lo + (pos / n_eps) * (ln_eps_hi - lo);
     }
 
     void locate_gamma(double g, std::size_t& i, double& w) const {
@@ -745,21 +780,36 @@ namespace arch::bh::rf {
       locate_gamma(g, i, w);
       const double* const C[2] = { cdf(weighted, i), cdf(weighted, i + 1) };
       const double        W[2] = { 1.0 - w, w };
-      const double        pos  = invert_mixture<2>(C, W, n_eps, u);
-      const std::size_t   j    = static_cast<std::size_t>(std::min(static_cast<int>(pos), n_eps - 1));
-      const double        f    = pos - static_cast<double>(j);
-      return std::exp(ln_eps[j] + f * (ln_eps[j + 1] - ln_eps[j]));
+      return std::exp(ln_eps_at(g, invert_mixture<2>(C, W, n_eps, u)));
+    }
+
+    /// <eps^m> (m = 1, 2) of the density the table samples at node ig (exact:
+    /// uniform in ln eps inside each cell)
+    double table_moment(std::size_t ig, bool weighted, int m) const {
+      if (mono) {
+        return std::pow(eps0, m);
+      }
+      const double* C  = cdf(weighted, ig);
+      const double  lo = ln_eps_lo(gamma[ig]);
+      const double  h  = (ln_eps_hi - lo) / n_eps;
+      double        s  = 0.0;
+      for (int j = 0; j < n_eps; ++j) {
+        const double a = lo + h * j;
+        // mean of e^{m l} for l uniform on [a, a + h]: e^{m a} (e^{m h} - 1)/(m h)
+        s += (C[j + 1] - C[j]) * std::exp(m * a) * (std::expm1(m * h) / (m * h));
+      }
+      return s;
     }
 
     static BathEpsTables build(const PhotonBath& bath, const HadronicTablesHost& H, const SamplerCumulatives& cum,
-                               int n_eps = 2048, int gl_cell = 8, unsigned n_threads = 0) {
-      return build_at(bath, H.gamma, cum, n_eps, gl_cell, n_threads);
+                               int n_eps = 2048, int gl_cell = 8, unsigned n_threads = 0, double h_max = 1.0e-3) {
+      return build_at(bath, H.gamma, cum, n_eps, gl_cell, n_threads, h_max);
     }
 
     /// the same at an explicit, increasing list of Gamma nodes (> Gamma_th)
     static BathEpsTables build_at(const PhotonBath& bath, const std::vector<double>& gammas,
                                   const SamplerCumulatives& cum, int n_eps = 2048, int gl_cell = 8,
-                                  unsigned n_threads = 0) {
+                                  unsigned n_threads = 0, double h_max = 1.0e-3) {
       BathEpsTables B;
       B.gamma_th = bath.gamma_th();
       B.gamma    = gammas;
@@ -778,20 +828,16 @@ namespace arch::bh::rf {
         }
         B.y[i] = std::log10(gammas[i] - B.gamma_th);
       }
+      B.eps_min_bath = std::max(0.0, bath.eps_min());
+      B.ln_eps_hi    = std::log(bath.eps_max());
+      double widest  = 0.0;
+      for (const double g : gammas) {
+        widest = std::max(widest, B.ln_eps_hi - B.ln_eps_lo(g));
+      }
+      if (h_max > 0.0) {
+        n_eps = std::max(n_eps, static_cast<int>(std::ceil(widest / h_max)));
+      }
       B.n_eps = n_eps;
-      // common grid in ln eps from the smallest threshold energy (at Gamma_max)
-      // or the bath's lower edge, to eps_max
-      const double gmax   = gammas.back();
-      const double Amax   = gmax + std::sqrt((gmax - 1.0) * (gmax + 1.0));
-      const double eps_lo = std::max(bath.eps_min(), 2.0 / Amax);
-      const double eps_hi = bath.eps_max();
-      if (!(eps_hi > eps_lo)) {
-        throw std::invalid_argument("BathEpsTables: empty photon-energy range");
-      }
-      B.ln_eps.resize(n_eps + 1);
-      for (int j = 0; j <= n_eps; ++j) {
-        B.ln_eps[j] = std::log(eps_lo) + (std::log(eps_hi) - std::log(eps_lo)) * static_cast<double>(j) / n_eps;
-      }
       const std::size_t ng = gammas.size();
       B.cdf_u.assign(ng * (n_eps + 1), 0.0);
       B.cdf_w.assign(ng * (n_eps + 1), 0.0);
@@ -802,16 +848,20 @@ namespace arch::bh::rf {
           const double g  = gammas[ig];
           const double gb = std::sqrt((g - 1.0) * (g + 1.0));
           const double A  = g + gb;
+          const double lo = B.ln_eps_lo(g);
+          if (!(B.ln_eps_hi > lo)) {
+            throw std::invalid_argument("BathEpsTables: empty photon-energy range at Gamma " + std::to_string(g));
+          }
+          const double h  = (B.ln_eps_hi - lo) / n_eps;
           double*      Cu = B.cdf_u.data() + ig * (n_eps + 1);
           double*      Cw = B.cdf_w.data() + ig * (n_eps + 1);
           Cu[0] = Cw[0] = 0.0;
           for (int j = 0; j < n_eps; ++j) {
-            double cu = 0.0, cw = 0.0;
-            const double a = B.ln_eps[j], b = B.ln_eps[j + 1];
-            const double mid = 0.5 * (a + b), half = 0.5 * (b - a);
+            double       cu = 0.0, cw = 0.0;
+            const double a = lo + h * j;
+            const double mid = a + 0.5 * h, half = 0.5 * h;
             for (int q = 0; q < G.order(); ++q) {
-              const double le  = mid + half * G.x[q];
-              const double eps = std::exp(le);
+              const double eps = std::exp(mid + half * G.x[q]);
               const double n   = bath.density(eps);
               const double dhi = eps * A - 2.0;
               if (!(n > 0.0) || !(dhi > 0.0)) {
@@ -833,6 +883,194 @@ namespace arch::bh::rf {
         n_threads);
       return B;
     }
+  };
+
+  /**
+   * @brief <eps^m> (m = 0, 1, 2) of the photon marginal of a chain at Gamma by
+   *        direct quadrature, independent of BathEpsTables: n(eps)/eps^2 Phi
+   *        (unweighted) or n(eps)/eps^2 F (weighted) on [eps_lo(Gamma),
+   *        eps_max], `panels` Gauss-Legendre panels uniform in ln eps (the
+   *        bath's breakpoints and eps_min added as panel edges); returns
+   *        {mass, <eps>, <eps^2>}
+   */
+  struct MarginalMoments {
+    double mass { 0.0 }, mean { 0.0 }, mean2 { 0.0 };
+  };
+
+  inline MarginalMoments photon_marginal_moments(const PhotonBath& bath, const SamplerCumulatives& cum, double g,
+                                                 bool weighted, int panels = 16384, int gl = 16) {
+    const double gb = std::sqrt((g - 1.0) * (g + 1.0));
+    const double A  = g + gb;
+    const double lo = BathEpsTables::ln_eps_lo_of(g, std::max(0.0, bath.eps_min()));
+    const double hi = std::log(bath.eps_max());
+    std::vector<double> edges { lo };
+    for (const double eb : bath.breakpoints()) {
+      if (eb > 0.0 && std::log(eb) > lo && std::log(eb) < hi) {
+        edges.push_back(std::log(eb));
+      }
+    }
+    edges.push_back(hi);
+    std::sort(edges.begin(), edges.end());
+    const GaussLegendre G(gl);
+    double              s0 = 0.0, s1 = 0.0, s2 = 0.0;
+    for (std::size_t e = 0; e + 1 < edges.size(); ++e) {
+      const int    np = std::max(1, static_cast<int>(std::ceil(panels * (edges[e + 1] - edges[e]) / (hi - lo))));
+      const double h  = (edges[e + 1] - edges[e]) / np;
+      for (int p = 0; p < np; ++p) {
+        const double mid = edges[e] + h * (p + 0.5), half = 0.5 * h;
+        for (int q = 0; q < G.order(); ++q) {
+          const double eps = std::exp(mid + half * G.x[q]);
+          const double n   = bath.density(eps);
+          const double dhi = eps * A - 2.0;
+          if (!(n > 0.0) || !(dhi > 0.0)) {
+            continue;
+          }
+          const double w = half * G.w[q] * n / eps * (weighted ? cum.F(dhi, g, gb, eps) : cum.Phi(dhi));
+          s0 += w;
+          s1 += w * eps;
+          s2 += w * eps * eps;
+        }
+      }
+    }
+    return MarginalMoments { s0, s1 / s0, s2 / s0 };
+  }
+
+  // ------------------------------------------------------------------------ //
+  // <D> of the density the unweighted chain samples, by quadrature over the
+  // tables (round 2, finding 7: the accuracy budget of the sampled chain)
+  // ------------------------------------------------------------------------ //
+  /**
+   * The unweighted chain draws eps from BathEpsTables (uniform in ln eps
+   * inside a cell), delta = eps' - 2 from the interpolant Phi_t of
+   * SamplerCumulatives (ln Phi linear in t = ln delta per cell, so the sampled
+   * density in t is s_j Phi_t(t), s_j the cell's slope; below delta0 the
+   * threshold law (pi/24) delta^4), then E', the angles and the azimuths from
+   * the rest-frame tables. Averaging over the uniform azimuths,
+   * E[D | eps, eps'] = q_T(eps') (Gamma - eps/eps') exactly, with q_T the
+   * recoil moment of the tables' E' and angle draws (`QkFineGrid` of
+   * `RestFrameTables::moments_at`). Hence
+   *   <D>_sampled = E_eps[(Gamma M1(dhi) - eps M2(dhi)) / Phi_t(dhi)],
+   *   M1 = int q_T dPhi_t, M2 = int (q_T/eps') dPhi_t,
+   * with M1 and M2 tabulated on the cells of Phi_t by Gauss-Legendre (order
+   * `gl`) and E_eps the exact cell masses of the photon table with `gl_eps`
+   * points per cell. Nothing of the analytic photon marginal or of the laws
+   * enters: this is the mean the sampler converges to.
+   */
+  class SampledChainD {
+  public:
+    SampledChainD(const SamplerCumulatives& C, std::function<double(double)> qT, int gl = 8)
+      : m_C { C }
+      , m_q { std::move(qT) }
+      , m_G { gl } {
+      const auto& t = m_C.t();
+      const auto& L = m_C.lnPhi();
+      m_M1.assign(t.size(), 0.0);
+      m_M2.assign(t.size(), 0.0);
+      {
+        // below delta0, Phi ~ delta^4: <delta> = 0.8 delta0 (relative weight < 1e-20 of any active node)
+        const double k0 = 2.0 + 0.8 * m_C.delta0(), P0 = std::exp(L.front());
+        m_M1[0]         = m_q(k0) * P0;
+        m_M2[0]         = m_M1[0] / k0;
+      }
+      for (std::size_t j = 0; j + 1 < t.size(); ++j) {
+        double a1, a2;
+        partial(j, t[j + 1], a1, a2);
+        m_M1[j + 1] = m_M1[j] + a1;
+        m_M2[j + 1] = m_M2[j] + a2;
+      }
+    }
+
+    /// Phi_t(delta), M1(delta), M2(delta) as the sampler's interpolant defines them
+    void at(double delta, double& P, double& M1, double& M2) const {
+      const auto& t = m_C.t();
+      const auto& L = m_C.lnPhi();
+      if (!(delta > 0.0)) {
+        P = M1 = M2 = 0.0;
+        return;
+      }
+      if (delta <= m_C.delta0()) {
+        const double k = 2.0 + 0.8 * delta;
+        P              = m_C.Phi(delta);
+        M1             = m_q(k) * P;
+        M2             = M1 / k;
+        return;
+      }
+      if (delta >= m_C.kmax() - 2.0) {
+        P  = std::exp(L.back());
+        M1 = m_M1.back();
+        M2 = m_M2.back();
+        return;
+      }
+      const double tt = std::log(delta);
+      const auto   it = std::upper_bound(t.begin(), t.end(), tt);
+      std::size_t  j  = static_cast<std::size_t>(it - t.begin());
+      j               = std::min(std::max<std::size_t>(j, 1), t.size() - 1) - 1;
+      double a1, a2;
+      partial(j, tt, a1, a2);
+      P  = m_C.Phi(delta);
+      M1 = m_M1[j] + a1;
+      M2 = m_M2[j] + a2;
+    }
+
+    /// E[D | eps] of the sampled chain, eps' drawn on [2, eps A]
+    double D_given_eps(double g, double eps) const {
+      const double A = g + std::sqrt((g - 1.0) * (g + 1.0));
+      double       P, M1, M2;
+      at(eps * A - 2.0, P, M1, M2);
+      return P > 0.0 ? (g * M1 - eps * M2) / P : 0.0;
+    }
+
+    /// <D> of the unweighted chain at Gamma (mono: eps0; broad: the mixture of the bracketing nodes' photon
+    /// tables that `BathEpsTables::sample_eps` inverts, mapped with eps_lo of this Gamma)
+    double Dmean_unweighted(const BathEpsTables& B, double g, int gl_eps = 8) const {
+      if (B.mono) {
+        return D_given_eps(g, B.eps0);
+      }
+      std::size_t ig;
+      double      w;
+      B.locate_gamma(g, ig, w);
+      const GaussLegendre G(gl_eps);
+      const double*       C0 = B.cdf(false, ig);
+      const double*       C1 = B.cdf(false, ig + 1);
+      const double        lo = B.ln_eps_lo(g);
+      const double        h  = (B.ln_eps_hi - lo) / B.n_eps;
+      double              s  = 0.0;
+      for (int j = 0; j < B.n_eps; ++j) {
+        const double m = (1.0 - w) * (C0[j + 1] - C0[j]) + w * (C1[j + 1] - C1[j]);
+        if (!(m > 0.0)) {
+          continue;
+        }
+        const double mid = lo + h * (j + 0.5);
+        double       c   = 0.0;
+        for (int q = 0; q < G.order(); ++q) {
+          c += 0.5 * G.w[q] * D_given_eps(g, std::exp(mid + 0.5 * h * G.x[q]));
+        }
+        s += m * c;
+      }
+      return s;
+    }
+
+  private:
+    // int_{t_j}^{tt} q_T(2 + e^t) {1, 1/(2 + e^t)} s_j Phi_t(t) dt
+    void partial(std::size_t j, double tt, double& a1, double& a2) const {
+      const auto&  t = m_C.t();
+      const auto&  L = m_C.lnPhi();
+      const double s = (L[j + 1] - L[j]) / (t[j + 1] - t[j]);
+      const double mid = 0.5 * (t[j] + tt), half = 0.5 * (tt - t[j]);
+      a1 = a2 = 0.0;
+      for (int i = 0; i < m_G.order(); ++i) {
+        const double x = mid + half * m_G.x[i];
+        const double k = 2.0 + std::exp(x);
+        const double w = half * m_G.w[i] * s * std::exp(L[j] + s * (x - t[j])) * m_q(k);
+        a1 += w;
+        a2 += w / k;
+      }
+    }
+
+    const SamplerCumulatives&     m_C;
+    std::function<double(double)> m_q;
+    GaussLegendre                 m_G;
+    std::vector<double>           m_M1, m_M2;
   };
 
   // ------------------------------------------------------------------------ //

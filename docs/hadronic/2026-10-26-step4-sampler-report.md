@@ -748,3 +748,6 @@ threshold error). A3 asymptotic diagnostic unchanged (stage 0).
 ### R2 stage 2 (findings 3 and 7: photon marginal, standard errors, fixed N, the sampled-chain budget)
 
 - stage 2 started, HEAD `efb39a2`.
+- stage 2 code committed before the fixtures are regenerated (the regeneration
+  takes about an hour; the fixtures and the results follow in the stage-2
+  closing commit).

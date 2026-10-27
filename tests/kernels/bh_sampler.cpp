@@ -855,7 +855,17 @@ namespace {
     }
     probe.close();
     const bh::FixtureContents F = bh::read_fixture_file(path);
-    const int                 NB = static_cast<int>(F.rows.size());
+    // round 2 layout: quantity_id, bin, lo, hi, unweighted_count, weighted_packet_count, sum_1_over_D,
+    // sum_1_over_D_squared, normalized_packet_weight; quantity 0 = E-, 2 = cos theta-
+    std::vector<std::vector<double>> qE, qC;
+    for (const auto& r : F.rows) {
+      if (r[0] == 0.0) {
+        qE.push_back(r);
+      } else if (r[0] == 2.0) {
+        qC.push_back(r);
+      }
+    }
+    const int NB = static_cast<int>(qE.size());
     // kernel run at Gamma_p = 3: 100 ions, preset debt, 1000 packets each
     const int   nions = 100, pk = 1000;
     Ions        ions(nions, 1.0);
@@ -878,7 +888,7 @@ namespace {
     // weighted histograms on the fixture's bins
     std::vector<double> wE(NB, 0.0), wC(NB, 0.0);
     double              sw = 0.0, sw2 = 0.0;
-    const double        E_lo = F.rows.front()[0], E_hi = F.rows.back()[1];
+    const double        E_lo = qE.front()[2], E_hi = qE.back()[3];
     for (const auto& r : rows) {
       const double gm   = kh::lepton_gamma(r.u1m, r.u2m, r.u3m);
       const double um   = std::sqrt(r.u1m * r.u1m + r.u2m * r.u2m + r.u3m * r.u3m);
@@ -894,33 +904,19 @@ namespace {
       wC[ic] += w;
     }
     const double n_eff_k = sw * sw / sw2;
-    // the fixture's effective size: weights 1/D over N accepted (header n_weighted_accepted)
-    double n_acc = 1.0e6;
-    if (F.header.count("n_weighted_accepted")) {
-      n_acc = std::stod(F.header.at("n_weighted_accepted"));
-    }
-    // Kish effective size of the fixture's weighted sample from its D histogram
-    // (weights 1/D, D taken at the bin centre): with the normalised bin weights
-    // wt_i, the accepted count in bin i is ~ wt_i D_i, so
-    // n_eff = n_acc / (sum_i wt_i D_i * sum_i wt_i / D_i)
-    double s1 = 0.0, s2 = 0.0;
-    for (const auto& r : F.rows) {
-      const double wt = r[19], Dmid = 0.5 * (r[16] + r[17]); // w_wt_D, D bin centre
-      s1 += wt * Dmid;
-      s2 += wt / Dmid;
-    }
-    const double n_eff_fix = n_acc / (s1 * s2);
+    // the fixture's Kish effective size (header weighted_ESS, (sum 1/D)^2 / sum 1/D^2 over its packets)
+    const double n_eff_fix = std::stod(F.header.at("weighted_ESS"));
     const double crit = 1.628 * std::sqrt((n_eff_k + n_eff_fix) / (n_eff_k * n_eff_fix));
-    auto ks_binned = [&](const std::vector<double>& a, int col) {
+    auto ks_binned = [&](const std::vector<double>& a, const std::vector<std::vector<double>>& q) {
       double Fa = 0.0, Fb = 0.0, d = 0.0;
       for (int i = 0; i < NB; ++i) {
         Fa += a[i] / sw;
-        Fb += F.rows[i][col];
+        Fb += q[i][8];
         d = std::max(d, std::abs(Fa - Fb));
       }
       return d;
     };
-    const double ksE = ks_binned(wE, 3), ksC = ks_binned(wC, 11);
+    const double ksE = ks_binned(wE, qE), ksC = ks_binned(wC, qC);
     verdict(ksE <= crit, "A12 spectrum: e- lab energy of the kernel's pairs (weights 1/D, " +
                            std::to_string(rows.size()) + " pairs, N_eff " + fmt("%.0f", n_eff_k) +
                            ") vs hist_mono05_G3 weighted chain (N_eff " + fmt("%.0f", n_eff_fix) +

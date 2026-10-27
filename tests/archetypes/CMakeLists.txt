@@ -51,7 +51,7 @@ target_link_libraries(test-archetypes-bh_chain.xc PRIVATE ntt_archetypes ntt_glo
 target_compile_definitions(
   test-archetypes-bh_chain.xc
   PRIVATE BH_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data/hadronic")
-foreach(grp budget kinematics efficiency a9 a7w a7)
+foreach(grp epsbias budget kinematics efficiency a9 a7w a7)
   add_test(NAME "ARCHETYPES::bh_chain_${grp}" COMMAND test-archetypes-bh_chain.xc ${grp})
 endforeach()
 set_tests_properties("ARCHETYPES::bh_chain_a7" PROPERTIES TIMEOUT 7200)
