@@ -9,7 +9,7 @@
  *                            [--n-weighted N] [--status STATUS] [--threads N]
  *   bh_sampler_dump hist     --bath NAME --gamma G --out FILE [--seed S] [--n N]
  *                            [--n-weighted N] [--bins-from FILE] [--status STATUS] [--threads N]
- *   bh_sampler_dump ka2008   --bath NAME --gamma G --out FILE [--status STATUS]
+ *   bh_sampler_dump exact_chain_cdf --bath NAME --gamma G --out FILE [--status STATUS]
  *
  * `qk_table` (section 4 item 1): the eps' nodes of the step-1 grid (64 per
  * decade in log10(eps' - 2) from 1e-4 while eps' <= 1000, then eps' = 1000),
@@ -39,17 +39,19 @@
  * unweighted_count, weighted_packet_count, sum_1_over_D,
  * sum_1_over_D_squared, normalized_packet_weight).
  *
- * `ka2008` (item 4): the lab e- spectrum of the UR anchor (bh_lab_spectrum.h,
- * Kelner and Aharonian 2008 eqs. 58 to 64 as the exact boost of the
- * rest-frame laws, by quadrature) as a CDF on the 200 log-spaced E- bins of
- * the `hist` files at the same Gamma_p (mono baths only).
+ * `exact_chain_cdf` (round 2; round 1's `ka2008`): the exact-chain self-check
+ * of the lab e- spectrum (bh_exact_chain_cdf.h: the rest-frame laws with the
+ * exact photon direction and the exact boost, by quadrature) as a CDF on the
+ * 200 log-spaced E- bins of the `hist` files at the same Gamma_p (mono baths
+ * only). It is not the Kelner and Aharonian 2008 CDF: the A8 anchor compares
+ * with the reference's transcription of the paper (head-on approximation).
  *
  * Bath names: mono05, mono03, powerlaw, blackbody, mono05_mu100 (the five
  * step-1 acceptance baths). Option errors exit with 2, runtime errors with 1.
  */
 
 #include "archetypes/hadronic/bh_restframe.h"
-#include "archetypes/hadronic/bh_lab_spectrum.h"
+#include "archetypes/hadronic/bh_exact_chain_cdf.h"
 #include "archetypes/hadronic/bh_sampler_host.h"
 #include "archetypes/hadronic/bh_sampler_io.h"
 
@@ -91,10 +93,10 @@ namespace {
   Options parse(const std::vector<std::string>& t) {
     Options o;
     if (t.empty()) {
-      throw std::invalid_argument("missing command (qk_table | moments | hist)");
+      throw std::invalid_argument("missing command (qk_table | moments | hist | exact_chain_cdf)");
     }
     o.command = t[0];
-    if (o.command != "qk_table" && o.command != "moments" && o.command != "hist" && o.command != "ka2008") {
+    if (o.command != "qk_table" && o.command != "moments" && o.command != "hist" && o.command != "exact_chain_cdf") {
       throw std::invalid_argument("unknown command '" + o.command + "'");
     }
     for (std::size_t i = 1; i < t.size(); ++i) {
@@ -137,7 +139,7 @@ namespace {
     if (o.command != "qk_table" && o.bath.empty()) {
       throw std::invalid_argument("--bath is required");
     }
-    if ((o.command == "hist" || o.command == "ka2008") && !(o.gamma > 1.0)) {
+    if ((o.command == "hist" || o.command == "exact_chain_cdf") && !(o.gamma > 1.0)) {
       throw std::invalid_argument("--gamma is required");
     }
     if (o.n_weighted == 0) {
@@ -402,12 +404,12 @@ namespace {
     return 0;
   }
 
-  int run_ka2008(const Options& o) {
+  int run_exact_chain_cdf(const Options& o) {
     using namespace arch::bh;
     const auto t0 = std::chrono::steady_clock::now();
     const auto cb = rf::canonical_bath(o.bath);
     if (cb.spec.type != "mono") {
-      throw std::runtime_error("ka2008: mono baths only");
+      throw std::runtime_error("exact_chain_cdf: mono baths only");
     }
     const double g = o.gamma, eps0 = cb.spec.eps0;
     double       E_lo, E_hi;
@@ -417,29 +419,31 @@ namespace {
     for (int i = 0; i <= NB; ++i) {
       edges[i] = E_lo * std::pow(E_hi / E_lo, static_cast<double>(i) / NB);
     }
-    const rf::LabSpectrumQuadrature q;
-    double                          mean = 0.0, mean_r = 0.0;
-    const std::vector<double>       F  = rf::lab_electron_cdf(g, eps0, edges, q, &mean);
-    const std::vector<double>       Fr = rf::lab_electron_cdf(g, eps0, edges, q.refined(), &mean_r);
+    const rf::ExactChainQuadrature q;
+    double                         mean = 0.0, mean_r = 0.0;
+    const std::vector<double>      F  = rf::exact_chain_lab_cdf(g, eps0, edges, q, &mean);
+    const std::vector<double>      Fr = rf::exact_chain_lab_cdf(g, eps0, edges, q.refined(), &mean_r);
     double                          conv = 0.0;
     for (std::size_t i = 0; i < F.size(); ++i) {
       conv = std::max(conv, std::abs(F[i] - Fr[i]));
     }
     const double gb = std::sqrt((g - 1.0) * (g + 1.0));
     FixtureTable t;
-    t.header = common_header("bh-ka2008-cdf", o);
+    t.header = common_header("bh-exact-chain-lab-cdf", o);
     t.header.push_back({ "bath", json_string(o.bath) });
     t.header.push_back({ "photon_field", "{\"type\": \"mono\", \"eps0\": " + json_number(eps0) + "}" });
     t.header.push_back({ "physical_mass_ratio", json_number(cb.mu_r) });
     t.header.push_back({ "gamma_p", json_number(g) });
     t.header.push_back({ "beta_p", json_number(gb / g) });
     t.header.push_back({ "eps_prime_hi", json_number(eps0 * (g + gb)) });
-    t.header.push_back({ "applicability_eps_prime_hi_gamma_over_mu_r", json_number(eps0 * (g + gb) * g / cb.mu_r) });
+    t.header.push_back({ "eps_prime_hi_over_mu_r", json_number(eps0 * (g + gb) / cb.mu_r) });
+    t.header.push_back({ "eps_gamma_over_mu_r", json_number(eps0 * g / cb.mu_r) });
     t.header.push_back(
-      { "law", json_string("Kelner and Aharonian 2008 eqs. 58-64 (equation numbers from the brief): the "
-                           "Sauter-Gluckstern-Hull single-lepton law (MOK 3D-2000 = Blumenthal 1970 eq. 10) in the proton rest "
-                           "frame, photon energy eps' = Gamma eps (1 - beta cos theta), lepton boosted with the exact "
-                           "(Gamma, beta); CDF of the lab e- energy by quadrature (bh_lab_spectrum.h)") });
+      { "law", json_string("the exact-chain self-check (round 2; NOT the Kelner and Aharonian 2008 CDF, whose "
+                           "head-on approximation the A8 anchor uses): the single-lepton law (MOK 3D-2000 = "
+                           "Blumenthal 1970 eq. 10) in the proton rest frame, photon energy eps' = Gamma eps (1 - beta "
+                           "cos theta), the exact photon direction and lepton boost with the exact (Gamma, beta); CDF "
+                           "of the lab e- energy by quadrature (bh_exact_chain_cdf.h)") });
     t.header.push_back({ "quadrature",
                          "{\"gl_order\": " + std::to_string(q.gl_order) + ", \"h_t_k\": " + json_number(q.h_t_k) +
                            ", \"s_panels\": " + std::to_string(q.s_panels) + ", \"h_t_angle\": " +
@@ -456,7 +460,7 @@ namespace {
     }
     write_fixture_file(o.out, t);
     const FixtureContents c = read_fixture_file(o.out);
-    std::printf("bh_sampler_dump ka2008 %s Gamma %g: %zu bins written to %s in %.0f s; <E-> = %.6f, refinement change "
+    std::printf("bh_sampler_dump exact_chain_cdf %s Gamma %g: %zu bins written to %s in %.0f s; <E-> = %.6f, refinement change "
                 "%.2e (data_sha256 %s)\n",
                 o.bath.c_str(), g, c.rows.size(), o.out.c_str(),
                 std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count(), mean, conv,
@@ -703,7 +707,7 @@ int main(int argc, char** argv) {
                  "       bh_sampler_dump moments --bath NAME --out FILE [--seed S] [--n N] [--n-weighted N]\n"
                  "       bh_sampler_dump hist --bath NAME --gamma G --out FILE [--seed S] [--n N] "
                  "[--n-weighted N] [--bins-from FILE]\n"
-                 "       bh_sampler_dump ka2008 --bath NAME --gamma G --out FILE\n");
+                 "       bh_sampler_dump exact_chain_cdf --bath NAME --gamma G --out FILE\n");
     return 2;
   }
   try {
@@ -713,8 +717,8 @@ int main(int argc, char** argv) {
     if (o.command == "moments") {
       return run_moments(o);
     }
-    if (o.command == "ka2008") {
-      return run_ka2008(o);
+    if (o.command == "exact_chain_cdf") {
+      return run_exact_chain_cdf(o);
     }
     return run_hist(o);
   } catch (const std::exception& e) {

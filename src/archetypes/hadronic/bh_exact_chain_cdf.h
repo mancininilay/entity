@@ -1,47 +1,46 @@
 /**
- * @file archetypes/hadronic/bh_lab_spectrum.h
- * @brief The lab-frame electron spectrum of Bethe-Heitler pairs produced by an
- *        ultra-relativistic ion in a monoenergetic isotropic photon field, by
- *        direct quadrature of the rest-frame laws and the exact boost (the
- *        anchor A8 of the step-4 contract, Kelner and Aharonian 2008 eqs. (58)
- *        to (64))
+ * @file archetypes/hadronic/bh_exact_chain_cdf.h
+ * @brief The exact-chain self-check of the rest-frame sampler (round 2,
+ *        finding 2; round 1's `bh_lab_spectrum.h`): the CDF of the lab
+ *        electron energy of the sampler's own chain, for an ion of Lorentz
+ *        factor Gamma in a monoenergetic isotropic photon field, by direct
+ *        quadrature of the rest-frame laws with the exact boost and the exact
+ *        photon direction. It is an internal test of the sampling chain, NOT
+ *        the external anchor A8: the paper's CDF (Kelner and Aharonian 2008
+ *        eqs. (58) to (64)) uses the head-on approximation, and A8 compares
+ *        with the reference's transcription of it (`ka2008_*.txt` of the bhref
+ *        fixtures). The head-on map is available here too (`LabMap::HeadOn`)
+ *        for a deterministic comparison with that transcription.
  *
- * Kelner and Aharonian 2008, PRD 78, 034013, section IV, obtain the electron
- * spectrum of the Bethe-Heitler process from the energy-angle distribution of
- * one lepton in the proton rest frame (their eq. (59), the
- * Sauter-Gluckstern-Hull law, Blumenthal 1970 eq. (10) with the definitions of
- * his eq. (11) = MOK 1969 3D-2000: the same
- * law as `dsigma_dE_dcos_closed` of bh_restframe.h, whose sign pattern,
- * -4 sin^2 theta (2E^2 + 1)/(p^2 Delta^4) + (5E^2 - 2E E_other + 3)/(p^2 Delta^2)
- * + (p^2 - k^2)/(T^2 Delta^2) + 2 E_other/(p^2 Delta) + Y(...) - delta^T(...)
- * - 2 y/Delta, is the one that the numerical integral of the fully
- * differential law selected in stage 1), the photon energy in the proton rest
- * frame omega = Gamma eps (1 - beta cos theta) for a photon at angle theta to
- * the ion velocity, and the Lorentz transformation of the lepton energy to the
- * lab, E = Gamma (E' + beta p' cos theta'_u), theta'_u the lepton's rest-frame
- * angle to the ion velocity; the spectrum is the integral over the photon
- * angle (equivalently over omega), the lepton rest-frame energy and the lepton
- * angles with the delta function of the energy transformation (their eqs.
- * (62) to (64) with the integration limits). This file implements the same chain
- * without the ultra-relativistic approximations of the paper (exact beta,
- * exact p' = sqrt(E'^2 - 1)), as the cumulative distribution of the lab
- * electron energy:
+ * The chain: the photon energy in the proton rest frame eps' = Gamma eps (1 -
+ * beta cos theta) for a photon at angle theta to the ion velocity (eps'
+ * sigma~ is the eps' marginal of the unweighted chain), the single-lepton
+ * energy-angle law (MOK 1969 3D-2000 = Blumenthal 1970 eq. (10), definitions
+ * in his eq. (11); `dsigma_dE_dcos_closed` of bh_restframe.h, signs and
+ * normalisation verified against the PDFs by the referee, Codex 1,
+ * 2026-10-27), and the Lorentz transformation of the lepton energy to the lab:
+ *
+ *   LabMap::Exact:  E = Gamma (E' + beta p' cos theta'_u), theta'_u the lepton's
+ *                   rest-frame angle to the ion velocity, with the photon's
+ *                   rest-frame direction cos theta'_k = (eps/(Gamma eps') - 1)/beta
+ *                   and a uniform azimuth about it (exact beta, exact p');
+ *   LabMap::HeadOn: E = Gamma (E' - p' cos theta'_gamma), theta'_gamma the
+ *                   lepton's angle to the photon direction, the photon taken
+ *                   head-on (the paper's approximation; E < 1 is possible and
+ *                   is counted below the first edge).
  *
  *   F(E) = (1/Phi(eps'_hi)) int_2^{eps'_hi} deps' eps' int dE' int dcos theta'
- *          d^2sigma/(dE' dcos theta') (eps', E', cos theta') P_phi(E_lab <= E),
+ *          d^2sigma/(dE' dcos theta') (eps', E', cos theta') P(E_lab <= E),
  *
- * with P_phi the fraction of the uniform azimuth phi about the photon
- * direction for which Gamma (E' + beta p' (a - b cos phi)) <= E, where
- * a = cos theta' cos theta'_k, b = sin theta' sin theta'_k and cos theta'_k =
- * (eps/(Gamma eps') - 1)/beta is the photon's rest-frame direction relative
- * to the ion velocity: P_phi = arccos(clamp((a - c)/b))/pi with c =
- * (E/Gamma - E')/(beta p'). (eps' sigma~ is the eps' marginal of the
- * unweighted chain, g and h its conditionals: eps' g h = eps' d^2sigma/sigma~
- * ... times sigma~, so the weight is eps' d^2sigma and the normalisation is
- * Phi(eps'_hi) = int eps' sigma~ deps'.) Both the sampler and this quadrature
- * use the static-source Born law; the comparison tests the sampling chain, not
- * the regime of validity of the static-source model (see the report for the
- * applicability condition eps' Gamma << mu_r at the two anchor points).
+ * with, for the exact map, P the fraction of the uniform azimuth phi about the
+ * photon direction for which Gamma (E' + beta p' (a - b cos phi)) <= E,
+ * a = cos theta' cos theta'_k, b = sin theta' sin theta'_k: P =
+ * arccos(clamp((a - c)/b))/pi with c = (E/Gamma - E')/(beta p'). The mean
+ * difference of the two maps is eps <p' cos theta'_gamma / eps'>, which tends
+ * to eps/2 when eps' >> 1 (the mechanism of the failed reading of round 1).
+ * Both the sampler and this quadrature use the static-source Born law; the
+ * applicability of that model to a finite ion mass is eps' << mu_r,
+ * equivalently eps Gamma << mu_r (corrected in round 2).
  *
  * Host-only, double precision, Kokkos-free.
  *
@@ -49,8 +48,8 @@
  *   - arch::bh::rf::
  */
 
-#ifndef ARCHETYPES_HADRONIC_BH_LAB_SPECTRUM_H
-#define ARCHETYPES_HADRONIC_BH_LAB_SPECTRUM_H
+#ifndef ARCHETYPES_HADRONIC_BH_EXACT_CHAIN_CDF_H
+#define ARCHETYPES_HADRONIC_BH_EXACT_CHAIN_CDF_H
 
 #include "archetypes/hadronic/bh_physics.h"
 #include "archetypes/hadronic/bh_restframe.h"
@@ -63,15 +62,15 @@
 
 namespace arch::bh::rf {
 
-  struct LabSpectrumQuadrature {
+  struct ExactChainQuadrature {
     int    gl_order     = 10;   // Gauss-Legendre order per panel
     double h_t_k        = 0.125; // panel width in t = ln(eps' - 2)
     int    s_panels     = 24;   // panels in s (lepton energy)
     double h_t_angle    = 0.5;  // panel width in t = ln(1 - cos theta' + w)
     double delta_min    = 1.0e-6; // lower end of the eps' range, eps' - 2
 
-    LabSpectrumQuadrature refined() const {
-      LabSpectrumQuadrature q = *this;
+    ExactChainQuadrature refined() const {
+      ExactChainQuadrature q = *this;
       q.gl_order              = std::min(64, gl_order + 4);
       q.h_t_k                *= 0.5;
       q.s_panels             *= 2;
@@ -80,25 +79,32 @@ namespace arch::bh::rf {
     }
   };
 
+  enum class LabMap {
+    Exact,
+    HeadOn
+  };
+
   /**
    * @brief The cumulative distribution of the lab electron energy at the given
    *        edges (increasing), for an ion of Lorentz factor gamma in a mono
-   *        bath of photon energy eps0; also the mean lab electron energy.
+   *        bath of photon energy eps0, with the exact or the head-on map;
+   *        also the mean lab electron energy.
    * @param edges increasing lab energies (m_e c^2)
    * @param mean_out if given, receives <E_lab>
    * @return F(edges[i])
    */
-  inline std::vector<double> lab_electron_cdf(double                        gamma,
-                                              double                        eps0,
-                                              const std::vector<double>&    edges,
-                                              const LabSpectrumQuadrature&  q,
-                                              double*                       mean_out = nullptr) {
+  inline std::vector<double> exact_chain_lab_cdf(double                      gamma,
+                                                 double                      eps0,
+                                                 const std::vector<double>&  edges,
+                                                 const ExactChainQuadrature& q,
+                                                 double*                     mean_out = nullptr,
+                                                 LabMap                      map      = LabMap::Exact) {
     if (!(gamma > 1.0) || !(eps0 > 0.0)) {
-      throw std::invalid_argument("lab_electron_cdf: gamma > 1 and eps0 > 0 required");
+      throw std::invalid_argument("exact_chain_lab_cdf: gamma > 1 and eps0 > 0 required");
     }
     for (std::size_t i = 1; i < edges.size(); ++i) {
       if (!(edges[i] > edges[i - 1])) {
-        throw std::invalid_argument("lab_electron_cdf: edges must increase");
+        throw std::invalid_argument("exact_chain_lab_cdf: edges must increase");
       }
     }
     const double gb   = std::sqrt((gamma - 1.0) * (gamma + 1.0));
@@ -106,10 +112,10 @@ namespace arch::bh::rf {
     const double A    = gamma + gb;
     const double khi  = eps0 * A; // eps'_hi
     if (!(khi > 2.0 + q.delta_min)) {
-      throw std::invalid_argument("lab_electron_cdf: below threshold");
+      throw std::invalid_argument("exact_chain_lab_cdf: below threshold");
     }
     if (khi > constants::K_MAX * (1.0 + 1.0e-12)) {
-      throw std::invalid_argument("lab_electron_cdf: eps'_hi above the kernel cap 1000");
+      throw std::invalid_argument("exact_chain_lab_cdf: eps'_hi above the kernel cap 1000");
     }
     const GaussLegendre G(q.gl_order);
     std::vector<double> F(edges.size(), 0.0);
@@ -158,6 +164,15 @@ namespace arch::bh::rf {
                 }
                 const double wt  = wk * ws * wa * law;
                 const double ct  = 1.0 - omc, st = std::sqrt(std::max(0.0, omc * (2.0 - omc)));
+                if (map == LabMap::HeadOn) {
+                  const double Eho = gamma * (E - p * ct);
+                  norm += wt;
+                  mean += wt * Eho;
+                  for (auto it = std::lower_bound(edges.begin(), edges.end(), Eho); it != edges.end(); ++it) {
+                    F[static_cast<std::size_t>(it - edges.begin())] += wt;
+                  }
+                  continue;
+                }
                 const double a   = ct * cos_k, b = st * sin_k;
                 // E_lab(phi) = gamma (E + beta p (a - b cos phi)): range [lo, hi], mean gamma (E + beta p a)
                 const double Emid = gamma * (E + beta * p * a);
@@ -184,7 +199,7 @@ namespace arch::bh::rf {
       }
     }
     if (!(norm > 0.0)) {
-      throw std::runtime_error("lab_electron_cdf: zero normalisation");
+      throw std::runtime_error("exact_chain_lab_cdf: zero normalisation");
     }
     for (double& f : F) {
       f = std::min(1.0, f / norm);
@@ -206,4 +221,4 @@ namespace arch::bh::rf {
 
 } // namespace arch::bh::rf
 
-#endif // ARCHETYPES_HADRONIC_BH_LAB_SPECTRUM_H
+#endif // ARCHETYPES_HADRONIC_BH_EXACT_CHAIN_CDF_H

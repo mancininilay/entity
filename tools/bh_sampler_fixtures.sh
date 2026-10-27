@@ -2,7 +2,8 @@
 # Produce the step-4 sampler fixtures of contract section 4 (items 1 to 3) with
 # bh_sampler_dump: qk_table.txt, moments_<bath>.txt for the five step-1 baths,
 # hist_<bath>_G<Gamma>.txt for mono05 and powerlaw at Gamma_p in
-# {1.05 Gamma_th, 3, 10, 100}, ka2008_mono05_G<Gamma>.txt at 100 and 1000 (item 4).
+# {1.05 Gamma_th, 3, 10, 100}, exact_chain_cdf_mono05_G<Gamma>.txt at 100 and 1000
+# (the exact-chain self-check of the lab spectrum; round 1 called it ka2008_*).
 # Bash 3.2 compatible; fails when nothing runs.
 #
 # Round 2: the weighted chains run to a fixed number of accepted packets (1e5
@@ -52,7 +53,7 @@ for g in 1.09375 3 10 100; do
   run "$DUMP" hist --bath powerlaw --gamma "$g" --out "$OUT/hist_powerlaw_G$g.txt" $(bins_from powerlaw "$g") $EXTRA
 done
 for g in 100 1000; do
-  run "$DUMP" ka2008 --bath mono05 --gamma "$g" --out "$OUT/ka2008_mono05_G$g.txt"
+  run "$DUMP" exact_chain_cdf --bath mono05 --gamma "$g" --out "$OUT/exact_chain_cdf_mono05_G$g.txt"
 done
 echo "bh_sampler_fixtures.sh: $n_run commands succeeded, $n_fail failed"
 if [ "$n_run" -eq 0 ] || [ "$n_fail" -ne 0 ]; then
