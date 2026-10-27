@@ -3,9 +3,10 @@
  * @brief The rest-frame sampler in the Bethe-Heitler kernel (P2 step 4, stage
  *        4): the device tables and the device chains against the host chain,
  *        A11 (mu_d independence), the ledger identity with sampled energies,
- *        A12 (the sampler's mean cost at every Gamma_p node vs I/J, pair number
- *        and energy per unit paid energy vs the host chain's quadrature, the
- *        spectrum of created pairs vs the host chain's histogram fixture).
+ *        A12 (the sampler's mean cost, pair number and pair energy per unit
+ *        paid energy at every Gamma_p node vs the reference's Born-chain <D>;
+ *        round 2), the spectrum of created pairs vs the reference's
+ *        histograms (round 2).
  *
  * Conventions (declared before any run):
  *   - bath mono eps0 = 0.5 (Gamma_th = 2.125), mu_r = 1836.15, ions with
@@ -14,18 +15,35 @@
  *     (`build_sampler_tables`: 16 eps' nodes per decade, 256 x 256 cells,
  *     single-precision CDFs); the host chain is `rf::HostSampler` on the same
  *     host tables in double
+ *   - the tables group compares the device and host chains for mono05 and,
+ *     since round 2, for the powerlaw bath (eps_min 0.1, eps_max 1.5, index 2;
+ *     the device photon-energy tables of a broad bath, per-node grids)
  *   - "exact" means to double round-off: 1e-12 relative to E_drag
- *   - A12 cost runs: ions at the 466 rate-table nodes (2 per node), a preset
- *     debt of 1001 <D>(Gamma_i), r_th_factor = 1 (r_th = <D>), f_r = 0.02,
- *     max_events_per_step = 1000, eta_u = 1e9 (no application: the energies
- *     stay at the nodes), 10 launches: 2e4 pairs per node; cost = N / sum(1/D_j)
- *     over the node's pairs, with D_j = gamma- + gamma+ - eps from the stored
- *     values; its standard error from the sample variance of 1/D
- *   - the spectrum run: ions at Gamma_p = 3 (K = 2 mu_r, to the real_t rounding
- *     of u), 1e5 pairs, weights 1/D (r_packet constant), compared with
- *     `hist_mono05_G3.txt` (weighted chain, 1e6 accepted) by the two-sample
- *     Kolmogorov-Smirnov statistic on the binned CDFs with the 99% critical
- *     value 1.628 sqrt((n1 + n2)/(n1 n2)), n the Kish effective sample sizes
+ *   - A12 (round 2, decision (b) of 2026-10-27): ions at the 466 rate-table
+ *     nodes (2 per node), a preset debt of 1001 <D>(Gamma_i), r_th_factor = 1
+ *     (r_th = <D>), f_r = 0.02, max_events_per_step = 1000, eta_u = 1e9 (no
+ *     application: the energies stay at the nodes), 100 launches: N = 2e5
+ *     pairs per node, fixed; cost = N / sum(1/D_j) over the node's pairs, with
+ *     D_j = gamma- + gamma+ - eps from the stored values. Literal tolerances,
+ *     no uncertainty escape: mean cost within 1%, pairs per unit paid energy
+ *     and pair energy per unit paid energy within 2%, of the reference's
+ *     Born-chain values (bhref-0.2.0-candidate/moments_mono05.txt: <D>; its
+ *     nodes must be this table's nodes to 1e-12); every failing node listed.
+ *     The step-1 I/J (eq. 3.7 fit, 0.1 to 0.5% off the Born law) and the host
+ *     chain's sampled <D> are diagnostics.
+ *   - the spectrum runs (round 2, finding 4): for mono05 and powerlaw at the
+ *     reference's histogram Gamma_p that lie inside the bath's rate table
+ *     (mono05: 2.23125, 3, 10; powerlaw: 1.09375, 3, 10; Gamma_p = 100 is
+ *     above both tables and is not reachable by the box), 100 ions at Gamma_p
+ *     (K = mu_r (Gamma_p - 1), to the real_t rounding of u), 1e5 pairs with
+ *     weights 1/D (r_packet constant), compared with the reference's
+ *     weighted-chain histograms (bhref-0.2.0-candidate/hist_<bath>_G<Gamma>.txt,
+ *     sum_1_over_D normalised) in E-, E+, cos theta-, cos theta+ and D on the
+ *     reference's bins, by the A10 weighted two-sample test: the binned
+ *     two-sample KS statistic against the 99% critical value
+ *     1.628 sqrt((n1 + n2)/(n1 n2)), n the Kish effective sample sizes (the
+ *     reference's header weighted_ESS); at least 95% of the combinations must
+ *     pass, the failures are listed
  *
  * Verdict lines: "PASS" / "FAIL" with the measured number and the tolerance;
  * "(diag)" lines are reported only. One ctest entry per group.
@@ -109,11 +127,15 @@ namespace {
     std::shared_ptr<rf::HostSampler>               host_sampler;
   };
 
-  Tables make_tables() {
-    Tables       T;
+  bh::BathSpec mono05_spec() {
     bh::BathSpec spec;
     spec.type = "mono";
     spec.eps0 = EPS0;
+    return spec;
+  }
+
+  Tables make_tables(const bh::BathSpec& spec = mono05_spec()) {
+    Tables T;
     T.bath    = bh::make_bath(spec);
     T.rates   = std::make_unique<bh::BetheHeitlerRates>(T.bath);
     T.host    = bh::build_tables(*T.rates, MU_R);
@@ -130,6 +152,20 @@ namespace {
          fmt("%.2f", static_cast<double>(T.sampler.bytes) * 1.0e-6) + " MB on the device (budget 64 MB), built in " +
          fmt("%.1f", seconds_since(t0)) + " s");
     return T;
+  }
+
+  // the powerlaw bath's tables (the device photon-energy tables of a broad bath), built once on demand
+  const Tables& powerlaw_tables() {
+    static std::unique_ptr<Tables> T;
+    if (!T) {
+      bh::BathSpec spec;
+      spec.type    = "powerlaw";
+      spec.eps_min = 0.1;
+      spec.eps_max = 1.5;
+      spec.index   = 2.0;
+      T            = std::make_unique<Tables>(make_tables(spec));
+    }
+    return *T;
   }
 
   template <typename ViewT>
@@ -549,11 +585,10 @@ namespace {
     return st;
   }
 
-  void test_tables(const Tables& T) {
-    std::printf("---- device tables and chains vs the host chain ----\n");
-    verdict(T.sampler.bytes <= 64u * 1024u * 1024u, "device sampler tables within 64 MB (bytes)",
+  void test_tables_bath(const Tables& T, const std::string& bath, const std::vector<double>& gammas) {
+    verdict(T.sampler.bytes <= 64u * 1024u * 1024u, bath + ": device sampler tables within 64 MB (bytes)",
             static_cast<double>(T.sampler.bytes), 64.0 * 1024.0 * 1024.0);
-    for (const double g : { 2.3, 3.0, 10.0, 60.0 }) {
+    for (const double g : gammas) {
       const auto  R  = T.rates->at_gamma(g);
       array_t<double*> fd { "fd", 1 };
       const auto t0 = std::chrono::steady_clock::now();
@@ -572,21 +607,29 @@ namespace {
       }
       const double hm = hs / Nh, hse = std::sqrt(std::max(0.0, hs2 / Nh - hm * hm) / Nh);
       const double nse = std::abs(meanD - hm) / std::sqrt(seD * seD + hse * hse);
-      verdict(nse <= 4.0, "device chain vs host chain, <D> at Gamma_p = " + fmt("%g", g) + " (1e6 draws each), |dev|/s.e.",
+      verdict(nse <= 4.0, bath + ": device chain vs host chain, <D> at Gamma_p = " + fmt("%g", g) +
+                            " (1e6 draws each), |dev|/s.e.",
               nse, 4.0);
-      verdict(su.oob == 0 && sw.oob == 0, "device draws inside [D_min, D_max] at Gamma_p = " + fmt("%g", g),
+      verdict(su.oob == 0 && sw.oob == 0, bath + ": device draws inside [D_min, D_max] at Gamma_p = " + fmt("%g", g),
               static_cast<double>(su.oob + sw.oob), 0.0);
       const double m_inv = sw.sinv / sw.n, se_inv = std::sqrt(std::max(0.0, sw.sinv2 / sw.n - m_inv * m_inv) / sw.n);
       const double prod = m_inv * meanD;
       verdict(std::abs(prod - 1.0) <= 4.0 * se_inv * meanD,
-              "device weighted chain: E_p[1/D] <D>_device = 1 at Gamma_p = " + fmt("%g", g) + ", |dev|/s.e.",
+              bath + ": device weighted chain: E_p[1/D] <D>_device = 1 at Gamma_p = " + fmt("%g", g) + ", |dev|/s.e.",
               std::abs(prod - 1.0) / (se_inv * meanD), 4.0);
-      diag("Gamma_p " + fmt("%g", g) + ": device <D> " + fmt("%.5f", meanD) + " +- " + fmt("%.5f", seD) + ", host " +
+      diag(bath + " Gamma_p " + fmt("%g", g) + ": device <D> " + fmt("%.5f", meanD) + " +- " + fmt("%.5f", seD) + ", host " +
            fmt("%.5f", hm) + ", I/J " + fmt("%.5f", R.Dmean) + ", min/max D " + fmt("%.4f", su.minD) + " / " +
            fmt("%.2f", su.maxD) + "; weighted: efficiency " + fmt("%.4f", static_cast<double>(sw.n) / sw.attempts) +
            ", overflow " + std::to_string(sw.fails) + "; " + fmt("%.2f", tu / su.n * 1.0e6) +
            " us per unweighted draw (OpenMP), rng per draw " + fmt("%.1f", static_cast<double>(su.nrng) / su.n));
     }
+  }
+
+  void test_tables(const Tables& T) {
+    std::printf("---- device tables and chains vs the host chain ----\n");
+    test_tables_bath(T, "mono05", { 2.3, 3.0, 10.0, 60.0 });
+    // round 2: the device photon-energy tables of a broad bath (per-node grids, stage 2)
+    test_tables_bath(powerlaw_tables(), "powerlaw", { 1.05, 1.3, 3.0, 10.0, 25.0 });
   }
 
   void test_a11(const Tables& T) {
@@ -725,10 +768,54 @@ namespace {
     }
   }
 
+  // the reference's Born-chain moments of a bath (bhref candidate fixtures): gamma_p -> (Dmean, Dmean_se)
+  struct RefMoments {
+    std::vector<double> gamma, D, se;
+    std::string         version, sha;
+  };
+
+  RefMoments read_ref_moments(const std::string& bath) {
+    const std::string         path = std::string(BH_TEST_DATA_DIR) + "/bhref-0.2.0-candidate/moments_" + bath + ".txt";
+    const bh::FixtureContents F    = bh::read_fixture_file(path);
+    auto col = [&](const std::string& n) {
+      for (std::size_t c = 0; c < F.columns.size(); ++c) {
+        if (F.columns[c] == n) {
+          return c;
+        }
+      }
+      throw std::runtime_error(path + ": no column " + n);
+    };
+    const std::size_t cg = col("gamma_p"), cd = col("Dmean"), cs = col("Dmean_se");
+    RefMoments        R;
+    for (const auto& r : F.rows) {
+      R.gamma.push_back(r[cg]);
+      R.D.push_back(r[cd]);
+      R.se.push_back(r[cs]);
+    }
+    R.version = F.header.count("version") ? F.header.at("version") : "?";
+    R.sha     = F.data_sha256;
+    return R;
+  }
+
   void test_a12(const Tables& T) {
-    std::printf("---- A12: mean cost, pair number and energy per unit paid energy at every rate-table node ----\n");
+    std::printf("---- A12 (decision (b)): mean cost, pair number and energy per unit paid energy at every rate-table "
+                "node, N = 2e5, literal tolerances, the reference's Born-chain <D> ----\n");
     const std::size_t nn = T.host.size();
-    const int   per_node = 2, launches = 10, pk = 1000;
+    // N = 2e5 packets per node: 2 ions per node, 1000 packets per ion and launch, 100 launches
+    const int   per_node = 2, launches = 100, pk = 1000;
+    const auto  R        = read_ref_moments("mono05");
+    // deterministic columns: the reference's nodes must be this table's nodes (1e-12 relative)
+    double w_node = (R.gamma.size() == nn) ? 0.0 : 1.0;
+    for (std::size_t i = 0; i < std::min(nn, R.gamma.size()); ++i) {
+      w_node = std::max(w_node, std::abs(R.gamma[i] / T.host.gamma[i] - 1.0));
+    }
+    verdict(w_node <= 1.0e-12,
+            "A12: the reference's moments_mono05 nodes = this rate table's Gamma_p nodes (" + std::to_string(nn) +
+              " nodes, deterministic, 1e-12 relative)",
+            w_node, 1.0e-12);
+    if (!(w_node <= 1.0e-12)) {
+      return;
+    }
     Ions        ions(nn * per_node, 1.0);
     Pairs       pairs(nn * per_node * pk + 64);
     std::vector<double> K(nn * per_node), debt(nn * per_node), k0(nn * per_node);
@@ -774,159 +861,244 @@ namespace {
     }
     diag("A12: " + std::to_string(spawned) + " pairs at " + std::to_string(nn) + " nodes in " +
          fmt("%.0f", seconds_since(t0)) + " s; sampler attempts " + std::to_string(attempts) + " (" +
-         fmt("%.1f", static_cast<double>(attempts) / spawned) + " per pair), overflow " + std::to_string(overflow));
-    // the chain's quadrature (tables' q_k)
-    const rf::QkFineGrid    qk_tab = rf::table_qk_fine_grid(*T.rft, 8);
-    const rf::QkCumulatives cum_tab([&](double k) { return qk_tab(k); });
-    double w_cost = 0.0, w_num = 0.0, w_en = 0.0, g_cost = 0.0, maxse = 0.0, worst_nse = 0.0, g_num = 0.0;
-    int    n_fail_cost = 0, n_fail_num = 0, n_over_1pc = 0, n_over_2pc = 0;
+         fmt("%.1f", static_cast<double>(attempts) / spawned) + " per pair), overflow " + std::to_string(overflow) +
+         "; reference moments_mono05 version " + R.version + ", data_sha256 " + R.sha);
+    // diagnostics: the step-1 I/J and the host chain's sampled <D> (the value the device chain converges to)
+    const rf::QkFineGrid    qk16 = rf::table_qk_fine_grid(*T.rft, 16);
+    const rf::SampledChainD SD(*T.cum, [&](double k) { return qk16(k); }, 16);
+    double      w_cost = 0.0, w_num = 0.0, w_en = 0.0, g_cost = 0.0, g_num = 0.0, g_en = 0.0, maxse = 0.0;
+    double      w_ij = 0.0, w_nse_samp = 0.0, w_nse_ref = 0.0, n_min = 1.0e300;
+    std::string fail_cost, fail_num, fail_en;
+    int         n_fail_cost = 0, n_fail_num = 0, n_fail_en = 0;
     for (std::size_t i = 0; i < nn; ++i) {
       const double N      = cnt[i];
+      n_min               = std::min(n_min, N);
       const double minv   = sinv[i] / N;
       const double se_inv = std::sqrt(std::max(0.0, sinv2[i] / N - minv * minv) / N);
-      const double cost   = 1.0 / minv;                 // paid energy per unit-weight pair
-      const double rel    = std::abs(cost / T.host.Dmean[i] - 1.0);
-      const double nse    = std::abs(minv - 1.0 / T.host.Dmean[i]) / se_inv;
-      if (!(rel <= 1.0e-2 || nse <= 4.0)) {
+      const double cost   = 1.0 / minv; // paid energy per unit-weight pair
+      const double Dref   = R.D[i];
+      const double rel    = std::abs(cost / Dref - 1.0);
+      const double rel_n  = std::abs(minv * Dref - 1.0);
+      const double en     = sE[i] / N, en_ref = 1.0 + EPS0 / Dref;
+      const double rel_e  = std::abs(en / en_ref - 1.0);
+      // combined s.e. of cost/Dref (delta method: device sample and the reference's own s.e.)
+      const double se_c   = std::sqrt((se_inv / minv) * (se_inv / minv) + (R.se[i] / Dref) * (R.se[i] / Dref));
+      const double Dsamp  = SD.Dmean_unweighted(*T.eps_tables, T.host.gamma[i], 16);
+      w_nse_ref           = std::max(w_nse_ref, std::abs(cost / Dref - 1.0) / se_c);
+      w_nse_samp          = std::max(w_nse_samp, std::abs(minv - 1.0 / Dsamp) / se_inv);
+      w_ij                = std::max(w_ij, std::abs(cost / T.host.Dmean[i] - 1.0));
+      maxse               = std::max(maxse, se_inv / minv);
+      auto note = [&](std::string& s, double v) {
+        s += " Gamma_p " + fmt("%.5f", T.host.gamma[i]) + " (" + fmt("%+.3e", v) + ", " +
+             fmt("%.1f", std::abs(cost / Dref - 1.0) / se_c) + " s.e.);";
+      };
+      if (!(rel <= 1.0e-2)) {
         ++n_fail_cost;
+        note(fail_cost, cost / Dref - 1.0);
+      }
+      if (!(rel_n <= 2.0e-2)) {
+        ++n_fail_num;
+        note(fail_num, minv * Dref - 1.0);
+      }
+      if (!(rel_e <= 2.0e-2)) {
+        ++n_fail_en;
+        note(fail_en, en / en_ref - 1.0);
       }
       if (rel > w_cost) {
         w_cost = rel;
         g_cost = T.host.gamma[i];
       }
-      maxse     = std::max(maxse, se_inv / minv);
-      worst_nse = std::max(worst_nse, nse);
-      if (rel > 1.0e-2) {
-        ++n_over_1pc;
-      }
-      const double Dchain = rf::direct_boost_I(*T.bath, cum_tab, T.host.gamma[i]) / T.host.J[i];
-      // pairs per unit paid energy = mean(1/D) vs 1/<D>_chain (the host chain's quadrature)
-      const double rel_num = std::abs(minv * Dchain - 1.0);
-      const double nse_num = std::abs(minv - 1.0 / Dchain) / se_inv;
-      if (!(rel_num <= 2.0e-2 || nse_num <= 4.0)) {
-        ++n_fail_num;
-      }
-      if (rel_num > 2.0e-2) {
-        ++n_over_2pc;
-      }
-      if (rel_num > w_num) {
-        w_num = rel_num;
+      if (rel_n > w_num) {
+        w_num = rel_n;
         g_num = T.host.gamma[i];
       }
-      w_en = std::max(w_en, std::abs((sE[i] / N) / (1.0 + EPS0 / Dchain) - 1.0)); // energy per paid energy
+      if (rel_e > w_en) {
+        w_en = rel_e;
+        g_en = T.host.gamma[i];
+      }
     }
+    verdict(n_min >= 2.0e5, "A12: packets per node (N = 2e5 fixed), the smallest node count", n_min, 2.0e5);
     verdict(n_fail_cost == 0,
-            "A12: the sampler's mean cost per pair vs I/J at every node, within max(1%, 4 s.e.): failing nodes",
+            "A12: mean cost per pair vs the reference's Born-chain <D> (moments_mono05 Dmean), |cost/<D>_ref - 1| <= 1% "
+            "at every node (max " + fmt("%.3e", w_cost) + " at Gamma_p " + fmt("%.4f", g_cost) + "): failing nodes",
             static_cast<double>(n_fail_cost), 0.0);
-    diag("A12: max |cost/(I/J) - 1| over the nodes " + fmt("%.3e", w_cost) + " at Gamma_p " + fmt("%.4f", g_cost) +
-         "; nodes beyond 1%: " + std::to_string(n_over_1pc) + " (all within 4 s.e.: the relative s.e. of the cost "
-         "reaches 1% at the upper nodes with 2e4 pairs per node)");
+    if (n_fail_cost > 0) {
+      diag("A12 cost: failing nodes:" + fail_cost);
+    }
     verdict(n_fail_num == 0,
-            "A12: pairs per unit paid energy vs 1/<D>_chain (host quadrature) at every node, within max(2%, 4 s.e.): "
-            "failing nodes",
+            "A12: pairs per unit paid energy vs 1/<D>_ref, |<1/D> <D>_ref - 1| <= 2% at every node (max " +
+              fmt("%.3e", w_num) + " at Gamma_p " + fmt("%.4f", g_num) + "): failing nodes",
             static_cast<double>(n_fail_num), 0.0);
-    diag("A12: max |pairs per paid energy x <D>_chain - 1| = " + fmt("%.3e", w_num) + " at Gamma_p " +
-         fmt("%.4f", g_num) + "; nodes beyond 2%: " + std::to_string(n_over_2pc));
-    verdict(w_en <= 2.0e-2, "A12: pair energy per unit paid energy vs 1 + eps0/<D>_chain, every node", w_en, 2.0e-2);
+    if (n_fail_num > 0) {
+      diag("A12 pair number: failing nodes:" + fail_num);
+    }
+    verdict(n_fail_en == 0,
+            "A12: pair energy per unit paid energy vs 1 + eps0/<D>_ref, <= 2% at every node (max " + fmt("%.3e", w_en) +
+              " at Gamma_p " + fmt("%.4f", g_en) + "): failing nodes",
+            static_cast<double>(n_fail_en), 0.0);
+    if (n_fail_en > 0) {
+      diag("A12 pair energy: failing nodes:" + fail_en);
+    }
     double wg = 0.0;
     for (const double v : gp_pay) {
       wg = std::max(wg, v);
     }
     verdict(wg <= 1.0e-6, "A12: pair payload Gamma_p = the parent's Gamma_p", wg, 1.0e-6);
-    diag("A12: relative s.e. of the cost up to " + fmt("%.2e", maxse) + " (" + fmt("%.0f", cnt[0]) +
-         " pairs per node); max |dev|/s.e. vs I/J " + fmt("%.1f", worst_nse) +
-         " (the step-1 fit vs the Born law, see the report); overflow " + std::to_string(overflow));
+    diag("A12: relative s.e. of the cost up to " + fmt("%.2e", maxse) + "; max |cost/<D>_ref - 1| / combined s.e. " +
+         fmt("%.1f", w_nse_ref) + "; max |<1/D> - 1/<D>_sampled| / s.e. " + fmt("%.1f", w_nse_samp) +
+         " (the host chain's sampled density, SampledChainD); diagnostic vs the step-1 I/J (eq. 3.7 fit, expected "
+         "0.1 to 0.5% off the Born law, decision (a)): max |cost/(I/J) - 1| " + fmt("%.3e", w_ij));
     for (const std::size_t i : { std::size_t(0), nn / 4, nn / 2, (3 * nn) / 4, nn - 1 }) {
       const double N = cnt[i], minv = sinv[i] / N;
-      const double Dchain = rf::direct_boost_I(*T.bath, cum_tab, T.host.gamma[i]) / T.host.J[i];
-      diag("A12 node Gamma_p " + fmt("%.5f", T.host.gamma[i]) + ": cost " + fmt("%.5f", 1.0 / minv) + ", I/J " +
-           fmt("%.5f", T.host.Dmean[i]) + ", <D>_chain " + fmt("%.5f", Dchain) + ", energy per paid energy " +
-           fmt("%.5f", sE[i] / N) + " vs " + fmt("%.5f", 1.0 + EPS0 / Dchain) + ", pairs " + fmt("%.0f", N));
+      diag("A12 node Gamma_p " + fmt("%.5f", T.host.gamma[i]) + ": cost " + fmt("%.5f", 1.0 / minv) + ", <D>_ref " +
+           fmt("%.5f", R.D[i]) + " +- " + fmt("%.5f", R.se[i]) + ", I/J " + fmt("%.5f", T.host.Dmean[i]) +
+           ", energy per paid energy " + fmt("%.5f", sE[i] / N) + " vs " + fmt("%.5f", 1.0 + EPS0 / R.D[i]) +
+           ", pairs " + fmt("%.0f", N));
     }
   }
 
-  void test_spectrum(const Tables& T) {
-    std::printf("---- the spectrum of created pairs vs the host chain's histogram (hist_mono05_G3) ----\n");
-    const std::string path = std::string(BH_TEST_DATA_DIR) + "/cpp-sampler-candidate/hist_mono05_G3.txt";
-    std::ifstream     probe(path);
-    if (!probe) {
-      diag("fixture " + path + " not present: the spectrum comparison is skipped");
-      return;
+  // binned two-sample Kolmogorov-Smirnov statistic of two weighted histograms on the same bins (normalised
+  // weights), with the 99% critical value 1.628 sqrt((n1 + n2)/(n1 n2)) on the Kish effective sizes: the weighted
+  // two-sample test of contract A10
+  struct KsResult {
+    double ks { 0.0 }, crit { 0.0 }, n1 { 0.0 }, n2 { 0.0 };
+    bool   pass { false };
+  };
+
+  KsResult weighted_ks(const std::vector<double>& w1, double n1, const std::vector<double>& p2, double n2) {
+    KsResult r;
+    double   W = 0.0;
+    for (const double v : w1) {
+      W += v;
     }
-    probe.close();
-    const bh::FixtureContents F = bh::read_fixture_file(path);
-    // round 2 layout: quantity_id, bin, lo, hi, unweighted_count, weighted_packet_count, sum_1_over_D,
-    // sum_1_over_D_squared, normalized_packet_weight; quantity 0 = E-, 2 = cos theta-
-    std::vector<std::vector<double>> qE, qC;
-    for (const auto& r : F.rows) {
-      if (r[0] == 0.0) {
-        qE.push_back(r);
-      } else if (r[0] == 2.0) {
-        qC.push_back(r);
-      }
+    double F1 = 0.0, F2 = 0.0;
+    for (std::size_t i = 0; i < w1.size(); ++i) {
+      F1 += w1[i] / W;
+      F2 += p2[i];
+      r.ks = std::max(r.ks, std::abs(F1 - F2));
     }
-    const int NB = static_cast<int>(qE.size());
-    // kernel run at Gamma_p = 3: 100 ions, preset debt, 1000 packets each
-    const int   nions = 100, pk = 1000;
-    Ions        ions(nions, 1.0);
-    Pairs       pairs(nions * pk + 64);
-    std::vector<double> K(nions, 2.0 * MU_R), debt(nions), k0(nions);
-    ions.set_all(K);
-    const auto Ks = ions.K();
-    for (int p = 0; p < nions; ++p) {
-      debt[p] = (pk + 1) * T.rates->at_gamma(1.0 + Ks[p] / MU_R).Dmean;
-      k0[p]   = Ks[p];
-    }
-    ions.set_payloads(debt, k0);
-    auto prm                = params(1.0, BUDGET, RESTFRAME, 1.0e-6);
-    prm.eta_u               = 1.0e9;
-    prm.r_th_factor         = 1.0;
-    prm.max_events_per_step = pk;
-    random_number_pool_t pool(2024u);
-    launch(ions, pairs, T, prm, pool, 1.0e-6);
-    const auto rows = pairs.rows();
-    // weighted histograms on the fixture's bins
-    std::vector<double> wE(NB, 0.0), wC(NB, 0.0);
-    double              sw = 0.0, sw2 = 0.0;
-    const double        E_lo = qE.front()[2], E_hi = qE.back()[3];
-    for (const auto& r : rows) {
-      const double gm   = kh::lepton_gamma(r.u1m, r.u2m, r.u3m);
-      const double um   = std::sqrt(r.u1m * r.u1m + r.u2m * r.u2m + r.u3m * r.u3m);
-      const double cosm = r.u1m / um; // the ion moves along +x
-      const double w    = r.wm;
-      sw += w;
-      sw2 += w * w;
-      int ib = static_cast<int>(std::floor(std::log(gm / E_lo) / std::log(E_hi / E_lo) * NB));
-      ib     = std::min(NB - 1, std::max(0, ib));
-      wE[ib] += w;
-      int ic = static_cast<int>(std::floor((cosm + 1.0) / 2.0 * NB));
-      ic     = std::min(NB - 1, std::max(0, ic));
-      wC[ic] += w;
-    }
-    const double n_eff_k = sw * sw / sw2;
-    // the fixture's Kish effective size (header weighted_ESS, (sum 1/D)^2 / sum 1/D^2 over its packets)
-    const double n_eff_fix = std::stod(F.header.at("weighted_ESS"));
-    const double crit = 1.628 * std::sqrt((n_eff_k + n_eff_fix) / (n_eff_k * n_eff_fix));
-    auto ks_binned = [&](const std::vector<double>& a, const std::vector<std::vector<double>>& q) {
-      double Fa = 0.0, Fb = 0.0, d = 0.0;
-      for (int i = 0; i < NB; ++i) {
-        Fa += a[i] / sw;
-        Fb += q[i][8];
-        d = std::max(d, std::abs(Fa - Fb));
-      }
-      return d;
+    r.n1   = n1;
+    r.n2   = n2;
+    r.crit = 1.628 * std::sqrt((n1 + n2) / (n1 * n2));
+    r.pass = r.ks <= r.crit;
+    return r;
+  }
+
+  void test_spectrum(const Tables& Tmono) {
+    std::printf("---- the spectrum of created pairs vs the reference's weighted-chain histograms (bhref candidate), "
+                "mono05 and powerlaw, every reference Gamma_p inside the rate table ----\n");
+    struct Combo {
+      std::string what;
+      KsResult    r;
     };
-    const double ksE = ks_binned(wE, qE), ksC = ks_binned(wC, qC);
-    verdict(ksE <= crit, "A12 spectrum: e- lab energy of the kernel's pairs (weights 1/D, " +
-                           std::to_string(rows.size()) + " pairs, N_eff " + fmt("%.0f", n_eff_k) +
-                           ") vs hist_mono05_G3 weighted chain (N_eff " + fmt("%.0f", n_eff_fix) +
-                           "), binned two-sample KS vs the 99% critical value",
-            ksE, crit);
-    verdict(ksC <= crit, "A12 spectrum: e- lab cos theta (to the ion direction) vs hist_mono05_G3, binned KS vs the 99% "
-                         "critical value",
-            ksC, crit);
-    diag("spectrum: KS energy " + fmt("%.5f", ksE) + ", KS cos " + fmt("%.5f", ksC) + ", critical " +
-         fmt("%.5f", crit) + "; fixture version " + F.header.at("version"));
+    std::vector<Combo>       combos;
+    std::vector<std::string> not_reached;
+    const char* const        qname[5] = { "E-", "E+", "cos-", "cos+", "D" };
+    for (const std::string bath : { "mono05", "powerlaw" }) {
+      const Tables& T = bath == "mono05" ? Tmono : powerlaw_tables();
+      const std::vector<std::string> gs = bath == "mono05" ? std::vector<std::string> { "2.23125", "3", "10", "100" }
+                                                           : std::vector<std::string> { "1.09375", "3", "10", "100" };
+      for (std::size_t jg = 0; jg < gs.size(); ++jg) {
+        const double g = std::stod(gs[jg]);
+        if (g < T.host.gamma_min || g > T.host.gamma_max) {
+          not_reached.push_back(bath + " Gamma_p " + gs[jg] + " (rate table [" + fmt("%.4f", T.host.gamma_min) + ", " +
+                                fmt("%.4f", T.host.gamma_max) + "])");
+          continue;
+        }
+        const std::string path = std::string(BH_TEST_DATA_DIR) + "/bhref-0.2.0-candidate/hist_" + bath + "_G" + gs[jg] +
+                                 ".txt";
+        const bh::FixtureContents F = bh::read_fixture_file(path);
+        // the reference's bins and normalised weighted-chain histograms, quantity by quantity
+        std::vector<std::vector<double>> edges(5), pref(5);
+        for (const auto& r : F.rows) {
+          const int q = static_cast<int>(r[0]);
+          if (edges[q].empty()) {
+            edges[q].push_back(r[2]);
+          }
+          edges[q].push_back(r[3]);
+          pref[q].push_back(r[8]);
+        }
+        const double ess_ref = std::stod(F.header.at("weighted_ESS"));
+        // the kernel run: 100 ions at Gamma_p, 1000 packets each
+        const int           nions = 100, pk = 1000;
+        Ions                ions(nions, 1.0);
+        Pairs               pairs(nions * pk + 64);
+        std::vector<double> K(nions, MU_R * (g - 1.0)), debt(nions), k0(nions);
+        ions.set_all(K);
+        const auto Ks = ions.K();
+        for (int p = 0; p < nions; ++p) {
+          debt[p] = (pk + 1) * T.rates->at_gamma(1.0 + Ks[p] / MU_R).Dmean;
+          k0[p]   = Ks[p];
+        }
+        ions.set_payloads(debt, k0);
+        auto prm                = params(1.0, BUDGET, RESTFRAME, 1.0e-6);
+        prm.eta_u               = 1.0e9;
+        prm.r_th_factor         = 1.0;
+        prm.max_events_per_step = pk;
+        random_number_pool_t pool(2024u + static_cast<unsigned>(jg) + (bath == "mono05" ? 0u : 100u));
+        launch(ions, pairs, T, prm, pool, 1.0e-6);
+        const auto rows = pairs.rows();
+        std::vector<std::vector<double>> wk(5);
+        for (int q = 0; q < 5; ++q) {
+          wk[q].assign(edges[q].size() - 1, 0.0);
+        }
+        double      sw = 0.0, sw2 = 0.0;
+        std::size_t outside = 0;
+        for (const auto& r : rows) {
+          const double gm = kh::lepton_gamma(r.u1m, r.u2m, r.u3m), gp = kh::lepton_gamma(r.u1p, r.u2p, r.u3p);
+          const double um = std::sqrt(r.u1m * r.u1m + r.u2m * r.u2m + r.u3m * r.u3m);
+          const double up = std::sqrt(r.u1p * r.u1p + r.u2p * r.u2p + r.u3p * r.u3p);
+          const double v[5] = { gm, gp, r.u1m / um, r.u1p / up, gm + gp - r.eps_m }; // the ion moves along +x
+          const double w    = r.wm;
+          sw += w;
+          sw2 += w * w;
+          for (int q = 0; q < 5; ++q) {
+            const auto& e = edges[q];
+            if (v[q] < e.front() || v[q] > e.back()) {
+              ++outside;
+            }
+            int i = static_cast<int>(std::upper_bound(e.begin(), e.end(), v[q]) - e.begin()) - 1;
+            i     = std::min(static_cast<int>(e.size()) - 2, std::max(0, i));
+            wk[q][i] += w;
+          }
+        }
+        const double n_eff = sw * sw / sw2;
+        std::string  line  = bath + " Gamma_p " + gs[jg] + ": " + std::to_string(rows.size()) + " pairs (N_eff " +
+                           fmt("%.0f", n_eff) + "), reference ESS " + fmt("%.0f", ess_ref) + ", values outside the " +
+                           "reference's edges " + std::to_string(outside) + ";";
+        for (int q = 0; q < 5; ++q) {
+          const KsResult r = weighted_ks(wk[q], n_eff, pref[q], ess_ref);
+          combos.push_back({ bath + " Gamma_p " + gs[jg] + " " + qname[q], r });
+          line += std::string(" ") + qname[q] + " KS " + fmt("%.5f", r.ks) + (r.pass ? "" : " (FAILS)");
+        }
+        line += "; 99% critical " + fmt("%.5f", combos.back().r.crit);
+        diag(line);
+      }
+    }
+    int         n_pass_c = 0;
+    std::string failed;
+    for (const auto& c : combos) {
+      if (c.r.pass) {
+        ++n_pass_c;
+      } else {
+        failed += " " + c.what + " (KS " + fmt("%.5f", c.r.ks) + " > " + fmt("%.5f", c.r.crit) + ");";
+      }
+    }
+    const double frac = combos.empty() ? 0.0 : static_cast<double>(n_pass_c) / static_cast<double>(combos.size());
+    verdict(!combos.empty() && frac >= 0.95,
+            "spectrum: the kernel's weighted pairs vs the reference's weighted-chain histograms (E-, E+, cos-, cos+, D; "
+            "binned weighted two-sample KS at 99% with Kish effective sizes, the A10 test), fraction of the " +
+              std::to_string(combos.size()) + " combinations passing (>= 95% required)",
+            frac, 0.95);
+    if (!failed.empty()) {
+      diag("spectrum: failing combinations:" + failed);
+    }
+    std::string nr;
+    for (const auto& s : not_reached) {
+      nr += " " + s + ";";
+    }
+    diag("spectrum: not reachable by the box (outside the bath's rate table):" + nr +
+         " the unweighted-chain histograms of the reference are not used here (the kernel draws the weighted chain)");
   }
 
 } // namespace
