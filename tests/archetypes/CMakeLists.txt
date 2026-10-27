@@ -64,3 +64,11 @@ target_compile_definitions(
   PRIVATE BH_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data/hadronic")
 target_link_libraries(test-archetypes-bh_ka2008.xc PRIVATE Threads::Threads)
 set_tests_properties("ARCHETYPES::bh_ka2008" PROPERTIES TIMEOUT 1800)
+# [fork:hadronic/P2 step 4, round 2] contract A10 inside ctest: the C++ sampler
+# fixtures against the reference's (bhref 0.2.0 candidate), file against file
+gen_test(bh_sampler_fixtures)
+target_compile_definitions(
+  test-archetypes-bh_sampler_fixtures.xc
+  PRIVATE BH_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data/hadronic")
+target_link_libraries(test-archetypes-bh_sampler_fixtures.xc PRIVATE Threads::Threads)
+set_tests_properties("ARCHETYPES::bh_sampler_fixtures" PROPERTIES TIMEOUT 1800)
