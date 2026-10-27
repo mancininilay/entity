@@ -599,7 +599,7 @@ is known here only through the brief's summary.
 | --- | --- | --- | --- |
 | 0 | source identifications corrected, verification flags removed, the asymptotic diagnostic | 8 | done, `88f868a` |
 | 1 | the threshold cancellation of the energy law in double; A2 registered for `double`; A1 to A5 for both instantiations; `qk_table.txt` vs the reference | 1 (P1) | done, `efb39a2` |
-| 2 | photon-energy marginal near threshold; standard errors in the moments fixtures; zero-variance columns; fixtures at fixed N; the full-sampled-density budget | 3, 7 | in progress |
+| 2 | photon-energy marginal near threshold; standard errors in the moments fixtures; zero-variance columns; fixtures at fixed N; the full-sampled-density budget | 3, 7 | done (closing commit after `ff5310c`) |
 | 3 | A8 against the reference's KA2008 CDF with the head-on map; the exact-chain quadrature renamed as a self-check; applicability corrected | 2 (P1) | not started |
 | 4 | A12 by decision (b): fixed N, literal tolerances, the reference's Born-chain <D>; the box spectrum against the reference's histograms | 4 (P1) | not started |
 | 5 | sampler counters in the MPI reduction and the ledger file; a forced-overflow test | 5 | not started |
@@ -757,3 +757,105 @@ threshold error). A3 asymptotic diagnostic unchanged (stage 0).
 - The code of stages 3 to 6 is committed and pushed as work in progress,
   ahead of the stage-2 closing commit; each stage's results and report entry
   follow in its own closing commit.
+- **(i) Photon-energy marginal near threshold (finding 3).**
+  - *Diagnosis (fact, from the code):* round 1 tabulated every node's photon
+    CDF on one grid in ln eps, common to all nodes and running from
+    max(eps_min, 2/(Gamma_max (1 + beta_max))) to eps_max, with 2048 cells.
+    Near threshold only a few cells are active. At powerlaw Gamma = 1.048 the
+    active interval [1.47, 1.5] spans about 15 cells of width 1.3e-3. The
+    threshold also falls inside a cell. The linear CDF spreads that cell's
+    mass over its whole width, and the part below threshold was clamped to
+    the threshold, so <eps> came out biased low.
+  - *Fix (`BathEpsTables`, host and device):*
+    - Each node has a grid of its own, uniform in
+      x = ln(eps/eps_lo)/ln(eps_max/eps_lo), with
+      eps_lo(Gamma) = max(eps_min, 2/(Gamma (1 + beta))).
+    - At continuous Gamma the two nodes' CDFs are mixed in x, and x is mapped
+      with the eps_lo of that Gamma, so the threshold is respected at every
+      Gamma.
+    - The cell width is held at <= 1e-3 in ln eps: n_eps = max(2048,
+      ceil(widest node range / 1e-3)), which gives 2709 cells for powerlaw and
+      3827 for blackbody.
+    - Device memory for the blackbody: 12.4 MB of float CDFs.
+  - *Results:* new test group `ARCHETYPES::bh_chain_epsbias` compares <eps>
+    of the density the table samples (exact: uniform in ln eps inside a cell)
+    with the marginal by independent quadrature (16384 Gauss-Legendre-16
+    panels; refinement change 1.8e-13), at every node of the two broad baths
+    and for both chains (1670 node-chains).
+    - Max |rel. dev.| = **8.3e-8** (blackbody, Gamma 24.17, unweighted chain);
+      powerlaw 8.1e-8. Tolerance 1e-6 (brief, stage 2 (i)).
+    - With 2048 cells and no width cap the worst value was 2.9e-7. The cap
+      keeps the O(h^2) bias fixed when the Gamma range grows.
+    - At the referee's node (powerlaw Gamma = 1.048099570984) the table's
+      <eps> is 1.4946719758, against the referee's quadrature of the paper
+      marginal 1.4946719776559543: -1.2e-9 (round 1: 1.494613576097, -3.9e-5).
+    - <eps^2>: max 3.3e-7.
+- **(ii) Standard errors (finding 7).**
+  - `bh_sampler_dump moments` now publishes `<column>_se` for every Monte
+    Carlo mean: <D>, <D^2>, <E->, <E+>, <cos theta->, <eps>. They are computed
+    with Welford's update and the unbiased variance.
+  - The weighted chain gives E_p[1/D] with its s.e., its products with I/J and
+    with <D>_MC (delta method), and the acceptance efficiency with s.e.
+    efficiency sqrt((1 - efficiency)/N_acc).
+- **(iii) Zero-variance columns (finding 7).**
+  - Welford's update returns a constant sample exactly, with zero variance. In
+    the mono baths `eps_mean_mc` is therefore eps0 exactly and its s.e. is 0.
+    Round 1 summed 1e6 copies of eps0 = 0.3, with an error of up to ~1e-10.
+  - The header lists `deterministic_columns` and `zero_variance_columns`.
+  - The A10 test (stage 6) compares them at 1e-12 relative, not by s.e.
+- **(iv) Fixed N (finding 7).**
+  - The weighted chains run to a fixed number of accepted packets, with a
+    safety cap of 1e11 attempts that is an error if reached.
+  - Histograms: 1e6 accepted at every Gamma_p (round 1: 43,050, 935,186 and
+    83,170 at the three short cases). Attempts used: mono05 1.36e6, 2.49e6,
+    1.39e7, 4.65e8 at Gamma_p = 2.23125, 3, 10, 100; powerlaw 1.61e6, 7.20e6,
+    2.14e7, 2.40e8 at 1.09375, 3, 10, 100.
+  - Moments: 1e5 accepted per node, the reference's N_weighted (round 1: a
+    budget of 1e6 attempts, down to ~2,400 accepted at the upper nodes).
+    Attempts per bath (total, largest node): mono05 8.63e8 (4.04e7), mono03 8.56e8 (4.06e7), powerlaw 2.43e8 (5.64e6), blackbody 1.58e8 (3.32e6), mono05_mu100 5.68e7 (5.33e5); about 40 minutes on 4 cores for the five baths.
+  - The histograms are now produced in 64 chunks with seeds of their own,
+    merged in chunk order, so the result does not depend on the thread count.
+  - They are written in the layout of the reference's histograms, on the
+    reference's bin edges (`--bins-from`).
+- **(v) The budget against the sampled density (finding 7).**
+  - `rf::SampledChainD` integrates the density the unweighted chain actually
+    samples: the photon table (exact cell masses, uniform in ln eps in a
+    cell); the eps' interpolant of `SamplerCumulatives` (ln Phi linear in
+    ln delta per cell, so the sampled density is exactly s_j Phi_t); and the
+    tables' E' and angle draws, through the identity
+    E[D | eps, eps'] = q_T(eps') (Gamma - eps/eps'). That identity is exact
+    after averaging the uniform azimuths; q_T is the mean of the tables'
+    draws.
+  - The registered 1e-3 budget is now held against it at every rate-table
+    node of the five baths (2169 nodes).
+  - Max |<D>_sampled/<D>_laws - 1| = **9.671e-4** (mono03, Gamma 146.06).
+    Per bath: mono05 9.665e-4, mono03 9.671e-4, powerlaw 4.931e-4, blackbody
+    4.613e-4, mono05_mu100 4.33e-5.
+  - Convergence estimate (q_T on 16 -> 32 sub-nodes, Gauss-Legendre 16 -> 24):
+    max change 8.6e-7. The verdict adds it at every node: max (|dev| +
+    |change|) = 9.679e-4 <= 1e-3, pass.
+  - The q_k part alone (round 1's check) is 9.638e-4. The photon table and the
+    eps' interpolant add at most 3.3e-6.
+  - The margin, 3.2e-5, is set by the tables' q_k at the upper eps' edge
+    (+5.98e-4 at eps' = 1000). Refining the angular table there is the lever
+    if more margin is wanted. It is not done here because it changes the
+    device table size.
+  - *First attempt (stated):* I first gave the quadrature's convergence an
+    implementation tolerance of 1e-6, with orders 8/8 against 16/16. It
+    measured 3.4e-6 and failed. The orders were raised to 16/16 against 24/32
+    (8.6e-7), and the convergence enters the verdict as above instead of
+    having a threshold of its own. It only needs to be small against the
+    margin.
+- **A7 (`bh_chain.cpp`).**
+  - The round-1 verdict line "A7: |<D>_MC - I/J| <= max(1%, 4 s.e.) at every
+    node" could not fail: it was `worst_rel <= 1e-2 || true`, and the per-node
+    count was only printed (it was 0 in round 1). It now fails when any node
+    fails.
+  - The Monte Carlo is now compared with <D>_sampled, the mean the chain
+    converges to, rather than with the analytic-photon quadrature. Round 1
+    measured 7.9 s.e. for powerlaw there, which was the photon-table bias of
+    finding 3. The same holds for the weighted check `E_p[1/D] <D>_sampled = 1`.
+  - Rerun in the stage-6 full ctest.
+- **Kernel spectrum test.** Adapted to the new histogram layout. It is
+  replaced in stage 4.
+- stage 2 done, this commit, pushed.

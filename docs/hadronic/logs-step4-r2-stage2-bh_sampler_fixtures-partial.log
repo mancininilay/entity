@@ -1,0 +1,32 @@
+
+== A10 item 1: qk_table.txt, C++ vs reference ==
+[PASS] qk: node count: C++ nodes (reference count as tol) = 4.490000e+02 (tol 4.490e+02)
+[PASS] qk: eps' nodes equal (deterministic): max rel. dev. = 0.000000e+00 (tol 1.000e-12)
+[PASS] qk: sigma at every eps' node (worst eps' = 2.031623): max rel. dev. = 9.710647e-12 (tol 1.000e-04)
+[PASS] qk: q_k at every eps' node (worst eps' = 2.000104): max rel. dev. = 4.000074e-12 (tol 1.000e-04)
+[PASS] qk: <E'-> at every eps' node (worst eps' = 899.687132): max rel. dev. = 2.222719e-13 (tol 1.000e-04)
+[PASS] qk: <p' cos theta'> at every eps' node (worst eps' = 2.000104): max rel. dev. = 6.213729e-08 (tol 1.000e-04)
+[DIAG] qk: C++ "31e82eb9e0629b8281447fa70adff1a7478e9bdb-mod" (data_sha256 d36ef7a035299ad7374db87757ea64f9dcc066a5aa24cd2c1115d93da68bda05), reference "0.2.0" (data_sha256 43e3035173104bb41fd35d7513621ea58607c0146a94f77abcfd3eb312c4a476)
+
+== A10 item 2: moments_<bath>.txt, C++ vs reference, every node ==
+[DIAG] moments mono05: 466 nodes; max |C++ - ref| / combined s.e. = 3.28 (<E+> at Gamma_p 2.146700); acceptance efficiency max 3.06 combined s.e.; reference <D> vs the C++ sampled-density <D> max 3.56 ref s.e.; C++ be9a3c370302, reference 69b87f32ad4c
+[DIAG] moments mono03: 465 nodes; max |C++ - ref| / combined s.e. = 3.46 (<cos theta-> at Gamma_p 3.475345); acceptance efficiency max 2.85 combined s.e.; reference <D> vs the C++ sampled-density <D> max 3.63 ref s.e.; C++ efcab366841c, reference 672bf47c3df4
+[DIAG] moments powerlaw: 429 nodes; max |C++ - ref| / combined s.e. = 3.64 (<eps> at Gamma_p 1.062193); acceptance efficiency max 2.56 combined s.e.; reference <D> vs the C++ sampled-density <D> max 3.42 ref s.e.; C++ b4659239af74, reference 9ce146a989b0
+[DIAG] moments blackbody: 406 nodes; max |C++ - ref| / combined s.e. = 3.56 (<E+> at Gamma_p 1.015970); acceptance efficiency max 2.72 combined s.e.; reference <D> vs the C++ sampled-density <D> max 3.03 ref s.e.; C++ 471fbb4748ce, reference a7fe2bff550f
+[DIAG] moments mono05_mu100: 403 nodes; max |C++ - ref| / combined s.e. = 3.46 (<D> at Gamma_p 2.138041); acceptance efficiency max 3.74 combined s.e.; reference <D> vs the C++ sampled-density <D> max 3.52 ref s.e.; C++ 31fc64d75f4b, reference 901b16d321f0
+[PASS] moments: deterministic columns (Gamma_p nodes; <eps> of the mono baths, s.e. 0) at 1e-12 relative, 3503 values: max rel. dev. = 9.489864e-13 (tol 1.000e-12)
+[PASS] moments: every Monte Carlo moment within 4 combined s.e. at every node of the five baths (13849 comparisons; worst powerlaw <eps> at Gamma_p 1.062193): max |dev| / s.e. = 3.637629e+00 (tol 4.000e+00)
+
+== A10 item 3: hist_<bath>_G<Gamma>.txt, C++ vs reference, weighted two-sample KS at 99% ==
+[DIAG] hist mono05 Gamma_p 2.23125 (KS/critical, unweighted then weighted; ESS C++ 988766, ref 988795): E- 0.00129/0.00230 0.00094/0.00232 E+ 0.00154/0.00230 0.00095/0.00232 cos- 0.00032/0.00230 0.00044/0.00232 cos+ 0.00039/0.00230 0.00097/0.00232 D 0.00087/0.00230 0.00127/0.00232
+[DIAG] hist mono05 Gamma_p 3 (KS/critical, unweighted then weighted; ESS C++ 915747, ref 916016): E- 0.00123/0.00230 0.00093/0.00241 E+ 0.00078/0.00230 0.00195/0.00241 cos- 0.00096/0.00230 0.00185/0.00241 cos+ 0.00123/0.00230 0.00102/0.00241 D 0.00086/0.00230 0.00208/0.00241
+[DIAG] hist mono05 Gamma_p 10 (KS/critical, unweighted then weighted; ESS C++ 621612, ref 622220): E- 0.00083/0.00230 0.00078/0.00292 E+ 0.00051/0.00230 0.00143/0.00292 cos- 0.00084/0.00230 0.00116/0.00292 cos+ 0.00157/0.00230 0.00121/0.00292 D 0.00085/0.00230 0.00098/0.00292
+[DIAG] hist mono05 Gamma_p 100 (KS/critical, unweighted then weighted; ESS C++ 296962, ref 296940): E- 0.00129/0.00230 0.00130/0.00423 E+ 0.00174/0.00230 0.00132/0.00423 cos- 0.00132/0.00230 0.00174/0.00423 cos+ 0.00107/0.00230 0.00188/0.00423 D 0.00048/0.00230 0.00019/0.00423
+[DIAG] hist powerlaw Gamma_p 1.09375 (KS/critical, unweighted then weighted; ESS C++ 972445, ref 972520): E- 0.00133/0.00230 0.00090/0.00233 E+ 0.00097/0.00230 0.00171/0.00233 cos- 0.00103/0.00230 0.00127/0.00233 cos+ 0.00079/0.00230 0.00114/0.00233 D 0.00157/0.00230 0.00161/0.00233
+[DIAG] hist powerlaw Gamma_p 3 (KS/critical, unweighted then weighted; ESS C++ 700357, ref 701205): E- 0.00047/0.00230 0.00090/0.00275 E+ 0.00179/0.00230 0.00225/0.00275 cos- 0.00103/0.00230 0.00161/0.00275 cos+ 0.00103/0.00230 0.00161/0.00275 D 0.00092/0.00230 0.00194/0.00275
+[DIAG] hist powerlaw Gamma_p 10 (KS/critical, unweighted then weighted; ESS C++ 499089, ref 498793): E- 0.00107/0.00230 0.00153/0.00326 E+ 0.00081/0.00230 0.00095/0.00326 cos- 0.00112/0.00230 0.00271/0.00326 cos+ 0.00117/0.00230 0.00220/0.00326 D 0.00051/0.00230 0.00100/0.00326
+[DIAG] hist powerlaw Gamma_p 100 (KS/critical, unweighted then weighted; ESS C++ 251052, ref 250354): E- 0.00070/0.00230 0.00162/0.00460 E+ 0.00142/0.00230 0.00159/0.00460 cos- 0.00051/0.00230 0.00170/0.00460 cos+ 0.00059/0.00230 0.00154/0.00460 D 0.00038/0.00230 0.00016/0.00460
+[PASS] hist: bin edges of the C++ fixtures = the reference's (taken from them by --bins-from): max rel. dev. = 0.000000e+00 (tol 1.000e-12)
+[PASS] hist: fraction of the 80 combinations (2 baths x 4 Gamma_p x 5 quantities x 2 chains) passing the weighted two-sample KS at 99%: fraction (>= 0.95 required) = 1.000000e+00 (tol 9.500e-01)
+
+bh_sampler_fixtures summary: 10 passed, 0 failed; 0 s
