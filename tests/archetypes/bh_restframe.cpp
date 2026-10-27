@@ -9,7 +9,7 @@
  *   A1  int g dE'  = sigma~ Maximon, <= 1e-3 at every eps' node in [2.001, 1000]
  *   A2  int h dcos = g, <= 1e-3 at every (eps', E') node; e-/e+ symmetry of g
  *   A3  eps' -> 2: E'- -> 1 and q_k -> 2 to 1e-3 at eps' - 2 = 1e-3; the
- *       asymptotic q_k eps'/(4 ln eps') reported
+ *       asymptotic q_k eps'/(4 ln^2 eps') reported (leading-order limit 3/14)
  *   A4  q_k (machinery) vs Chodorowski eq. 3.7 on [2.05, 1000] <= 2%;
  *       vs phi_fit'/(kappa sigma~) <= 2%
  *   A5  phi(kappa) by int eps' sigma~ q_k (machinery) vs the step-1 fit <= 2%
@@ -266,7 +266,7 @@ namespace {
 
     // the closed form against the numerical integral of the fully
     // differential law (the transcription check of MOK 3D-2000)
-    std::printf("\n== transcription: closed form vs numerical integral of Heitler 26.6 ==\n");
+    std::printf("\n== transcription: closed form (MOK 3D-2000) vs numerical integral of MOK 3D-3000 ==\n");
     double      wtr = 0.0;
     int         n_pts = 0;
     double      wtr_k = 0, wtr_x = 0, wtr_omc = 0;
@@ -433,18 +433,25 @@ namespace {
       }
     }
     {
-      std::string s = "A3: q_k eps'/(4 ln eps') at eps' = ";
+      // asymptotic form (round 2, finding 8): with sigma~ -> (28/9) ln k (Maximon
+      // eq. 12) and phi -> (8/3) k ln^3 k (the leading term of the Chodorowski
+      // fit, eqs. 3.16/3.18), q_k = phi'/(k sigma~) -> (6/7) ln^2 k / k, i.e.
+      // q_k k/(4 ln^2 k) -> 3/14 (leading coefficient; the subleading terms are
+      // of relative order 1/ln k, so the limit is approached slowly)
+      std::string s = "A3: q_k eps'/(4 ln^2 eps') at eps' = ";
       for (const double k : { 10.0, 30.0, 100.0, 300.0, 1000.0 }) {
         const rf::Moments m = rf::moments(k, q);
         char              buf[80];
-        std::snprintf(buf, sizeof(buf), "%g: %.5f; ", k, m.q_k * k / (4.0 * std::log(k)));
+        const double      L = std::log(k);
+        std::snprintf(buf, sizeof(buf), "%g: %.5f; ", k, m.q_k * k / (4.0 * L * L));
         s += buf;
       }
-      diag("%s(not constant on the kernel domain: eq. 3.7 carries ln^2 and ln^3 terms, "
-           "so q_k eps'/(4 ln eps') ~ 0.1 ln eps' + ...; the eq. 3.7 values are %.5f, %.5f, %.5f, %.5f, %.5f)",
-           s.c_str(), q_k(10.0) * 10.0 / (4.0 * std::log(10.0)), q_k(30.0) * 30.0 / (4.0 * std::log(30.0)),
-           q_k(100.0) * 100.0 / (4.0 * std::log(100.0)), q_k(300.0) * 300.0 / (4.0 * std::log(300.0)),
-           q_k(1000.0) * 1000.0 / (4.0 * std::log(1000.0)));
+      auto r37 = [](double k) {
+        const double L = std::log(k);
+        return q_k(k) * k / (4.0 * L * L);
+      };
+      diag("%s(leading-order limit 3/14 = %.5f; the eq. 3.7 values are %.5f, %.5f, %.5f, %.5f, %.5f)", s.c_str(),
+           3.0 / 14.0, r37(10.0), r37(30.0), r37(100.0), r37(300.0), r37(1000.0));
     }
 
     std::printf("\n== A4: q_k machinery vs eq. 3.7 and vs phi_fit'/(kappa sigma~) on [2.05, 1000] ==\n");

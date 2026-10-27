@@ -14,21 +14,21 @@
  * (E+ + E- = k, no recoil energy), p = sqrt(E^2 - 1), theta the angle of a
  * lepton to the photon direction.
  *
- * Laws implemented (formula numbers as stated in the brief; the literature
- * PDFs were not available in the build container, every formula below is
- * transcribed from the author's knowledge of the papers and verified by the
- * numerical anchors A1 to A5 of the test suite, see the step-4 report):
+ * Laws implemented and their sources (identifications as corrected in round
+ * 2; the algebra, signs and normalisation of the three laws were checked
+ * against the PDFs by the referee, Codex 1, review of 2026-10-27: they are the
+ * papers'; the numerical anchors A1 to A5 and the closed-vs-integral check of
+ * the test suite verify them independently):
  *
  *   1. dsigma/dE+ (the energy law): Bethe-Heitler Born cross section
- *      integrated over both lepton directions, as written by Blumenthal
- *      1970, PRD 1, 1596, eq. (10) (= Heitler 1954 section 26 eq. (14) =
- *      Motz, Olsen and Koch 1969 formula 3D-1000 with Z = 1, no screening).
- *      Its integral over E+ reproduces Maximon's sigma~(k) (anchor A1).
- *      g(E+ | k) = (1/sigma~) dsigma/dE+.
+ *      integrated over both lepton directions, Motz, Olsen and Koch 1969,
+ *      Rev. Mod. Phys. 41, 581, formula 3D-1000 (Z = 1, no screening), which
+ *      cites Heitler 1954, p. 258, eq. (8). Its integral over E+ reproduces
+ *      Maximon's sigma~(k) (anchor A1). g(E+ | k) = (1/sigma~) dsigma/dE+.
  *
  *   2. d^5 sigma/(dE+ dOmega+ dOmega-) (the fully differential law): Bethe
- *      and Heitler 1934, as written by Heitler 1954 section 26 eq. (6)
- *      (= MOK 1969 formula 3D-3000, Z = 1, no screening). It is the parent of
+ *      and Heitler 1934, MOK 1969 formula 3D-3000 (Z = 1, no screening),
+ *      Heitler 1954, p. 257, eq. (6). It is the parent of
  *      both laws above and below; here it is integrated numerically over the
  *      direction of the second lepton (`dsigma_dE_dcos_numeric`) on the
  *      sphere of the momentum transfer, which makes the 1/q^4 structure
@@ -38,15 +38,17 @@
  *
  *   3. d^2 sigma/(dE+ dcos theta+) (the single-lepton energy-angle law): the
  *      Sauter-Gluckstern-Hull expression, MOK 1969 formula 3D-2000 (Z = 1,
- *      no screening), i.e. the law 2 integrated over the other lepton's
- *      direction in closed form (`dsigma_dE_dcos_closed`). It is the pair
- *      analogue of the bremsstrahlung formula 2BN of Koch and Motz 1959,
- *      obtained from it by the substitution E0 -> -E+, E -> E-, k -> -k; the
- *      signs of the three logarithmic groups and the overall factor, which the
- *      substitution leaves ambiguous when the PDF is not at hand, were fixed
- *      by requiring agreement with the numerical integral of law 2 (the test
- *      suite re-verifies this agreement at every run: it is the A2-level check
- *      of the transcription). h(E+, cos theta+ | k) = (1/sigma~) d^2 sigma.
+ *      no screening) = Blumenthal 1970, PRD 1, 1596, eq. (10) (the
+ *      definitions of its symbols in his eq. (11)), i.e. the law 2 integrated
+ *      over the other lepton's direction in closed form
+ *      (`dsigma_dE_dcos_closed`). History (round 1): it was first written as
+ *      the pair analogue of the bremsstrahlung formula 2BN of Koch and Motz
+ *      1959 (substitution E0 -> -E+, E -> E-, k -> -k), and the signs of the
+ *      three logarithmic groups and the overall factor were fixed by agreement
+ *      with the numerical integral of law 2; the referee confirmed that the
+ *      signs so fixed are the paper's. The test suite re-verifies the
+ *      agreement with law 2 at every run. h(E+, cos theta+ | k) = (1/sigma~)
+ *      d^2 sigma.
  *      By the e-/e+ symmetry of the Born cross section the same law holds for
  *      the electron with E+ -> E-.
  *
@@ -90,12 +92,14 @@ namespace arch::bh::rf {
   }
 
   // ------------------------------------------------------------------------ //
-  // Law 1: the energy distribution, Blumenthal 1970 eq. (10)
+  // Law 1: the energy distribution, Motz, Olsen and Koch 1969 3D-1000
+  // (Heitler 1954, p. 258, eq. 8)
   // ------------------------------------------------------------------------ //
 
   /**
-   * @brief dsigma/dE+ in alpha r_e^2 per m_e c^2 (Blumenthal 1970 eq. 10).
-   *        Zero outside 1 < E+ < k - 1.
+   * @brief dsigma/dE+ in alpha r_e^2 per m_e c^2 (MOK 1969 formula 3D-1000,
+   *        Z = 1, unscreened; Heitler 1954 p. 258 eq. 8). Zero outside
+   *        1 < E+ < k - 1.
    *
    * Evaluated in long double: the terms of the bracket are O(1/p^4) near
    * threshold and cancel to the O((k - 2)^3) total.
@@ -143,7 +147,8 @@ namespace arch::bh::rf {
   }
 
   // ------------------------------------------------------------------------ //
-  // Law 2: the fully differential Bethe-Heitler law (Heitler 1954, 26.6) and
+  // Law 2: the fully differential Bethe-Heitler law (MOK 3D-3000, Heitler 1954
+  // p. 257 eq. 6) and
   // its numerical integration over the second lepton's direction
   // ------------------------------------------------------------------------ //
 
@@ -247,10 +252,10 @@ namespace arch::bh::rf {
    * about Q; with alpha the polar angle of p-^ about Q^ and psi its azimuth,
    * q^2 = Q^2 + p-^2 - 2 Q p- cos alpha and dOmega- = dq^2 dpsi / (2 Q p-).
    * The law is written as d^5 sigma = (1/(4 pi^2)) (p+ p-/k^3) F dE+ dOmega+ dOmega-/q^4
-   * with F the bracket of Heitler 26.6; the normalisation 1/(4 pi^2) is the one
+   * with F the bracket of MOK 3D-3000 (Heitler 1954 p. 257 eq. 6); the normalisation 1/(4 pi^2) is the one
    * for which the angular integral reproduces the energy law 1 (checked by A2;
    * a 1/(2 pi) prefactor gives 2 pi times the energy law, fact of the scratch
-   * run of 2026-10-26). The integrand F/q^4 (Heitler 26.6) becomes F/q^2 in u = ln q^2; the
+   * run of 2026-10-26). The integrand F/q^4 (MOK 3D-3000) becomes F/q^2 in u = ln q^2; the
    * remaining peak is the forward direction of the second lepton
    * (1/D-^2), at alpha = theta_Q, psi = 0, of angular width
    * delta_theta = sqrt(2 (E- - p-)/p-), covered by graded panels in u and in
@@ -364,7 +369,8 @@ namespace arch::bh::rf {
   }
 
   // ------------------------------------------------------------------------ //
-  // Law 3: the Sauter-Gluckstern-Hull closed form (MOK 1969, 3D-2000)
+  // Law 3: the Sauter-Gluckstern-Hull closed form (MOK 1969 3D-2000 =
+  // Blumenthal 1970 eq. 10, definitions in his eq. 11)
   // ------------------------------------------------------------------------ //
 
   /**

@@ -179,9 +179,11 @@ namespace {
                          "\"delta_min\": 1e-4, \"eps_prime_max\": 1000, \"endpoint_appended\": true}" });
     t.header.push_back(
       { "laws",
-        "{\"energy\": \"Blumenthal 1970 eq. 10 (= MOK 1969 3D-1000), Z = 1 unscreened\", "
-        "\"angular\": \"Sauter-Gluckstern-Hull, MOK 1969 3D-2000, Z = 1 unscreened; signs and "
-        "normalisation fixed against the numerical integral of Heitler 1954 eq. 26.6\", "
+        "{\"energy\": \"Motz, Olsen and Koch 1969 3D-1000 (Heitler 1954 p. 258 eq. 8), Z = 1 unscreened\", "
+        "\"angular\": \"Sauter-Gluckstern-Hull, MOK 1969 3D-2000 = Blumenthal 1970 eq. 10 (definitions eq. 11), "
+        "Z = 1 unscreened; checked against the numerical integral of MOK 3D-3000 (Heitler 1954 p. 257 eq. 6)\", "
+        "\"verification\": \"algebra, signs and normalisation checked against the PDFs by the referee (Codex 1, "
+        "2026-10-27)\", "
         "\"q_k\": \"eps_prime - 2 <p cos theta>_h\", \"normalisation\": \"the laws' own integrals (sigma_from_g, "
         "int h); Maximon's sigma~ reported in sigma_maximon\"}" });
     t.header.push_back({ "quadrature",
@@ -374,7 +376,7 @@ namespace {
     t.header.push_back({ "applicability_eps_prime_hi_gamma_over_mu_r", json_number(eps0 * (g + gb) * g / cb.mu_r) });
     t.header.push_back(
       { "law", json_string("Kelner and Aharonian 2008 eqs. 58-64 (equation numbers from the brief): the "
-                           "Sauter-Gluckstern-Hull single-lepton law (Blumenthal 1970 eq. 11) in the proton rest "
+                           "Sauter-Gluckstern-Hull single-lepton law (MOK 3D-2000 = Blumenthal 1970 eq. 10) in the proton rest "
                            "frame, photon energy eps' = Gamma eps (1 - beta cos theta), lepton boosted with the exact "
                            "(Gamma, beta); CDF of the lab e- energy by quadrature (bh_lab_spectrum.h)") });
     t.header.push_back({ "quadrature",

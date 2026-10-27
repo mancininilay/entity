@@ -9,7 +9,8 @@
  * Kelner and Aharonian 2008, PRD 78, 034013, section IV, obtain the electron
  * spectrum of the Bethe-Heitler process from the energy-angle distribution of
  * one lepton in the proton rest frame (their eq. (59), the
- * Sauter-Gluckstern-Hull law as written by Blumenthal 1970 eq. (11): the same
+ * Sauter-Gluckstern-Hull law, Blumenthal 1970 eq. (10) with the definitions of
+ * his eq. (11) = MOK 1969 3D-2000: the same
  * law as `dsigma_dE_dcos_closed` of bh_restframe.h, whose sign pattern,
  * -4 sin^2 theta (2E^2 + 1)/(p^2 Delta^4) + (5E^2 - 2E E_other + 3)/(p^2 Delta^2)
  * + (p^2 - k^2)/(T^2 Delta^2) + 2 E_other/(p^2 Delta) + Y(...) - delta^T(...)
@@ -21,9 +22,7 @@
  * angle to the ion velocity; the spectrum is the integral over the photon
  * angle (equivalently over omega), the lepton rest-frame energy and the lepton
  * angles with the delta function of the energy transformation (their eqs.
- * (62) to (64) with the integration limits). The literature PDF was not
- * available in the build container: the equation numbers are quoted from the
- * brief and the structure from memory; this file implements the same chain
+ * (62) to (64) with the integration limits). This file implements the same chain
  * without the ultra-relativistic approximations of the paper (exact beta,
  * exact p' = sqrt(E'^2 - 1)), as the cumulative distribution of the lab
  * electron energy:

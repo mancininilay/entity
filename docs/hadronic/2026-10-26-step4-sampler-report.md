@@ -32,7 +32,7 @@ or open question. No pre-registered tolerance is adjusted.
 | cmake / ninja | 4.4.4 / 1.13.2, 4 cores |
 | Kokkos, ADIOS2 | `$HOME/.entity/kokkos`, `$HOME/.entity/adios2` (Serial + OpenMP, no MPI) |
 | configure | `cmake -S . -B build -G Ninja -D TESTS=ON -D output=ON -D precision=single -D mpi=OFF -D CMAKE_PREFIX_PATH=...`: OK |
-| literature PDFs | **not present in the container**: there is no `Literature/` directory (`Blumenthal_1970.pdf`, `Motz_1969.pdf`, `Kelner_Aharonian_2008.pdf`) and no `Resources/` note. The formulas of stages 1 and 3 are transcribed from the author's knowledge of the papers with the formula numbers stated in the code; the report flags every such transcription as "transcribed without the PDF" (open question for the referee: verify against the PDFs). |
+| literature PDFs | **not present in the container**: there is no `Literature/` directory (`Blumenthal_1970.pdf`, `Motz_1969.pdf`, `Kelner_Aharonian_2008.pdf`) and no `Resources/` note. The formulas of stages 1 and 3 are transcribed from the author's knowledge of the papers with the formula numbers stated in the code. [Round 2: the referee, Codex 1, checked the three Born laws against the PDFs (algebra, signs and normalisation are the papers'); the identifications are corrected in R2 stage 0 and the "transcribed without the PDF" flags removed.] |
 
 ## 2. Stage log
 
@@ -70,9 +70,9 @@ Kokkos-free):
 
 | content | function | source stated in the code |
 | --- | --- | --- |
-| energy law dsigma/dE'+ (law 1), long double evaluation | `dsigma_dE`, `g` | Blumenthal 1970 eq. (10) = Heitler 1954 section 26 eq. (14) = Motz, Olsen and Koch 1969 formula 3D-1000, Z = 1, unscreened; **transcribed without the PDF** |
-| fully differential law (law 2), integrated numerically over the second lepton's direction on the momentum-transfer sphere (u = ln q^2, azimuth psi, graded Gauss-Legendre panels around the second lepton's forward peak) | `dsigma_dE_dcos_numeric`, `AngularQuadrature` | Bethe and Heitler 1934 as Heitler 1954 section 26 eq. (6) = MOK 3D-3000; **transcribed without the PDF**; its normalisation is fixed to 1/(4 pi^2) (p+ p-/k^3) F/q^4 by the requirement that its angular integral be the energy law (a 1/(2 pi) prefactor gave exactly 2 pi times the energy law: fact of the scratch run) |
-| single-lepton energy-angle law (law 3), closed form, long double | `dsigma_dE_dcos_closed`, `h` | Sauter-Gluckstern-Hull, MOK 1969 formula 3D-2000, Z = 1, unscreened (the formula number is from memory, **to be verified against `Literature/Motz_1969.pdf`**); reconstructed from Koch and Motz 1959 formula 2BN by the substitution E0 -> -E+, E -> E-, k -> -k; the signs of the three logarithmic groups and the overall factor, which the substitution leaves ambiguous, were fixed against the numerical integral of law 2: s0 = -1, sL = -1, se = +1, sQ = +1 is the unique combination of 16 that agrees (constant ratio to 6 digits at 12 points; the other 15 vary by factors of order one), and the normalisation is d^2 sigma/(dE+ dOmega+) = -(p+ p-/(8 pi k^3)) bracket (the 2BN prefactor) |
+| energy law dsigma/dE'+ (law 1), long double evaluation | `dsigma_dE`, `g` | Motz, Olsen and Koch 1969 formula 3D-1000 (citing Heitler 1954 p. 258 eq. 8), Z = 1, unscreened [round 2: identification corrected from "Blumenthal eq. 10"; algebra verified against the PDF by the referee] |
+| fully differential law (law 2), integrated numerically over the second lepton's direction on the momentum-transfer sphere (u = ln q^2, azimuth psi, graded Gauss-Legendre panels around the second lepton's forward peak) | `dsigma_dE_dcos_numeric`, `AngularQuadrature` | Bethe and Heitler 1934, MOK 3D-3000 (Heitler 1954 p. 257 eq. 6) [round 2: verified against the PDF by the referee]; its normalisation is fixed to 1/(4 pi^2) (p+ p-/k^3) F/q^4 by the requirement that its angular integral be the energy law (a 1/(2 pi) prefactor gave exactly 2 pi times the energy law: fact of the scratch run) |
+| single-lepton energy-angle law (law 3), closed form, long double | `dsigma_dE_dcos_closed`, `h` | Sauter-Gluckstern-Hull, MOK 1969 formula 3D-2000 = Blumenthal 1970 eq. 10 (definitions in his eq. 11), Z = 1, unscreened [round 2: identification and the numerically fixed signs verified against the PDFs by the referee: they are the paper's]; reconstructed from Koch and Motz 1959 formula 2BN by the substitution E0 -> -E+, E -> E-, k -> -k; the signs of the three logarithmic groups and the overall factor, which the substitution leaves ambiguous, were fixed against the numerical integral of law 2: s0 = -1, sL = -1, se = +1, sQ = +1 is the unique combination of 16 that agrees (constant ratio to 6 digits at 12 points; the other 15 vary by factors of order one), and the normalisation is d^2 sigma/(dE+ dOmega+) = -(p+ p-/(8 pi k^3)) bracket (the 2BN prefactor) |
 | recoil moment q_k = eps' - 2 <p' cos theta'>_h, the moments | `moments`, `RestFrameQuadrature` | contract section 1 item 3; composite Gauss-Legendre: E' = 1 + (eps' - 2) sin^2(pi s/2), 16 panels x 16 nodes; angle t = ln(1 - cos theta + (E - p)/p), panels of width 0.5 x 16 nodes |
 | the eps' grid of the fixture (449 nodes) | `qk_grid` | convention: delta_i = 10^(-4 + i/64), i = 0..447 (eps' <= 1000), then eps' = 1000 |
 | host thread pool for per-node work | `parallel_for_index` | |
@@ -144,9 +144,10 @@ in every integral (A2 holds to 2.3e-5 at the worst node). Stage 2 builds the
 CDF tables from the closed form on an x grid whose interior nodes keep p' above
 1e-3 at every eps' node, and the end points carry h = 0 exactly.
 
-Open questions for the referee: (1) the formula numbers 3D-1000, 3D-2000 and
-3D-3000 of Motz, Olsen and Koch 1969 and the equation numbers of Heitler 1954
-are quoted from memory; (2) the laws are validated numerically (A1 against
+Open questions for the referee: (1) [resolved in round 2, R2 stage 0: the
+energy law is MOK 3D-1000 (Heitler p. 258 eq. 8), the single-lepton law MOK
+3D-2000 = Blumenthal eq. 10, the full law MOK 3D-3000 (Heitler p. 257 eq. 6),
+verified by the referee against the PDFs]; (2) the laws are validated numerically (A1 against
 Maximon's sigma~, A2, A4 against eq. 3.7, A5 against the phi fits), not
 against the printed formulas; (3) A6 (an external numerical table of the
 energy distribution) was not attempted here, since no literature table is
@@ -333,13 +334,13 @@ azimuth about the photon direction integrated in closed form (the fraction of
 phi with E_lab <= E is arccos((a - c)/b)/pi); weight eps' d^2sigma, normalised
 by Phi(eps'_hi); the exact (Gamma, beta) boost, no UR approximation. This is
 the content of Kelner and Aharonian 2008 eqs. (58) to (64) as recalled (the
-Sauter-Gluckstern-Hull law of Blumenthal 1970 eq. 11 for the lepton in the
-proton rest frame, the photon's rest-frame energy eps' = Gamma eps (1 - beta cos
-theta), the Lorentz transformation of the lepton energy); **the PDF was not
-available: the equation numbers are those of the brief and the structure is
-from memory; the referee should compare with the printed equations.** The
-recalled sign pattern of Blumenthal's eq. 11 agrees with the signs that the
-numerical integral of the fully differential law fixed in stage 1.
+Sauter-Gluckstern-Hull law of Blumenthal 1970 eq. 10 [round 2: corrected from
+"eq. 11", which holds the definitions] for the lepton in the proton rest frame,
+the photon's rest-frame energy eps' = Gamma eps (1 - beta cos theta), the
+Lorentz transformation of the lepton energy). [Round 2, finding 2: this
+quadrature is the exact-beta, exact-aberration chain, not the paper's head-on
+CDF; it is renamed an exact-chain self-check in R2 stage 3 and A8 is re-run
+against the reference's transcription of eqs. 58 to 64.]
 
 `tools/bh_sampler_dump ka2008 --bath mono05 --gamma G` writes the fixture
 (item 4); `tests/archetypes/bh_ka2008.cpp` (`ARCHETYPES::bh_ka2008`, 276 s,
@@ -541,12 +542,12 @@ at eps'_hi ~ 7, 0.02 at ~25, 0.0025 at the envelope edge 92 (stage 2 table).
    envelope than D_max or a direct sampling of the longitudinal-momentum-weighted
    angular law would change the registered chain. The device loop is bounded
    (default 1e5 attempts) and counted; no overflow was seen in 1.7e8 attempts.
-3. **Literature PDFs unavailable**: the formula numbers (Blumenthal eq. 10 and
-   11, MOK 3D-1000/2000/3000, Heitler 26.6 and 26.14, KA2008 eqs. 58 to 64) are
-   quoted from the brief or memory; the laws are verified numerically (A1 against
-   Maximon, A2, the sign resolution of the closed form against the fully
-   differential law, A4, A5, A8 by independent quadrature). The referee should
-   compare the code comments with the printed equations.
+3. **Literature PDFs unavailable** [resolved in round 2: the referee verified
+   the three Born laws against the PDFs; identifications corrected in R2 stage
+   0]: the formula numbers were quoted from the brief or memory; the laws are
+   verified numerically (A1 against Maximon, A2, the sign resolution of the
+   closed form against the fully differential law, A4, A5, A8 by independent
+   quadrature).
 4. **A6** replaced by A1 plus A8 (contract provision). **A10** needs the `bhref`
    0.2 fixtures (not in the fork); the C++ fixtures (section 4 items 1 to 4) are
    in `tests/data/hadronic/cpp-sampler-candidate/` with their hashes above.
@@ -596,8 +597,8 @@ is known here only through the brief's summary.
 
 | stage | content | findings | status |
 | --- | --- | --- | --- |
-| 0 | source identifications corrected, verification flags removed, the asymptotic diagnostic | 8 | in progress |
-| 1 | the threshold cancellation of the energy law in double; A2 registered for `double`; A1 to A5 for both instantiations; `qk_table.txt` vs the reference | 1 (P1) | not started |
+| 0 | source identifications corrected, verification flags removed, the asymptotic diagnostic | 8 | done (hash in the stage-1 entry) |
+| 1 | the threshold cancellation of the energy law in double; A2 registered for `double`; A1 to A5 for both instantiations; `qk_table.txt` vs the reference | 1 (P1) | in progress |
 | 2 | photon-energy marginal near threshold; standard errors in the moments fixtures; zero-variance columns; fixtures at fixed N; the full-sampled-density budget | 3, 7 | not started |
 | 3 | A8 against the reference's KA2008 CDF with the head-on map; the exact-chain quadrature renamed as a self-check; applicability corrected | 2 (P1) | not started |
 | 4 | A12 by decision (b): fixed N, literal tolerances, the reference's Born-chain <D>; the box spectrum against the reference's histograms | 4 (P1) | not started |
@@ -617,3 +618,27 @@ comparison a labelled diagnostic, failing nodes listed, no uncertainty escape.
 ### R2 stage 0 (finding 8, documentation)
 
 - stage 0 started, HEAD `2d886a6`.
+- Identifications corrected (who verified what: the referee, Codex 1, review
+  of 2026-10-27, checked the algebra, signs and normalisation of the three Born
+  laws against `Literature/Motz_1969.pdf` and `Literature/Blumenthal_1970.pdf`;
+  the page and formula numbers below are those of the referee's summary in the
+  round-2 brief; this session still has no access to the PDFs):
+
+  | law | round 1 (wrong or unverified) | round 2 (corrected, verified by the referee) | where |
+  | --- | --- | --- | --- |
+  | angle-integrated energy law dsigma/dE'+ | "Blumenthal 1970 eq. 10 (= MOK 3D-1000)", unverified | Motz, Olsen and Koch 1969 formula **3D-1000**, citing Heitler 1954 p. 258 eq. (8) | `bh_restframe.h` header and law-1 comment; `bh_sampler_dump.cpp` qk-table `laws` header |
+  | single-lepton energy-angle law d^2sigma/(dE'+ dcos theta'+) | "MOK 3D-2000, number from memory"; Blumenthal "eq. 11" in the lab-spectrum file | MOK **3D-2000 = Blumenthal 1970 eq. (10)**, definitions in his eq. (11); the numerically fixed signs (s0 = -1, sL = -1, se = +1, sQ = +1) are the paper's | `bh_restframe.h` header and law-3 comment; `bh_lab_spectrum.h`; `bh_sampler_dump.cpp` (qk-table and lab-CDF headers) |
+  | fully differential law | "Heitler 26.6 = MOK 3D-3000", unverified | MOK **3D-3000**, Heitler 1954 p. 257 eq. (6) | `bh_restframe.h` (law-2 comments); `bh_restframe.cpp` section title |
+
+- Every "transcribed without the PDF / to be verified / from memory" flag in
+  `src/`, `tools/`, `tests/` is removed (`grep` finds none); the round-1 report
+  passages keep their text with a bracketed round-2 note where the claim is now
+  verified or corrected.
+- Asymptotic diagnostic (`bh_restframe.cpp`, A3): now q_k eps'/(4 ln^2 eps')
+  with its leading-order limit 3/14 (from sigma~ -> (28/9) ln k and phi ->
+  (8/3) k ln^3 k: q_k -> (6/7) ln^2 k / k). Fact: 0.45885, 0.32367, 0.26779,
+  0.24496, 0.23209 at eps' = 10, 30, 100, 300, 1000 (eq. 3.7: 0.45932, 0.32545,
+  0.26821, 0.24444, 0.23214), approaching 0.21429 slowly (subleading terms of
+  relative order 1/ln k). `ARCHETYPES::bh_restframe` still 20 of 20.
+- The shipped `qk_table.txt` header still carries the round-1 `laws` string;
+  it is regenerated in R2 stage 1 (the energy law changes there).
