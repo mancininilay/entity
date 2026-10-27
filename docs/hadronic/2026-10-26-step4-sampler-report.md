@@ -597,7 +597,7 @@ is known here only through the brief's summary.
 
 | stage | content | findings | status |
 | --- | --- | --- | --- |
-| 0 | source identifications corrected, verification flags removed, the asymptotic diagnostic | 8 | done (hash in the stage-1 entry) |
+| 0 | source identifications corrected, verification flags removed, the asymptotic diagnostic | 8 | done, `88f868a` |
 | 1 | the threshold cancellation of the energy law in double; A2 registered for `double`; A1 to A5 for both instantiations; `qk_table.txt` vs the reference | 1 (P1) | in progress |
 | 2 | photon-energy marginal near threshold; standard errors in the moments fixtures; zero-variance columns; fixtures at fixed N; the full-sampled-density budget | 3, 7 | not started |
 | 3 | A8 against the reference's KA2008 CDF with the head-on map; the exact-chain quadrature renamed as a self-check; applicability corrected | 2 (P1) | not started |
@@ -642,3 +642,8 @@ comparison a labelled diagnostic, failing nodes listed, no uncertainty escape.
   relative order 1/ln k). `ARCHETYPES::bh_restframe` still 20 of 20.
 - The shipped `qk_table.txt` header still carries the round-1 `laws` string;
   it is regenerated in R2 stage 1 (the energy law changes there).
+- stage 0 done, commit `88f868a`, pushed.
+
+### R2 stage 1 (finding 1, P1: the threshold cancellation in double)
+
+- stage 1 started, HEAD `88f868a`.
