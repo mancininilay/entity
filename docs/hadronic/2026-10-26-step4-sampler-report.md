@@ -1186,8 +1186,8 @@ three items, resolved here in four stages. Same staging discipline.
 
 | stage | content | status |
 | --- | --- | --- |
-| 1 | the generic-symmetry tolerance selected by significand width | done (this commit) |
-| 2 | Claude 3's F8: the calibrated weighted two-sample test of `COMPARISON.md`; C++ log-D histograms; A10 and the source spectra | not started |
+| 1 | the generic-symmetry tolerance selected by significand width | done, `cf0363d` |
+| 2 | Claude 3's F8: the calibrated weighted two-sample test of `COMPARISON.md`; C++ log-D histograms; A10 and the source spectra | in progress |
 | 3 | A8 wording | not started |
 | 4 | closure: full ctest single and double, the A10 table | not started |
 
@@ -1223,4 +1223,8 @@ three items, resolved here in four stages. Same staging discipline.
 - On arm64 the `long double` instance now takes the 53-bit branch and checks
   1.54e-12 against 1e-10. This is inferred from the rule: no arm64 machine
   is available here.
-- stage 1 done, this commit, pushed.
+- stage 1 done, commit `cf0363d`, pushed.
+
+### R3 stage 2 (F8: the calibrated weighted two-sample test)
+
+- stage 2 started, HEAD `cf0363d`.
