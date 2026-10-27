@@ -1167,3 +1167,60 @@ Defects found in this round beyond the eight (stated):
 Stages 0 to 6 were all reached and completed; the table in R2.0 gives the
 commits; stage 6 closed at `48cc0e2`. Branch `dev/hadronic-sampler`; the report is this file.
 - stage 6 done, commit `48cc0e2`, pushed.
+
+---
+
+# Round 3 (three bounded closure items, 2026-10-27)
+
+`dev/hadronic-sampler`, pulled at `395a837`. That is the round-2 HEAD
+`8b2d25f` plus two data commits by Claude 1:
+- `9602fcf`: the frozen `bhref` 0.2.0 fixtures under
+  `tests/data/hadronic/bhref-0.2.0/`, the tests repointed there, and the
+  candidate directory removed.
+- `395a837`: the `bhref-0.2.0-suppl1/` log-D histograms and `COMPARISON.md`.
+
+The referee's closure (Codex 1) confirmed findings 1 to 8 fixed. It holds for
+three items, resolved here in four stages. Same staging discipline.
+
+## R3.0 Stage list
+
+| stage | content | status |
+| --- | --- | --- |
+| 1 | the generic-symmetry tolerance selected by significand width | done (this commit) |
+| 2 | Claude 3's F8: the calibrated weighted two-sample test of `COMPARISON.md`; C++ log-D histograms; A10 and the source spectra | not started |
+| 3 | A8 wording | not started |
+| 4 | closure: full ctest single and double, the A10 table | not started |
+
+## R3.1 Stage log
+
+### R3 stage 1 (tolerance by significand width)
+
+- stage 1 started, HEAD `395a837`.
+- **Defect.** `bh_restframe.cpp` chose the implementation tolerance of the
+  generic-node e-/e+ symmetry of g by type identity:
+  `std::is_same_v<T, double> ? 1e-10 : 1e-12`. On arm64, `long double` has a
+  53-bit significand. Its residual is then the double one, 1.54e-12, and the
+  `long double` instance failed although the identical calculation passes as
+  `double`.
+- **Fix.** `significand_tolerance<T>()` selects by
+  `std::numeric_limits<T>::digits`:
+  - 53 bits gives 1e-10 (the measured accuracy of the laws with a 53-bit
+    significand). This covers binary64: `double`, and `long double` on arm64
+    and MSVC.
+  - 64 bits gives 1e-12 (x86 extended, the round-1 value).
+  - Wider formats also get 1e-12, not tightened: 106-bit double-double and
+    113-bit binary128.
+  - 54 to 63 bits (no format in use) gives 1e-10.
+  - Below 53 bits is a compile-time error.
+  - The check's name now prints the width.
+- No contract threshold changes. The `if constexpr (std::is_same_v<T, double>)`
+  gates that remain only choose which checks run (sign uniqueness and law 2
+  run once, in the `double` instance), not tolerances.
+- Result (`logs-step4-r3-stage1-bh_restframe.log`, x86-64): 53-bit
+  (`double`) 1.54e-12 against 1e-10; 64-bit (`long double`) 2.3e-14 against
+  1e-12. `ARCHETYPES::bh_restframe` passes 36 contract and 25
+  implementation-chosen checks.
+- On arm64 the `long double` instance now takes the 53-bit branch and checks
+  1.54e-12 against 1e-10. This is inferred from the rule: no arm64 machine
+  is available here.
+- stage 1 done, this commit, pushed.

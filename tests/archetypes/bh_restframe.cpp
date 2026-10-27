@@ -36,6 +36,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <limits>
 #include <cstdio>
 #include <exception>
 #include <fstream>
@@ -172,6 +173,22 @@ namespace {
     return x;
   }
 
+  /**
+   * Implementation-chosen tolerance of a law evaluated in T, selected by the significand width
+   * std::numeric_limits<T>::digits, not by the type (round 3):
+   *   53 bits (IEEE binary64: double, and long double on arm64 and MSVC) -> 1e-10, the measured accuracy
+   *   of the laws with a 53-bit significand;
+   *   64 bits (x86 extended long double) and wider (106-bit double-double, 113-bit binary128) -> 1e-12, the
+   *   round-1 value for the 64-bit evaluation (not tightened for the wider formats);
+   *   54 to 63 bits (no format in use) -> 1e-10; below 53 bits -> not supported (compile-time error).
+   */
+  template <class T>
+  constexpr double significand_tolerance() {
+    constexpr int d = std::numeric_limits<T>::digits;
+    static_assert(d >= 53, "the rest-frame laws are not specified below a 53-bit significand");
+    return d >= 64 ? 1.0e-12 : 1.0e-10;
+  }
+
   // ---------------------------------------------------------------------- //
   // A1 and the symmetry of g
   // ---------------------------------------------------------------------- //
@@ -226,11 +243,13 @@ namespace {
     }
     check_true_k(CONTRACT, "A2: e-/e+ symmetry of g, exactly complementary energies", bitwise,
                  "g(E') == g(eps' - E') bitwise at 12 (eps', E') pairs");
-    // round 2: the tolerance is that of the instantiation's evaluation (1e-12 was
-    // set in round 1 for the 64-bit long double evaluation; in double the law is
-    // accurate to <= 1e-10, measured against __float128, report R2 stage 1)
-    impl_abs("A2: e-/e+ symmetry of g at generic nodes (input rounding of eps' - E' plus evaluation)", gen,
-             std::is_same_v<T, double> ? 1.0e-10 : 1.0e-12);
+    // the tolerance is that of the evaluation's significand width (round 3; round 2 selected it by type
+    // identity, which fails a 53-bit long double): 1e-12 was set in round 1 for the 64-bit x86 long double;
+    // with a 53-bit significand the law is accurate to <= 1e-10 (measured against __float128, report R2
+    // stage 1)
+    impl_abs("A2: e-/e+ symmetry of g at generic nodes (input rounding of eps' - E' plus evaluation; " +
+               std::to_string(std::numeric_limits<T>::digits) + "-bit significand)",
+             gen, significand_tolerance<T>());
   }
 
   // ---------------------------------------------------------------------- //
