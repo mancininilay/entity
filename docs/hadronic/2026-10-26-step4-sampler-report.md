@@ -606,7 +606,7 @@ is known here only through the brief's summary.
 | 1 | the threshold cancellation of the energy law in double; A2 registered for `double`; A1 to A5 for both instantiations; `qk_table.txt` vs the reference | 1 (P1) | done, `efb39a2` |
 | 2 | photon-energy marginal near threshold; standard errors in the moments fixtures; zero-variance columns; fixtures at fixed N; the full-sampled-density budget | 3, 7 | done, `d778eb0` |
 | 3 | A8 against the reference's KA2008 CDF with the head-on map; the exact-chain quadrature renamed as a self-check; applicability corrected | 2 (P1) | done, `17c3f7d` |
-| 4 | A12 by decision (b): fixed N, literal tolerances, the reference's Born-chain <D>; the box spectrum against the reference's histograms | 4 (P1) | done (this commit); one registered failure (A12 cost, 1 node of 466) |
+| 4 | A12 by decision (b): fixed N, literal tolerances, the reference's Born-chain <D>; the box spectrum against the reference's histograms | 4 (P1) | done, `113788a`; one registered failure (A12 cost, 1 node of 466) |
 | 5 | sampler counters in the MPI reduction and the ledger file; a forced-overflow test | 5 | not started |
 | 6 | A10 inside ctest; full ctest single and double; resolution log | all | not started |
 
@@ -1022,4 +1022,4 @@ threshold error). A3 asymptotic diagnostic unchanged (stage 0).
   (exit 134 after its summary). They are now released before finalize, and
   the tables and spectrum groups exit with 0. The verdicts above are
   unaffected.
-- stage 4 done, this commit, pushed (one registered failure: the A12 cost at Gamma_p 76.53).
+- stage 4 done, commit `113788a`, pushed (one registered failure: the A12 cost at Gamma_p 76.53).
