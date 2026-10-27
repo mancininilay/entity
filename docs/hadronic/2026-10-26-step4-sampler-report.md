@@ -579,3 +579,41 @@ tools/bh_sampler_fixtures.sh build/tools/bh_sampler_dump tests/data/hadronic/cpp
 cmake -S . -B build-bhproto -G Ninja -D TESTS=OFF -D output=ON -D precision=single -D mpi=OFF -D pgen=bh_proto \
       -D CMAKE_PREFIX_PATH="$HOME/.entity/kokkos;$HOME/.entity/adios2" && cmake --build build-bhproto --target entity.xc
 ```
+
+---
+
+# Round 2 (referee findings, 2026-10-27)
+
+Claude 1 (Claude Code cloud session), 2026-10-27, against the round-2 brief
+(`2026-10-27-claude1-cloud-brief-step4-round2.md`). Branch
+`dev/hadronic-sampler`, pulled at `2d886a6` (round-1 HEAD `1a520c1` plus the
+data commit with `tests/data/hadronic/bhref-0.2.0-candidate/`, the Python
+reference's unfrozen fixtures). Same staging discipline as round 1. The referee
+review (Codex 1, `Resources/p2-hadronic/reviews/2026-10-27-codex1-cpp-sampler.md`)
+is known here only through the brief's summary.
+
+## R2.0 Stage list (round-2 brief section 2)
+
+| stage | content | findings | status |
+| --- | --- | --- | --- |
+| 0 | source identifications corrected, verification flags removed, the asymptotic diagnostic | 8 | in progress |
+| 1 | the threshold cancellation of the energy law in double; A2 registered for `double`; A1 to A5 for both instantiations; `qk_table.txt` vs the reference | 1 (P1) | not started |
+| 2 | photon-energy marginal near threshold; standard errors in the moments fixtures; zero-variance columns; fixtures at fixed N; the full-sampled-density budget | 3, 7 | not started |
+| 3 | A8 against the reference's KA2008 CDF with the head-on map; the exact-chain quadrature renamed as a self-check; applicability corrected | 2 (P1) | not started |
+| 4 | A12 by decision (b): fixed N, literal tolerances, the reference's Born-chain <D>; the box spectrum against the reference's histograms | 4 (P1) | not started |
+| 5 | sampler counters in the MPI reduction and the ledger file; a forced-overflow test | 5 | not started |
+| 6 | A10 inside ctest; full ctest single and double; resolution log | all | not started |
+
+Decisions applied (Nilay, 2026-10-27): (a) q_k from the Born machinery in the
+production tables is a later step; until then A7 weighted against the step-1
+I/J stays a registered failure and the comparison with the chain's own
+quadrature a diagnostic. (b) A12 until (a) lands: N = 2e5 packets per node,
+the literal tolerances (cost 1%, pair number and energy per paid energy 2%)
+against the reference's Born-chain <D> (`moments_<bath>.txt`), the step-1 I/J
+comparison a labelled diagnostic, failing nodes listed, no uncertainty escape.
+
+## R2.1 Stage log
+
+### R2 stage 0 (finding 8, documentation)
+
+- stage 0 started, HEAD `2d886a6`.
