@@ -1,0 +1,330 @@
+Test project /home/user/entity/build-double
+      Start  1: GLOBAL::global
+ 1/95 Test  #1: GLOBAL::global ....................   Passed    0.01 sec
+      Start  2: GLOBAL::enums
+ 2/95 Test  #2: GLOBAL::enums .....................   Passed    0.00 sec
+      Start  3: GLOBAL::kokkos_aliases
+ 3/95 Test  #3: GLOBAL::kokkos_aliases ............   Passed    0.00 sec
+      Start  4: GLOBAL::directions
+ 4/95 Test  #4: GLOBAL::directions ................   Passed    0.00 sec
+      Start  5: GLOBAL::comparators
+ 5/95 Test  #5: GLOBAL::comparators ...............   Passed    0.00 sec
+      Start  6: GLOBAL::numeric
+ 6/95 Test  #6: GLOBAL::numeric ...................   Passed    0.00 sec
+      Start  7: GLOBAL::param_container
+ 7/95 Test  #7: GLOBAL::param_container ...........   Passed    0.01 sec
+      Start  8: GLOBAL::sorting
+ 8/95 Test  #8: GLOBAL::sorting ...................   Passed    0.00 sec
+      Start  9: GLOBAL::tiling
+ 9/95 Test  #9: GLOBAL::tiling ....................   Passed    0.05 sec
+      Start 10: GLOBAL::traits_archetypes
+10/95 Test #10: GLOBAL::traits_archetypes .........   Passed    0.00 sec
+      Start 11: GLOBAL::traits_metric
+11/95 Test #11: GLOBAL::traits_metric .............   Passed    0.00 sec
+      Start 12: GLOBAL::traits_pgen
+12/95 Test #12: GLOBAL::traits_pgen ...............   Passed    0.00 sec
+      Start 13: GLOBAL::traits_policies
+13/95 Test #13: GLOBAL::traits_policies ...........   Passed    0.00 sec
+      Start 14: METRICS::minkowski
+14/95 Test #14: METRICS::minkowski ................   Passed    0.03 sec
+      Start 15: METRICS::vec_trans
+15/95 Test #15: METRICS::vec_trans ................   Passed    0.01 sec
+      Start 16: METRICS::coord_trans
+16/95 Test #16: METRICS::coord_trans ..............   Passed    0.04 sec
+      Start 17: METRICS::sph-qsph
+17/95 Test #17: METRICS::sph-qsph .................   Passed    0.00 sec
+      Start 18: METRICS::ks-qks
+18/95 Test #18: METRICS::ks-qks ...................   Passed    0.01 sec
+      Start 19: METRICS::sr-cart-sph
+19/95 Test #19: METRICS::sr-cart-sph ..............   Passed    0.02 sec
+      Start 20: METRICS::ks-qks-4d
+20/95 Test #20: METRICS::ks-qks-4d ................   Passed    0.05 sec
+      Start 21: KERNELS::faraday_mink
+21/95 Test #21: KERNELS::faraday_mink .............   Passed    0.05 sec
+      Start 22: KERNELS::ampere_mink
+22/95 Test #22: KERNELS::ampere_mink ..............   Passed    0.04 sec
+      Start 23: KERNELS::deposit
+23/95 Test #23: KERNELS::deposit ..................   Passed    0.05 sec
+      Start 24: KERNELS::digital_filter
+24/95 Test #24: KERNELS::digital_filter ...........   Passed    0.01 sec
+      Start 25: KERNELS::particle_moments
+25/95 Test #25: KERNELS::particle_moments .........   Passed    0.00 sec
+      Start 26: KERNELS::fields_to_phys
+26/95 Test #26: KERNELS::fields_to_phys ...........   Passed    0.00 sec
+      Start 27: KERNELS::prtls_to_phys
+27/95 Test #27: KERNELS::prtls_to_phys ............   Passed    0.00 sec
+      Start 28: KERNELS::gca_pusher
+28/95 Test #28: KERNELS::gca_pusher ...............   Passed    0.16 sec
+      Start 29: KERNELS::prtl_bc
+29/95 Test #29: KERNELS::prtl_bc ..................   Passed    0.01 sec
+      Start 30: KERNELS::flds_bc
+30/95 Test #30: KERNELS::flds_bc ..................   Passed    0.01 sec
+      Start 31: KERNELS::pusher
+31/95 Test #31: KERNELS::pusher ...................   Passed    0.23 sec
+      Start 32: KERNELS::ext_force
+32/95 Test #32: KERNELS::ext_force ................   Passed    0.03 sec
+      Start 33: KERNELS::reduced_stats
+33/95 Test #33: KERNELS::reduced_stats ............   Passed    0.14 sec
+      Start 34: KERNELS::custom_emission
+34/95 Test #34: KERNELS::custom_emission ..........   Passed    0.01 sec
+      Start 35: KERNELS::custom_prtl_update
+35/95 Test #35: KERNELS::custom_prtl_update .......   Passed    0.01 sec
+      Start 36: KERNELS::injectors_payloads
+36/95 Test #36: KERNELS::injectors_payloads .......   Passed    0.01 sec
+      Start 37: KERNELS::reduced_stats_weights
+37/95 Test #37: KERNELS::reduced_stats_weights ....   Passed    0.01 sec
+      Start 38: KERNELS::bh_loss_tables
+38/95 Test #38: KERNELS::bh_loss_tables ...........   Passed    0.01 sec
+      Start 39: KERNELS::bh_loss_overflow
+39/95 Test #39: KERNELS::bh_loss_overflow .........   Passed    0.00 sec
+      Start 40: KERNELS::bh_loss_huge
+40/95 Test #40: KERNELS::bh_loss_huge .............   Passed    0.01 sec
+      Start 41: KERNELS::bh_loss_t9
+41/95 Test #41: KERNELS::bh_loss_t9 ...............   Passed    0.05 sec
+      Start 42: KERNELS::bh_loss_tags
+42/95 Test #42: KERNELS::bh_loss_tags .............   Passed    0.00 sec
+      Start 43: KERNELS::bh_loss_above
+43/95 Test #43: KERNELS::bh_loss_above ............   Passed    0.01 sec
+      Start 44: KERNELS::bh_loss_subcycling
+44/95 Test #44: KERNELS::bh_loss_subcycling .......   Passed    0.12 sec
+      Start 45: KERNELS::bh_loss_t6
+45/95 Test #45: KERNELS::bh_loss_t6 ...............   Passed    3.47 sec
+      Start 46: KERNELS::bh_loss_t5
+46/95 Test #46: KERNELS::bh_loss_t5 ...............   Passed    4.63 sec
+      Start 47: KERNELS::bh_loss_t5fine
+47/95 Test #47: KERNELS::bh_loss_t5fine ...........   Passed   29.32 sec
+      Start 48: KERNELS::bh_loss_t5b
+48/95 Test #48: KERNELS::bh_loss_t5b ..............   Passed   69.54 sec
+      Start 49: KERNELS::bh_pairs_t10
+49/95 Test #49: KERNELS::bh_pairs_t10 .............   Passed    0.21 sec
+      Start 50: KERNELS::bh_pairs_poisson
+50/95 Test #50: KERNELS::bh_pairs_poisson .........   Passed    0.30 sec
+      Start 51: KERNELS::bh_pairs_none
+51/95 Test #51: KERNELS::bh_pairs_none ............   Passed    0.02 sec
+      Start 52: KERNELS::bh_pairs_energy
+52/95 Test #52: KERNELS::bh_pairs_energy ..........   Passed    0.46 sec
+      Start 53: KERNELS::bh_pairs_momentum
+53/95 Test #53: KERNELS::bh_pairs_momentum ........   Passed    0.43 sec
+      Start 54: KERNELS::bh_pairs_t12
+54/95 Test #54: KERNELS::bh_pairs_t12 .............   Passed    0.10 sec
+      Start 55: KERNELS::bh_pairs_t10b
+55/95 Test #55: KERNELS::bh_pairs_t10b ............   Passed    0.02 sec
+      Start 56: KERNELS::bh_pairs_texp
+56/95 Test #56: KERNELS::bh_pairs_texp ............   Passed    0.04 sec
+      Start 57: KERNELS::bh_pairs_r1
+57/95 Test #57: KERNELS::bh_pairs_r1 ..............   Passed    0.05 sec
+      Start 58: KERNELS::bh_pairs_r2
+58/95 Test #58: KERNELS::bh_pairs_r2 ..............   Passed    0.10 sec
+      Start 59: KERNELS::bh_pairs_r3
+59/95 Test #59: KERNELS::bh_pairs_r3 ..............   Passed    0.01 sec
+      Start 60: KERNELS::bh_pairs_cmpi1
+60/95 Test #60: KERNELS::bh_pairs_cmpi1 ...........   Passed    0.01 sec
+      Start 61: KERNELS::bh_sampler_tables
+61/95 Test #61: KERNELS::bh_sampler_tables ........Subprocess aborted***Exception: 166.38 sec
+bh_sampler: real_t = double, Kokkos default execution space = OpenMP
+(diag) sampler tables: 113 eps' nodes, 256 x 256 cells, 5067 cumulative nodes, 30.09 MB on the device (budget 64 MB), built in 44.3 s
+---- device tables and chains vs the host chain ----
+PASS: mono05: device sampler tables within 64 MB (bytes) : 3.009282e+07 (tolerance 6.711e+07)
+PASS: mono05: device chain vs host chain, <D> at Gamma_p = 2.3 (1e6 draws each), |dev|/s.e. : 7.937815e-02 (tolerance 4.000e+00)
+PASS: mono05: device draws inside [D_min, D_max] at Gamma_p = 2.3 : 0.000000e+00 (tolerance 0.000e+00)
+PASS: mono05: device weighted chain: E_p[1/D] <D>_device = 1 at Gamma_p = 2.3, |dev|/s.e. : 1.067130e+00 (tolerance 4.000e+00)
+(diag) mono05 Gamma_p 2.3: device <D> 4.05805 +- 0.00056, host 4.05811, I/J 4.06714, min/max D 2.7234 / 6.29; weighted: efficiency 0.6698, overflow 0; 0.69 us per unweighted draw (OpenMP), rng per draw 8.0
+PASS: mono05: device chain vs host chain, <D> at Gamma_p = 3 (1e6 draws each), |dev|/s.e. : 2.618681e-01 (tolerance 4.000e+00)
+PASS: mono05: device draws inside [D_min, D_max] at Gamma_p = 3 : 0.000000e+00 (tolerance 0.000e+00)
+PASS: mono05: device weighted chain: E_p[1/D] <D>_device = 1 at Gamma_p = 3, |dev|/s.e. : 8.997064e-01 (tolerance 4.000e+00)
+(diag) mono05 Gamma_p 3: device <D> 5.13897 +- 0.00157, host 5.13955, I/J 5.15861, min/max D 2.2746 / 13.89; weighted: efficiency 0.4014, overflow 0; 0.69 us per unweighted draw (OpenMP), rng per draw 8.0
+PASS: mono05: device chain vs host chain, <D> at Gamma_p = 10 (1e6 draws each), |dev|/s.e. : 3.271212e-01 (tolerance 4.000e+00)
+PASS: mono05: device draws inside [D_min, D_max] at Gamma_p = 10 : 0.000000e+00 (tolerance 0.000e+00)
+PASS: mono05: device weighted chain: E_p[1/D] <D>_device = 1 at Gamma_p = 10, |dev|/s.e. : 2.464000e-02 (tolerance 4.000e+00)
+(diag) mono05 Gamma_p 10: device <D> 11.19725 +- 0.01006, host 11.20191, I/J 11.18817, min/max D 2.0539 / 170.41; weighted: efficiency 0.0720, overflow 0; 0.76 us per unweighted draw (OpenMP), rng per draw 8.0
+PASS: mono05: device chain vs host chain, <D> at Gamma_p = 60 (1e6 draws each), |dev|/s.e. : 4.686836e-01 (tolerance 4.000e+00)
+PASS: mono05: device draws inside [D_min, D_max] at Gamma_p = 60 : 0.000000e+00 (tolerance 0.000e+00)
+PASS: mono05: device weighted chain: E_p[1/D] <D>_device = 1 at Gamma_p = 60, |dev|/s.e. : 2.231839e+00 (tolerance 4.000e+00)
+(diag) mono05 Gamma_p 60: device <D> 25.22974 +- 0.06423, host 25.27238, I/J 25.27395, min/max D 2.0491 / 3974.97; weighted: efficiency 0.0048, overflow 0; 0.66 us per unweighted draw (OpenMP), rng per draw 8.0
+(diag) sampler tables: 113 eps' nodes, 256 x 256 cells, 5067 cumulative nodes, 39.40 MB on the device (budget 64 MB), built in 45.7 s
+PASS: powerlaw: device sampler tables within 64 MB (bytes) : 3.939698e+07 (tolerance 6.711e+07)
+PASS: powerlaw: device chain vs host chain, <D> at Gamma_p = 1.05 (1e6 draws each), |dev|/s.e. : 1.098611e-01 (tolerance 4.000e+00)
+PASS: powerlaw: device draws inside [D_min, D_max] at Gamma_p = 1.05 : 0.000000e+00 (tolerance 0.000e+00)
+PASS: powerlaw: device weighted chain: E_p[1/D] <D>_device = 1 at Gamma_p = 1.05, |dev|/s.e. : 1.754391e-01 (tolerance 4.000e+00)
+(diag) powerlaw Gamma_p 1.05: device <D> 0.63081 +- 0.00004, host 0.63080, I/J 0.63122, min/max D 0.5097 / 0.80; weighted: efficiency 0.8220, overflow 0; 0.97 us per unweighted draw (OpenMP), rng per draw 8.0
+PASS: powerlaw: device chain vs host chain, <D> at Gamma_p = 1.3 (1e6 draws each), |dev|/s.e. : 3.523225e-01 (tolerance 4.000e+00)
+PASS: powerlaw: device draws inside [D_min, D_max] at Gamma_p = 1.3 : 0.000000e+00 (tolerance 0.000e+00)
+PASS: powerlaw: device weighted chain: E_p[1/D] <D>_device = 1 at Gamma_p = 1.3, |dev|/s.e. : 1.031457e-01 (tolerance 4.000e+00)
+(diag) powerlaw Gamma_p 1.3: device <D> 1.44727 +- 0.00047, host 1.44751, I/J 1.45262, min/max D 0.5135 / 4.45; weighted: efficiency 0.3919, overflow 0; 0.90 us per unweighted draw (OpenMP), rng per draw 8.0
+PASS: powerlaw: device chain vs host chain, <D> at Gamma_p = 3 (1e6 draws each), |dev|/s.e. : 3.450296e-01 (tolerance 4.000e+00)
+PASS: powerlaw: device draws inside [D_min, D_max] at Gamma_p = 3 : 0.000000e+00 (tolerance 0.000e+00)
+PASS: powerlaw: device weighted chain: E_p[1/D] <D>_device = 1 at Gamma_p = 3, |dev|/s.e. : 7.953848e-01 (tolerance 4.000e+00)
+(diag) powerlaw Gamma_p 3: device <D> 3.92312 +- 0.00259, host 3.92439, I/J 3.92232, min/max D 0.5493 / 37.16; weighted: efficiency 0.1390, overflow 0; 0.86 us per unweighted draw (OpenMP), rng per draw 8.0
+PASS: powerlaw: device chain vs host chain, <D> at Gamma_p = 10 (1e6 draws each), |dev|/s.e. : 2.027411e-01 (tolerance 4.000e+00)
+PASS: powerlaw: device draws inside [D_min, D_max] at Gamma_p = 10 : 0.000000e+00 (tolerance 0.000e+00)
+PASS: powerlaw: device weighted chain: E_p[1/D] <D>_device = 1 at Gamma_p = 10, |dev|/s.e. : 3.776648e-01 (tolerance 4.000e+00)
+(diag) powerlaw Gamma_p 10: device <D> 10.22404 +- 0.01046, host 10.22704, I/J 10.21349, min/max D 0.5371 / 356.85; weighted: efficiency 0.0468, overflow 0; 0.94 us per unweighted draw (OpenMP), rng per draw 8.0
+PASS: powerlaw: device chain vs host chain, <D> at Gamma_p = 25 (1e6 draws each), |dev|/s.e. : 3.753852e-01 (tolerance 4.000e+00)
+PASS: powerlaw: device draws inside [D_min, D_max] at Gamma_p = 25 : 0.000000e+00 (tolerance 0.000e+00)
+PASS: powerlaw: device weighted chain: E_p[1/D] <D>_device = 1 at Gamma_p = 25, |dev|/s.e. : 8.362894e-02 (tolerance 4.000e+00)
+(diag) powerlaw Gamma_p 25: device <D> 20.68649 +- 0.02712, host 20.70091, I/J 20.69310, min/max D 0.5361 / 1475.91; weighted: efficiency 0.0217, overflow 0; 0.95 us per unweighted draw (OpenMP), rng per draw 8.0
+bh_sampler summary: 29 passed, 0 failed
+Kokkos allocation "bh_s_cdfw" is being deallocated after Kokkos::finalize was called
+
+Backtrace:
+[0x55a656add139] 
+[0x55a656ab3f00] 
+[0x55a656add0fc] 
+[0x55a656a6da35] 
+[0x55a656a43436] 
+[0x55a656a43625] 
+[0x7fee24e47a76] 
+[0x7fee24e47bbe] 
+[0x7fee24e2a1d1] 
+[0x7fee24e2a28b] __libc_start_main
+[0x55a656a40ea5] 
+
+      Start 62: KERNELS::bh_sampler_a11
+62/95 Test #62: KERNELS::bh_sampler_a11 ...........   Passed   47.76 sec
+      Start 63: KERNELS::bh_sampler_identity
+63/95 Test #63: KERNELS::bh_sampler_identity ......   Passed   44.68 sec
+      Start 64: KERNELS::bh_sampler_spectrum
+64/95 Test #64: KERNELS::bh_sampler_spectrum ......Subprocess aborted***Exception:  96.78 sec
+bh_sampler: real_t = double, Kokkos default execution space = OpenMP
+(diag) sampler tables: 113 eps' nodes, 256 x 256 cells, 5067 cumulative nodes, 30.09 MB on the device (budget 64 MB), built in 44.3 s
+---- the spectrum of created pairs vs the reference's weighted-chain histograms (bhref candidate), mono05 and powerlaw, every reference Gamma_p inside the rate table ----
+(diag) mono05 Gamma_p 2.23125: 100000 pairs (N_eff 98871), reference ESS 988795, values outside the reference's edges 0; E- KS 0.00187 E+ KS 0.00299 cos- KS 0.00085 cos+ KS 0.00189 D KS 0.00253; 99% critical 0.00543
+(diag) mono05 Gamma_p 3: 100000 pairs (N_eff 91536), reference ESS 916016, values outside the reference's edges 0; E- KS 0.00513 E+ KS 0.00316 cos- KS 0.00292 cos+ KS 0.00195 D KS 0.00396; 99% critical 0.00564
+(diag) mono05 Gamma_p 10: 100000 pairs (N_eff 62393), reference ESS 622220, values outside the reference's edges 0; E- KS 0.00442 E+ KS 0.00362 cos- KS 0.00366 cos+ KS 0.00450 D KS 0.00372; 99% critical 0.00684
+(diag) sampler tables: 113 eps' nodes, 256 x 256 cells, 5067 cumulative nodes, 39.40 MB on the device (budget 64 MB), built in 45.8 s
+(diag) powerlaw Gamma_p 1.09375: 100000 pairs (N_eff 97269), reference ESS 972520, values outside the reference's edges 0; E- KS 0.00169 E+ KS 0.00247 cos- KS 0.00499 cos+ KS 0.00256 D KS 0.00239; 99% critical 0.00547
+(diag) powerlaw Gamma_p 3: 100000 pairs (N_eff 70182), reference ESS 701205, values outside the reference's edges 0; E- KS 0.00176 E+ KS 0.00276 cos- KS 0.00227 cos+ KS 0.00370 D KS 0.00223; 99% critical 0.00645
+(diag) powerlaw Gamma_p 10: 100000 pairs (N_eff 49724), reference ESS 498793, values outside the reference's edges 0; E- KS 0.00297 E+ KS 0.00154 cos- KS 0.00267 cos+ KS 0.00253 D KS 0.00149; 99% critical 0.00766
+PASS: spectrum: the kernel's weighted pairs vs the reference's weighted-chain histograms (E-, E+, cos-, cos+, D; binned weighted two-sample KS at 99% with Kish effective sizes, the A10 test), fraction of the 30 combinations passing (>= 95% required) : 1.000000e+00 (tolerance 9.500e-01)
+(diag) spectrum: not reachable by the box (outside the bath's rate table): mono05 Gamma_p 100 (rate table [2.1300, 91.8102]); powerlaw Gamma_p 100 (rate table [1.0478, 30.6107]); the unweighted-chain histograms of the reference are not used here (the kernel draws the weighted chain)
+bh_sampler summary: 1 passed, 0 failed
+Kokkos allocation "bh_s_cdfw" is being deallocated after Kokkos::finalize was called
+
+Backtrace:
+[0x55eac8825139] 
+[0x55eac87fbf00] 
+[0x55eac88250fc] 
+[0x55eac87b5a35] 
+[0x55eac878b436] 
+[0x55eac878b625] 
+[0x7fef48a47a76] 
+[0x7fef48a47bbe] 
+[0x7fef48a2a1d1] 
+[0x7fef48a2a28b] __libc_start_main
+[0x55eac8788ea5] 
+
+      Start 65: KERNELS::bh_reduction_timing
+65/95 Test #65: KERNELS::bh_reduction_timing ......   Passed    3.65 sec
+      Start 66: ARCHETYPES::energy_dist
+66/95 Test #66: ARCHETYPES::energy_dist ...........   Passed    0.00 sec
+      Start 67: ARCHETYPES::spatial_dist
+67/95 Test #67: ARCHETYPES::spatial_dist ..........   Passed    0.00 sec
+      Start 68: ARCHETYPES::field_setter
+68/95 Test #68: ARCHETYPES::field_setter ..........   Passed    0.01 sec
+      Start 69: ARCHETYPES::powerlaw
+69/95 Test #69: ARCHETYPES::powerlaw ..............   Passed    0.00 sec
+      Start 70: ARCHETYPES::pgen
+70/95 Test #70: ARCHETYPES::pgen ..................   Passed    0.00 sec
+      Start 71: ARCHETYPES::bh_physics
+71/95 Test #71: ARCHETYPES::bh_physics ............   Passed    2.75 sec
+      Start 72: ARCHETYPES::bh_fixtures
+72/95 Test #72: ARCHETYPES::bh_fixtures ...........   Passed    0.86 sec
+      Start 73: ARCHETYPES::bh_restframe
+73/95 Test #73: ARCHETYPES::bh_restframe ..........   Passed   18.62 sec
+      Start 74: ARCHETYPES::bh_chain_epsbias
+74/95 Test #74: ARCHETYPES::bh_chain_epsbias ......   Passed   60.06 sec
+      Start 75: ARCHETYPES::bh_chain_budget
+75/95 Test #75: ARCHETYPES::bh_chain_budget .......   Passed   71.17 sec
+      Start 76: ARCHETYPES::bh_chain_kinematics
+76/95 Test #76: ARCHETYPES::bh_chain_kinematics ...   Passed   23.97 sec
+      Start 77: ARCHETYPES::bh_chain_efficiency
+77/95 Test #77: ARCHETYPES::bh_chain_efficiency ...   Passed   46.61 sec
+      Start 78: ARCHETYPES::bh_chain_a9
+78/95 Test #78: ARCHETYPES::bh_chain_a9 ...........   Passed   43.74 sec
+      Start 79: ARCHETYPES::bh_chain_a7w
+79/95 Test #79: ARCHETYPES::bh_chain_a7w ..........***Failed  123.62 sec
+[DIAG] tables: 113 eps' nodes (16 per decade), n_s = 256, n_tau = 256; 29041 + 7463537 entries (30.0 MB in single precision); built in 15.1 s
+[DIAG] cumulatives: 5067 nodes in t = ln(eps' - 2), h = 0.0050; Phi(1000) = 7.0107780549e+06 (step-1 Cumulatives: 7.0107780549e+06)
+[DIAG] q_k grids: laws at 449 nodes, tables at 897 fine nodes (8 per interval), 6.0 s
+[DIAG] bath mono05: 466 Gamma nodes in [2.130009, 91.810223], Gamma_th 2.125000; eps tables mono (none)
+[DIAG] bath mono03: 465 Gamma nodes in [3.416954, 153.014134], Gamma_th 3.408333; eps tables mono (none)
+[DIAG] bath powerlaw: 429 Gamma nodes in [1.047817, 30.610669], Gamma_th 1.041667; eps tables 2709 cells per node in ln eps
+[DIAG] bath blackbody: 406 Gamma nodes in [1.012206, 24.170216], Gamma_th 1.001316; eps tables 3827 cells per node in ln eps
+[DIAG] bath mono05_mu100: 403 Gamma nodes in [2.126533, 5.050000], Gamma_th 2.125000; eps tables mono (none)
+
+== A7: the weighted chain, E_p[1/D] <D> = 1 at Gamma_p in {1.05 Gamma_th, 3, 10} ==
+[DIAG] A7 weighted mono05 Gamma 2.23125: N_acc 1000000, E_p[1/D] (I/J) = 1.00166 (15.6 s.e.), E_p[1/D] <D>_sampled = 1.00009 (0.8 s.e.), efficiency 0.7345, 1/min D = 0.3486
+[DIAG] A7 weighted mono05 Gamma 3.00000: N_acc 1000000, E_p[1/D] (I/J) = 1.00398 (13.1 s.e.), E_p[1/D] <D>_sampled = 1.00005 (0.2 s.e.), efficiency 0.4010, 1/min D = 0.4382
+[DIAG] A7 weighted mono05 Gamma 10.00000: N_acc 1000000, E_p[1/D] (I/J) = 0.99899 (1.3 s.e.), E_p[1/D] <D>_sampled = 0.99936 (0.8 s.e.), efficiency 0.0721, 1/min D = 0.4888
+[DIAG] A7 weighted mono03: Gamma_p = 3 outside the table [3.41695, 153.014], skipped
+[DIAG] A7 weighted mono03 Gamma 3.57875: N_acc 1000000, E_p[1/D] (I/J) = 1.00138 (13.5 s.e.), E_p[1/D] <D>_sampled = 0.99991 (0.9 s.e.), efficiency 0.7425, 1/min D = 0.1998
+[DIAG] A7 weighted mono03 Gamma 10.00000: N_acc 1000000, E_p[1/D] (I/J) = 0.99925 (1.3 s.e.), E_p[1/D] <D>_sampled = 0.99975 (0.4 s.e.), efficiency 0.1473, 1/min D = 0.2827
+[DIAG] A7 weighted powerlaw Gamma 1.09375: N_acc 1000000, E_p[1/D] (I/J) = 1.00313 (18.6 s.e.), E_p[1/D] <D>_sampled = 1.00034 (2.0 s.e.), efficiency 0.6214, 1/min D = 1.9755
+[DIAG] A7 weighted powerlaw Gamma 3.00000: N_acc 1000000, E_p[1/D] (I/J) = 0.99944 (0.9 s.e.), E_p[1/D] <D>_sampled = 0.99944 (0.9 s.e.), efficiency 0.1391, 1/min D = 1.6471
+[DIAG] A7 weighted powerlaw Gamma 10.00000: N_acc 1000000, E_p[1/D] (I/J) = 0.99915 (0.9 s.e.), E_p[1/D] <D>_sampled = 0.99946 (0.5 s.e.), efficiency 0.0470, 1/min D = 1.6399
+[DIAG] A7 weighted blackbody Gamma 1.05138: N_acc 1000000, E_p[1/D] (I/J) = 1.00332 (12.8 s.e.), E_p[1/D] <D>_sampled = 0.99976 (0.9 s.e.), efficiency 0.5259, 1/min D = 7.7743
+[DIAG] A7 weighted blackbody Gamma 3.00000: N_acc 1000000, E_p[1/D] (I/J) = 1.00097 (1.9 s.e.), E_p[1/D] <D>_sampled = 0.99946 (1.1 s.e.), efficiency 0.2218, 1/min D = 1.7762
+[DIAG] A7 weighted blackbody Gamma 10.00000: N_acc 1000000, E_p[1/D] (I/J) = 1.00064 (0.8 s.e.), E_p[1/D] <D>_sampled = 1.00066 (0.8 s.e.), efficiency 0.0790, 1/min D = 1.5050
+[DIAG] A7 weighted mono05_mu100: Gamma_p = 10 outside the table [2.12653, 5.05], skipped
+[DIAG] A7 weighted mono05_mu100 Gamma 2.23125: N_acc 1000000, E_p[1/D] (I/J) = 1.00165 (15.5 s.e.), E_p[1/D] <D>_sampled = 1.00008 (0.7 s.e.), efficiency 0.7341, 1/min D = 0.3475
+[DIAG] A7 weighted mono05_mu100 Gamma 3.00000: N_acc 1000000, E_p[1/D] (I/J) = 1.00412 (13.5 s.e.), E_p[1/D] <D>_sampled = 1.00019 (0.6 s.e.), efficiency 0.4009, 1/min D = 0.4416
+[FAIL] A7: E_p[1/D] (I/J) = 1 within 4 s.e., weighted chain, Gamma_p in {1.05 Gamma_th, 3, 10}, five baths: max |dev| / s.e. = 1.857468e+01 (tol 4.000e+00)
+[PASS] (impl) A7: E_p[1/D] <D>_sampled = 1 within 4 s.e. (<D> of the density the unweighted chain samples): max |dev| / s.e. = 2.020733e+00 (tol 4.000e+00)
+
+bh_chain summary: contract items 0 passed, 1 failed; implementation-chosen checks 1 passed, 0 failed; 124 s
+
+      Start 80: ARCHETYPES::bh_chain_a7
+80/95 Test #80: ARCHETYPES::bh_chain_a7 ...........   Passed  787.56 sec
+      Start 81: ARCHETYPES::bh_ka2008
+81/95 Test #81: ARCHETYPES::bh_ka2008 .............   Passed  264.73 sec
+      Start 82: ARCHETYPES::bh_sampler_fixtures
+82/95 Test #82: ARCHETYPES::bh_sampler_fixtures ...   Passed   18.30 sec
+      Start 83: FRAMEWORK::parameters
+83/95 Test #83: FRAMEWORK::parameters .............   Passed    0.07 sec
+      Start 84: FRAMEWORK::particles
+84/95 Test #84: FRAMEWORK::particles ..............   Passed    0.00 sec
+      Start 85: FRAMEWORK::particles_sort
+85/95 Test #85: FRAMEWORK::particles_sort .........   Passed    0.00 sec
+      Start 86: FRAMEWORK::fields
+86/95 Test #86: FRAMEWORK::fields .................   Passed    0.01 sec
+      Start 87: FRAMEWORK::grid_mesh
+87/95 Test #87: FRAMEWORK::grid_mesh ..............   Passed    0.01 sec
+      Start 88: FRAMEWORK::comm-nompi
+88/95 Test #88: FRAMEWORK::comm-nompi .............   Passed    0.00 sec
+      Start 89: FRAMEWORK::checkpoint-extents
+89/95 Test #89: FRAMEWORK::checkpoint-extents .....   Passed    0.03 sec
+      Start 90: FRAMEWORK::checkpoint-data
+90/95 Test #90: FRAMEWORK::checkpoint-data ........   Passed    0.02 sec
+      Start 91: FRAMEWORK::spectra
+91/95 Test #91: FRAMEWORK::spectra ................   Passed    0.02 sec
+      Start 92: OUTPUT::stats
+92/95 Test #92: OUTPUT::stats .....................   Passed    0.01 sec
+      Start 93: OUTPUT::fields
+93/95 Test #93: OUTPUT::fields ....................   Passed    0.00 sec
+      Start 94: OUTPUT::writer-nompi
+94/95 Test #94: OUTPUT::writer-nompi ..............   Passed    0.03 sec
+      Start 95: HADRONIC::bh_proto_params
+95/95 Test #95: HADRONIC::bh_proto_params .........   Passed    0.10 sec
+
+97% tests passed, 3 tests failed out of 95
+
+Total Test time (real) = 1931.56 sec
+
+The following tests FAILED:
+	 61 - KERNELS::bh_sampler_tables (Subprocess aborted)
+	 64 - KERNELS::bh_sampler_spectrum (Subprocess aborted)
+	 79 - ARCHETYPES::bh_chain_a7w (Failed)
+Errors while running CTest
+exit 8
+
+# rerun after the exit-time fix (113788a):
+Test project /home/user/entity/build-double
+    Start 61: KERNELS::bh_sampler_tables
+1/2 Test #61: KERNELS::bh_sampler_tables .......   Passed  173.99 sec
+    Start 65: KERNELS::bh_sampler_spectrum
+2/2 Test #65: KERNELS::bh_sampler_spectrum .....   Passed  108.48 sec
+
+100% tests passed out of 2
+
+Total Test time (real) = 282.48 sec
+exit 0

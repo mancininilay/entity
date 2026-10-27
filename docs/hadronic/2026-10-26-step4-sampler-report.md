@@ -608,7 +608,7 @@ is known here only through the brief's summary.
 | 3 | A8 against the reference's KA2008 CDF with the head-on map; the exact-chain quadrature renamed as a self-check; applicability corrected | 2 (P1) | done, `17c3f7d` |
 | 4 | A12 by decision (b): fixed N, literal tolerances, the reference's Born-chain <D>; the box spectrum against the reference's histograms | 4 (P1) | done, `113788a`; one registered failure (A12 cost, 1 node of 466) |
 | 5 | sampler counters in the MPI reduction and the ledger file; a forced-overflow test | 5 | done, `f34576b` |
-| 6 | A10 inside ctest; full ctest single and double; resolution log | all | in progress |
+| 6 | A10 inside ctest; full ctest single and double; resolution log | all | done (this commit) |
 
 Decisions applied (Nilay, 2026-10-27): (a) q_k from the Born machinery in the
 production tables is a later step; until then A7 weighted against the step-1
@@ -1067,3 +1067,103 @@ threshold error). A3 asymptotic diagnostic unchanged (stage 0).
 ### R2 stage 6 (A10 inside ctest, full ctest, closure)
 
 - stage 6 started, HEAD `f34576b` (the A10 test pushed early as `43fabd3`).
+- **A10 inside ctest.**
+  - `tests/archetypes/bh_sampler_fixtures.cpp` (`ARCHETYPES::bh_sampler_fixtures`)
+    compares the C++ fixtures with the reference's, file against file. Its
+    four groups are qk, moments, hist and a8.
+  - Results on the committed fixtures:
+    - qk columns: <= 6.2e-8 (tol 1e-4).
+    - Moments: 13849 comparisons within 3.64 combined s.e. (tol 4).
+    - Deterministic columns: to 9.5e-13 (tol 1e-12).
+    - Histograms: 80 of 80 combinations pass at 99% (>= 95% required).
+    - Head-on A8 KS: 1.3e-3, 8.0e-4, 5.8e-4 (tol 0.02).
+  - All pass.
+- **Full ctest** (logs `logs-step4-r2-stage6-ctest-single.log`,
+  `logs-step4-r2-stage6-ctest-double.log` and
+  `logs-step4-r2-stage6-ctest-double-a12.log`). Both builds register 96
+  tests, and every one of them was run in both.
+  - **Single precision** (`build`, OpenMP):
+    - 95 tests by `ctest -E KERNELS::bh_sampler_a12`, 1908 s: **94 pass,
+      1 fails**. The failure is `ARCHETYPES::bh_chain_a7w`, the registered
+      A7-weighted item.
+    - A12 single is the stage-4 run (`113788a`), whose test code differs
+      only in the exit-time release and one diagnostic line, both after the
+      verdicts: 6 of 7 verdicts pass, and the one failure is the registered
+      cost node.
+    - Totals: **94 pass, 2 registered failures**.
+  - **Double precision** (`build-double`):
+    - 95 tests except A12, 1932 s: 92 passed and 3 failed. The failures were
+      `bh_chain_a7w` (registered) and `bh_sampler_tables` and
+      `bh_sampler_spectrum`, which aborted at exit (the stage-4 defect, fixed
+      in `113788a`). Rerun after the fix, both pass (174 s, 108 s).
+    - A12 alone through ctest, 2493 s: the same single failing node as in
+      single precision, Gamma_p 76.53 with cost -1.285e-2 at 2.9 s.e. The
+      device kinematics are in double after the draw in both builds, which
+      is why the two precisions give the same result.
+    - The noise diagnostic expects **0.41 nodes** beyond the 1% cost
+      tolerance from sampling noise alone, so P(>= 1 node) is 0.34, and
+      1e-4 nodes beyond the 2% pair-number tolerance.
+    - Totals: **94 pass, 2 registered failures**.
+  - Step-4 tests in the single run, with times:
+    - `bh_restframe`: 18.7 s.
+    - `bh_chain_epsbias`: 61 s.
+    - `bh_chain_budget`: 70 s.
+    - `bh_chain_a7`: 782 s, passes. 0 of 2169 nodes fail the honest
+      verdict. The worst node is 0.95% from I/J (mono03, Gamma 118.36). The
+      Monte Carlo is within 3.6 s.e. of the sampled density; round 1's
+      analytic-chain comparison gave 7.9 for powerlaw.
+    - `bh_chain_a7w`: fails, registered. E_p[1/D] (I/J) reaches 18.6 s.e.,
+      while E_p[1/D] <D>_sampled stays within 2.0 s.e.
+    - `bh_ka2008`: 263 s.
+    - `bh_sampler_fixtures`: 18 s.
+    - `bh_sampler_tables`: 166 s.
+    - `bh_sampler_a11`: 44 s.
+    - `bh_sampler_identity`: 44 s.
+    - `bh_sampler_spectrum`: 95 s.
+  - `HADRONIC::sampler_overflow` is registered only in a bh_proto build. It
+    was run by hand in stage 5 and passes.
+
+## R2.2 Resolution log (findings of the referee review of 2026-10-27)
+
+| finding | what | resolution | stage, commit | numbers |
+| --- | --- | --- | --- | --- |
+| 1 (P1) | the energy-law threshold cancellation fails where `long double` has 53 bits (native arm64: A2 0.0838) | **fixed**: laws are templates on the floating type, with a stable representation in `double` (an exact-rational threshold series, a run-time Taylor series in the slow momentum, and stable closed forms elsewhere; switch points 0.15 and 0.1); A2 registered for `double`; A1 to A5 and the secondary checks run for both instantiations | 1, `efb39a2` | A2 in double 4.1e-11 (tol 1e-3); referee's point 4.0538069200e-10 (high-precision 4.0538069e-10); law 1 <= 1e-10, law 3 <= 2e-12 against `__float128`; the reference's qk_table <= 6.2e-8 (tol 1e-4) |
+| 2 (P1) | the A8 fixture was a self-check (exact chain), not the paper's CDF | **fixed**: the quadrature is renamed the exact-chain self-check; A8 now compares the sampler's events mapped head-on with the reference's KA2008 CDF; the original reading is kept as a labelled failed diagnostic with its mechanism; applicability corrected to eps' << mu_r | 3, `17c3f7d` | KS 1.3e-3, 8.0e-4, 5.8e-4 (tol 0.02); failed reading 0.073; mean shift 0.2497 against eps/2 = 0.25; head-on quadrature against the reference's CDF 4.5e-4 |
+| 3 | photon-energy moments biased near threshold (44 powerlaw nodes beyond 4 s.e.) | **fixed**: each Gamma node has its own photon grid, adapted to [eps_lo(Gamma), eps_max] and capped at 1e-3 in ln eps; the threshold is respected at continuous Gamma; host and device | 2, `d778eb0` | table <eps> vs the marginal <= 8.3e-8 at every node (tol 1e-6); referee's node -1.2e-9 (round 1 -3.9e-5); A10 moments within 3.64 s.e. |
+| 4 (P1) | the unregistered `rel <= tol \|\| nse <= 4` escape in A12 | **fixed by decision (b)**: N = 2e5 per node, the literal tolerances, the reference's Born-chain <D>; the I/J comparison is a diagnostic; failing nodes are listed; the spectrum test now uses the reference's histograms with the A10 test | 4, `113788a` | pair number and pair energy pass at every node; **cost: 1 failing node of 466** (Gamma_p 76.53, -1.29%, 2.9 s.e.; registered); spectrum 30 of 30 |
+| 5 | the sampler counters missing from the MPI reduction and the ledger | **fixed on the non-MPI path**: both counters are in the integer `MPI_Allreduce` and in the ledger file (45 columns); a forced-overflow test checks they reach the ledger; **the rank-asymmetric MPI check is deferred to the next Rusty job** | 5, `f34576b` | 216 of 244 packets overflow, ledger = run summary, identity residual 0 |
+| 6 | A7 weighted against the step-1 I/J (a decision for Nilay) | **decision (a) applied**: q_k from the Born machinery in the production tables is a later step; until then this item **stays a registered failure** | none | E_p[1/D] (I/J) up to 18.6 s.e. (the eq. 3.7 fit against the Born law); against the sampled density 2.0 s.e. (passes, implementation-chosen) |
+| 7 | fixture sample counts below N; the <D> budget not certified on the sampled chain | **fixed**: fixed accepted N (1e6 per histogram, 1e5 per moments node), attempts reported; s.e. for every moment; zero-variance columns exact; the 1e-3 budget held against the density the sampler draws from, with its convergence | 2, `d778eb0` | budget 9.671e-4, plus convergence 8.6e-7, gives 9.679e-4 (tol 1e-3) |
+| 8 | source identifications | **fixed**: MOK 3D-1000 (energy law), 3D-2000 = Blumenthal eq. 10 (single-lepton law), 3D-3000 (fully differential law); flags the referee verified are removed | 0, `88f868a` | none |
+
+Defects found in this round beyond the eight (stated):
+- The A7 verdict line could not fail (`worst_rel <= 1e-2 || true`). It now
+  counts failing nodes (stage 2).
+- The A7 Monte Carlo was compared with an analytic-photon quadrature, not the
+  density it samples. It is now compared with `SampledChainD` (stage 2).
+- The q_k of the qk table lost about 1e-9 at eps' ~ 900 in double (the
+  k - 2 <p cos> cancellation). It is now computed as a mean of positive terms
+  (stage 1).
+- An exit-time Kokkos abort that I introduced in stage 4 (static tables
+  holding views) was caught by the double ctest and fixed in the same stage.
+- The round-2 `qk_table`, `moments_*` and `hist_*` fixtures carry the build's
+  configure-time hash `31e82eb...-mod` rather than `3d17ee1`, the commit of
+  the tool that produced them (stated in the fixtures' README).
+
+## R2.3 Registered failures that remain
+
+1. **A7 weighted against the step-1 I/J** (decision (a)). It is the eq. 3.7
+   fit against the Born law: up to 18.6 s.e. at 1e6 accepted. It is resolved
+   by the later step that computes q_k from the Born machinery.
+2. **A12 mean cost at Gamma_p = 76.53** (decision (b)). The cost is -1.29%
+   against the 1% literal tolerance, at 2.9 combined s.e. The largest
+   deviation over the 466 nodes is 3.0 s.e., consistent with the sampling
+   noise at N = 2e5, where the relative s.e. reaches 3.4e-3. Listed as
+   decision (b) requires. The noise diagnostic expects 0.41 such nodes
+   (P(>= 1) = 0.34). Identical in both precisions.
+
+## R2.4 Stages reached
+
+Stages 0 to 6 were all reached and completed; the table in R2.0 gives the
+commits. Stage 6 closes with this commit. Branch `dev/hadronic-sampler`; the report is this file.
+- stage 6 done, this commit, pushed.

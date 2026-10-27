@@ -1,0 +1,230 @@
+Test project /home/user/entity/build
+      Start  1: GLOBAL::global
+ 1/95 Test  #1: GLOBAL::global ....................   Passed    0.00 sec
+      Start  2: GLOBAL::enums
+ 2/95 Test  #2: GLOBAL::enums .....................   Passed    0.00 sec
+      Start  3: GLOBAL::kokkos_aliases
+ 3/95 Test  #3: GLOBAL::kokkos_aliases ............   Passed    0.00 sec
+      Start  4: GLOBAL::directions
+ 4/95 Test  #4: GLOBAL::directions ................   Passed    0.00 sec
+      Start  5: GLOBAL::comparators
+ 5/95 Test  #5: GLOBAL::comparators ...............   Passed    0.00 sec
+      Start  6: GLOBAL::numeric
+ 6/95 Test  #6: GLOBAL::numeric ...................   Passed    0.00 sec
+      Start  7: GLOBAL::param_container
+ 7/95 Test  #7: GLOBAL::param_container ...........   Passed    0.00 sec
+      Start  8: GLOBAL::sorting
+ 8/95 Test  #8: GLOBAL::sorting ...................   Passed    0.00 sec
+      Start  9: GLOBAL::tiling
+ 9/95 Test  #9: GLOBAL::tiling ....................   Passed    0.04 sec
+      Start 10: GLOBAL::traits_archetypes
+10/95 Test #10: GLOBAL::traits_archetypes .........   Passed    0.00 sec
+      Start 11: GLOBAL::traits_metric
+11/95 Test #11: GLOBAL::traits_metric .............   Passed    0.00 sec
+      Start 12: GLOBAL::traits_pgen
+12/95 Test #12: GLOBAL::traits_pgen ...............   Passed    0.00 sec
+      Start 13: GLOBAL::traits_policies
+13/95 Test #13: GLOBAL::traits_policies ...........   Passed    0.00 sec
+      Start 14: METRICS::minkowski
+14/95 Test #14: METRICS::minkowski ................   Passed    0.03 sec
+      Start 15: METRICS::vec_trans
+15/95 Test #15: METRICS::vec_trans ................   Passed    0.00 sec
+      Start 16: METRICS::coord_trans
+16/95 Test #16: METRICS::coord_trans ..............   Passed    0.01 sec
+      Start 17: METRICS::sph-qsph
+17/95 Test #17: METRICS::sph-qsph .................   Passed    0.01 sec
+      Start 18: METRICS::ks-qks
+18/95 Test #18: METRICS::ks-qks ...................   Passed    0.00 sec
+      Start 19: METRICS::sr-cart-sph
+19/95 Test #19: METRICS::sr-cart-sph ..............   Passed    0.01 sec
+      Start 20: METRICS::ks-qks-4d
+20/95 Test #20: METRICS::ks-qks-4d ................   Passed    0.02 sec
+      Start 21: KERNELS::faraday_mink
+21/95 Test #21: KERNELS::faraday_mink .............   Passed    0.03 sec
+      Start 22: KERNELS::ampere_mink
+22/95 Test #22: KERNELS::ampere_mink ..............   Passed    0.01 sec
+      Start 23: KERNELS::deposit
+23/95 Test #23: KERNELS::deposit ..................   Passed    0.05 sec
+      Start 24: KERNELS::digital_filter
+24/95 Test #24: KERNELS::digital_filter ...........   Passed    0.01 sec
+      Start 25: KERNELS::particle_moments
+25/95 Test #25: KERNELS::particle_moments .........   Passed    0.00 sec
+      Start 26: KERNELS::fields_to_phys
+26/95 Test #26: KERNELS::fields_to_phys ...........   Passed    0.00 sec
+      Start 27: KERNELS::prtls_to_phys
+27/95 Test #27: KERNELS::prtls_to_phys ............   Passed    0.00 sec
+      Start 28: KERNELS::gca_pusher
+28/95 Test #28: KERNELS::gca_pusher ...............   Passed    0.13 sec
+      Start 29: KERNELS::prtl_bc
+29/95 Test #29: KERNELS::prtl_bc ..................   Passed    0.01 sec
+      Start 30: KERNELS::flds_bc
+30/95 Test #30: KERNELS::flds_bc ..................   Passed    0.01 sec
+      Start 31: KERNELS::pusher
+31/95 Test #31: KERNELS::pusher ...................   Passed    0.19 sec
+      Start 32: KERNELS::ext_force
+32/95 Test #32: KERNELS::ext_force ................   Passed    0.02 sec
+      Start 33: KERNELS::reduced_stats
+33/95 Test #33: KERNELS::reduced_stats ............   Passed    0.07 sec
+      Start 34: KERNELS::custom_emission
+34/95 Test #34: KERNELS::custom_emission ..........   Passed    0.01 sec
+      Start 35: KERNELS::custom_prtl_update
+35/95 Test #35: KERNELS::custom_prtl_update .......   Passed    0.01 sec
+      Start 36: KERNELS::injectors_payloads
+36/95 Test #36: KERNELS::injectors_payloads .......   Passed    0.01 sec
+      Start 37: KERNELS::reduced_stats_weights
+37/95 Test #37: KERNELS::reduced_stats_weights ....   Passed    0.01 sec
+      Start 38: KERNELS::bh_loss_tables
+38/95 Test #38: KERNELS::bh_loss_tables ...........   Passed    0.01 sec
+      Start 39: KERNELS::bh_loss_overflow
+39/95 Test #39: KERNELS::bh_loss_overflow .........   Passed    0.01 sec
+      Start 40: KERNELS::bh_loss_huge
+40/95 Test #40: KERNELS::bh_loss_huge .............   Passed    0.01 sec
+      Start 41: KERNELS::bh_loss_t9
+41/95 Test #41: KERNELS::bh_loss_t9 ...............   Passed    0.07 sec
+      Start 42: KERNELS::bh_loss_tags
+42/95 Test #42: KERNELS::bh_loss_tags .............   Passed    0.03 sec
+      Start 43: KERNELS::bh_loss_above
+43/95 Test #43: KERNELS::bh_loss_above ............   Passed    0.00 sec
+      Start 44: KERNELS::bh_loss_subcycling
+44/95 Test #44: KERNELS::bh_loss_subcycling .......   Passed    0.11 sec
+      Start 45: KERNELS::bh_loss_t6
+45/95 Test #45: KERNELS::bh_loss_t6 ...............   Passed    3.81 sec
+      Start 46: KERNELS::bh_loss_t5
+46/95 Test #46: KERNELS::bh_loss_t5 ...............   Passed    4.55 sec
+      Start 47: KERNELS::bh_loss_t5fine
+47/95 Test #47: KERNELS::bh_loss_t5fine ...........   Passed   29.02 sec
+      Start 48: KERNELS::bh_loss_t5b
+48/95 Test #48: KERNELS::bh_loss_t5b ..............   Passed   68.94 sec
+      Start 49: KERNELS::bh_pairs_t10
+49/95 Test #49: KERNELS::bh_pairs_t10 .............   Passed    0.25 sec
+      Start 50: KERNELS::bh_pairs_poisson
+50/95 Test #50: KERNELS::bh_pairs_poisson .........   Passed    0.28 sec
+      Start 51: KERNELS::bh_pairs_none
+51/95 Test #51: KERNELS::bh_pairs_none ............   Passed    0.03 sec
+      Start 52: KERNELS::bh_pairs_energy
+52/95 Test #52: KERNELS::bh_pairs_energy ..........   Passed    0.43 sec
+      Start 53: KERNELS::bh_pairs_momentum
+53/95 Test #53: KERNELS::bh_pairs_momentum ........   Passed    0.40 sec
+      Start 54: KERNELS::bh_pairs_t12
+54/95 Test #54: KERNELS::bh_pairs_t12 .............   Passed    0.09 sec
+      Start 55: KERNELS::bh_pairs_t10b
+55/95 Test #55: KERNELS::bh_pairs_t10b ............   Passed    0.03 sec
+      Start 56: KERNELS::bh_pairs_texp
+56/95 Test #56: KERNELS::bh_pairs_texp ............   Passed    0.09 sec
+      Start 57: KERNELS::bh_pairs_r1
+57/95 Test #57: KERNELS::bh_pairs_r1 ..............   Passed    0.03 sec
+      Start 58: KERNELS::bh_pairs_r2
+58/95 Test #58: KERNELS::bh_pairs_r2 ..............   Passed    0.11 sec
+      Start 59: KERNELS::bh_pairs_r3
+59/95 Test #59: KERNELS::bh_pairs_r3 ..............   Passed    0.01 sec
+      Start 60: KERNELS::bh_pairs_cmpi1
+60/95 Test #60: KERNELS::bh_pairs_cmpi1 ...........   Passed    0.01 sec
+      Start 61: KERNELS::bh_sampler_tables
+61/95 Test #61: KERNELS::bh_sampler_tables ........   Passed  166.27 sec
+      Start 62: KERNELS::bh_sampler_a11
+62/95 Test #62: KERNELS::bh_sampler_a11 ...........   Passed   43.76 sec
+      Start 63: KERNELS::bh_sampler_identity
+63/95 Test #63: KERNELS::bh_sampler_identity ......   Passed   44.35 sec
+      Start 64: KERNELS::bh_sampler_spectrum
+64/95 Test #64: KERNELS::bh_sampler_spectrum ......   Passed   95.32 sec
+      Start 65: KERNELS::bh_reduction_timing
+65/95 Test #65: KERNELS::bh_reduction_timing ......   Passed    3.14 sec
+      Start 66: ARCHETYPES::energy_dist
+66/95 Test #66: ARCHETYPES::energy_dist ...........   Passed    0.01 sec
+      Start 67: ARCHETYPES::spatial_dist
+67/95 Test #67: ARCHETYPES::spatial_dist ..........   Passed    0.00 sec
+      Start 68: ARCHETYPES::field_setter
+68/95 Test #68: ARCHETYPES::field_setter ..........   Passed    0.00 sec
+      Start 69: ARCHETYPES::powerlaw
+69/95 Test #69: ARCHETYPES::powerlaw ..............   Passed    0.01 sec
+      Start 70: ARCHETYPES::pgen
+70/95 Test #70: ARCHETYPES::pgen ..................   Passed    0.01 sec
+      Start 71: ARCHETYPES::bh_physics
+71/95 Test #71: ARCHETYPES::bh_physics ............   Passed    3.00 sec
+      Start 72: ARCHETYPES::bh_fixtures
+72/95 Test #72: ARCHETYPES::bh_fixtures ...........   Passed    0.81 sec
+      Start 73: ARCHETYPES::bh_restframe
+73/95 Test #73: ARCHETYPES::bh_restframe ..........   Passed   18.69 sec
+      Start 74: ARCHETYPES::bh_chain_epsbias
+74/95 Test #74: ARCHETYPES::bh_chain_epsbias ......   Passed   61.16 sec
+      Start 75: ARCHETYPES::bh_chain_budget
+75/95 Test #75: ARCHETYPES::bh_chain_budget .......   Passed   70.23 sec
+      Start 76: ARCHETYPES::bh_chain_kinematics
+76/95 Test #76: ARCHETYPES::bh_chain_kinematics ...   Passed   22.97 sec
+      Start 77: ARCHETYPES::bh_chain_efficiency
+77/95 Test #77: ARCHETYPES::bh_chain_efficiency ...   Passed   44.42 sec
+      Start 78: ARCHETYPES::bh_chain_a9
+78/95 Test #78: ARCHETYPES::bh_chain_a9 ...........   Passed   41.79 sec
+      Start 79: ARCHETYPES::bh_chain_a7w
+79/95 Test #79: ARCHETYPES::bh_chain_a7w ..........***Failed  119.66 sec
+[DIAG] tables: 113 eps' nodes (16 per decade), n_s = 256, n_tau = 256; 29041 + 7463537 entries (30.0 MB in single precision); built in 14.2 s
+[DIAG] cumulatives: 5067 nodes in t = ln(eps' - 2), h = 0.0050; Phi(1000) = 7.0107780549e+06 (step-1 Cumulatives: 7.0107780549e+06)
+[DIAG] q_k grids: laws at 449 nodes, tables at 897 fine nodes (8 per interval), 6.0 s
+[DIAG] bath mono05: 466 Gamma nodes in [2.130009, 91.810223], Gamma_th 2.125000; eps tables mono (none)
+[DIAG] bath mono03: 465 Gamma nodes in [3.416954, 153.014134], Gamma_th 3.408333; eps tables mono (none)
+[DIAG] bath powerlaw: 429 Gamma nodes in [1.047817, 30.610669], Gamma_th 1.041667; eps tables 2709 cells per node in ln eps
+[DIAG] bath blackbody: 406 Gamma nodes in [1.012206, 24.170216], Gamma_th 1.001316; eps tables 3827 cells per node in ln eps
+[DIAG] bath mono05_mu100: 403 Gamma nodes in [2.126533, 5.050000], Gamma_th 2.125000; eps tables mono (none)
+
+== A7: the weighted chain, E_p[1/D] <D> = 1 at Gamma_p in {1.05 Gamma_th, 3, 10} ==
+[DIAG] A7 weighted mono05 Gamma 2.23125: N_acc 1000000, E_p[1/D] (I/J) = 1.00166 (15.6 s.e.), E_p[1/D] <D>_sampled = 1.00009 (0.8 s.e.), efficiency 0.7345, 1/min D = 0.3486
+[DIAG] A7 weighted mono05 Gamma 3.00000: N_acc 1000000, E_p[1/D] (I/J) = 1.00398 (13.1 s.e.), E_p[1/D] <D>_sampled = 1.00005 (0.2 s.e.), efficiency 0.4010, 1/min D = 0.4382
+[DIAG] A7 weighted mono05 Gamma 10.00000: N_acc 1000000, E_p[1/D] (I/J) = 0.99899 (1.3 s.e.), E_p[1/D] <D>_sampled = 0.99936 (0.8 s.e.), efficiency 0.0721, 1/min D = 0.4888
+[DIAG] A7 weighted mono03: Gamma_p = 3 outside the table [3.41695, 153.014], skipped
+[DIAG] A7 weighted mono03 Gamma 3.57875: N_acc 1000000, E_p[1/D] (I/J) = 1.00138 (13.5 s.e.), E_p[1/D] <D>_sampled = 0.99991 (0.9 s.e.), efficiency 0.7425, 1/min D = 0.1998
+[DIAG] A7 weighted mono03 Gamma 10.00000: N_acc 1000000, E_p[1/D] (I/J) = 0.99925 (1.3 s.e.), E_p[1/D] <D>_sampled = 0.99975 (0.4 s.e.), efficiency 0.1473, 1/min D = 0.2827
+[DIAG] A7 weighted powerlaw Gamma 1.09375: N_acc 1000000, E_p[1/D] (I/J) = 1.00313 (18.6 s.e.), E_p[1/D] <D>_sampled = 1.00034 (2.0 s.e.), efficiency 0.6214, 1/min D = 1.9755
+[DIAG] A7 weighted powerlaw Gamma 3.00000: N_acc 1000000, E_p[1/D] (I/J) = 0.99944 (0.9 s.e.), E_p[1/D] <D>_sampled = 0.99944 (0.9 s.e.), efficiency 0.1391, 1/min D = 1.6471
+[DIAG] A7 weighted powerlaw Gamma 10.00000: N_acc 1000000, E_p[1/D] (I/J) = 0.99915 (0.9 s.e.), E_p[1/D] <D>_sampled = 0.99946 (0.5 s.e.), efficiency 0.0470, 1/min D = 1.6399
+[DIAG] A7 weighted blackbody Gamma 1.05138: N_acc 1000000, E_p[1/D] (I/J) = 1.00332 (12.8 s.e.), E_p[1/D] <D>_sampled = 0.99976 (0.9 s.e.), efficiency 0.5259, 1/min D = 7.7743
+[DIAG] A7 weighted blackbody Gamma 3.00000: N_acc 1000000, E_p[1/D] (I/J) = 1.00097 (1.9 s.e.), E_p[1/D] <D>_sampled = 0.99946 (1.1 s.e.), efficiency 0.2218, 1/min D = 1.7762
+[DIAG] A7 weighted blackbody Gamma 10.00000: N_acc 1000000, E_p[1/D] (I/J) = 1.00064 (0.8 s.e.), E_p[1/D] <D>_sampled = 1.00066 (0.8 s.e.), efficiency 0.0790, 1/min D = 1.5050
+[DIAG] A7 weighted mono05_mu100: Gamma_p = 10 outside the table [2.12653, 5.05], skipped
+[DIAG] A7 weighted mono05_mu100 Gamma 2.23125: N_acc 1000000, E_p[1/D] (I/J) = 1.00165 (15.5 s.e.), E_p[1/D] <D>_sampled = 1.00008 (0.7 s.e.), efficiency 0.7341, 1/min D = 0.3475
+[DIAG] A7 weighted mono05_mu100 Gamma 3.00000: N_acc 1000000, E_p[1/D] (I/J) = 1.00412 (13.5 s.e.), E_p[1/D] <D>_sampled = 1.00019 (0.6 s.e.), efficiency 0.4009, 1/min D = 0.4416
+[FAIL] A7: E_p[1/D] (I/J) = 1 within 4 s.e., weighted chain, Gamma_p in {1.05 Gamma_th, 3, 10}, five baths: max |dev| / s.e. = 1.857468e+01 (tol 4.000e+00)
+[PASS] (impl) A7: E_p[1/D] <D>_sampled = 1 within 4 s.e. (<D> of the density the unweighted chain samples): max |dev| / s.e. = 2.020733e+00 (tol 4.000e+00)
+
+bh_chain summary: contract items 0 passed, 1 failed; implementation-chosen checks 1 passed, 0 failed; 120 s
+
+      Start 80: ARCHETYPES::bh_chain_a7
+80/95 Test #80: ARCHETYPES::bh_chain_a7 ...........   Passed  782.48 sec
+      Start 81: ARCHETYPES::bh_ka2008
+81/95 Test #81: ARCHETYPES::bh_ka2008 .............   Passed  262.60 sec
+      Start 82: ARCHETYPES::bh_sampler_fixtures
+82/95 Test #82: ARCHETYPES::bh_sampler_fixtures ...   Passed   18.31 sec
+      Start 83: FRAMEWORK::parameters
+83/95 Test #83: FRAMEWORK::parameters .............   Passed    0.02 sec
+      Start 84: FRAMEWORK::particles
+84/95 Test #84: FRAMEWORK::particles ..............   Passed    0.01 sec
+      Start 85: FRAMEWORK::particles_sort
+85/95 Test #85: FRAMEWORK::particles_sort .........   Passed    0.01 sec
+      Start 86: FRAMEWORK::fields
+86/95 Test #86: FRAMEWORK::fields .................   Passed    0.00 sec
+      Start 87: FRAMEWORK::grid_mesh
+87/95 Test #87: FRAMEWORK::grid_mesh ..............   Passed    0.01 sec
+      Start 88: FRAMEWORK::comm-nompi
+88/95 Test #88: FRAMEWORK::comm-nompi .............   Passed    0.00 sec
+      Start 89: FRAMEWORK::checkpoint-extents
+89/95 Test #89: FRAMEWORK::checkpoint-extents .....   Passed    0.02 sec
+      Start 90: FRAMEWORK::checkpoint-data
+90/95 Test #90: FRAMEWORK::checkpoint-data ........   Passed    0.03 sec
+      Start 91: FRAMEWORK::spectra
+91/95 Test #91: FRAMEWORK::spectra ................   Passed    0.03 sec
+      Start 92: OUTPUT::stats
+92/95 Test #92: OUTPUT::stats .....................   Passed    0.00 sec
+      Start 93: OUTPUT::fields
+93/95 Test #93: OUTPUT::fields ....................   Passed    0.00 sec
+      Start 94: OUTPUT::writer-nompi
+94/95 Test #94: OUTPUT::writer-nompi ..............   Passed    0.02 sec
+      Start 95: HADRONIC::bh_proto_params
+95/95 Test #95: HADRONIC::bh_proto_params .........   Passed    0.08 sec
+
+99% tests passed, 1 tests failed out of 95
+
+Total Test time (real) = 1908.32 sec
+
+The following tests FAILED:
+	 79 - ARCHETYPES::bh_chain_a7w (Failed)
+Errors while running CTest
+exit 8
