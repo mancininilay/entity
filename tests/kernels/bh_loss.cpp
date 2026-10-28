@@ -607,35 +607,49 @@ namespace {
     return m;
   }
 
+  /* the common setup of the two T5 groups (base curve and dt-convergence): dt
+   * from dK/K = 1e-4 per step at Gamma_p = 6, and the step count that takes the
+   * Gamma_p = 6 ions to Gamma_p = 3 (n_steps = 0 if they never get there) */
+  struct T5Setup {
+    double dt { 0.0 };
+    int    n_steps { 0 };
+  };
+
+  T5Setup t5_setup(const Tables& T, double mu_d, double coeff) {
+    const double K6 = MU_R * 5.0;
+    const double I6 = bh::interpolate_loss_host(T.host, 6.0);
+    T5Setup      S;
+    S.dt = 1.0e-4 * K6 / (coeff * I6); // dK/K = 1e-4 per step at Gamma_p = 6
+    diag("T5: dt = " + std::to_string(S.dt) + ", dK/K per step at Gamma_p = 6 = " +
+         std::to_string(coeff * I6 * S.dt / K6) + ", I(6) table = " + std::to_string(I6) +
+         ", I(6) exact = " + std::to_string(T.rates->at_gamma(6.0).I));
+    // run until the Gamma_p = 6 ions reach Gamma_p = 3: find the step count first
+    Ions   probe(1, mu_d);
+    probe.set(0, K6);
+    auto prm = default_params(coeff, S.dt);
+    const double K_target = MU_R * 2.0;
+    for (int s = 1; s <= 10000000; ++s) {
+      launch(probe, T, prm);
+      if (s % 64 == 0 || s < 64) {
+        if (probe.K()[0] <= K_target) {
+          S.n_steps = s;
+          break;
+        }
+      }
+    }
+    return S;
+  }
+
   void test_cooling_T5(const Tables& T) {
     std::printf("---- T5 cooling curve at physical mass (mu_d = mu_r) ----\n");
     const double mu_d  = MU_R;
     const double K6    = MU_R * 5.0;
     const double coeff = 1.0; // tau0 = 1, skindepth0 = 1
-    const double I6    = bh::interpolate_loss_host(T.host, 6.0);
-    const double dt    = 1.0e-4 * K6 / (coeff * I6); // dK/K = 1e-4 per step at Gamma_p = 6
-    diag("T5: dt = " + std::to_string(dt) + ", dK/K per step at Gamma_p = 6 = " +
-         std::to_string(coeff * I6 * dt / K6) + ", I(6) table = " + std::to_string(I6) +
-         ", I(6) exact = " + std::to_string(T.rates->at_gamma(6.0).I));
-    // run until the Gamma_p = 6 ions reach Gamma_p = 3: find the step count first
+    const auto   S     = t5_setup(T, mu_d, coeff);
+    const double dt    = S.dt;
+    const int    n_steps = S.n_steps;
     auto exact = [&](double K) { return -coeff * exact_rate_K(T, MU_R, K); };
     auto table = [&](double K) { return -coeff * table_rate_K(T, MU_R, K); };
-    int n_steps = 0;
-    {
-      Ions   probe(1, mu_d);
-      probe.set(0, K6);
-      auto prm = default_params(coeff, dt);
-      const double K_target = MU_R * 2.0;
-      for (int s = 1; s <= 10000000; ++s) {
-        launch(probe, T, prm);
-        if (s % 64 == 0 || s < 64) {
-          if (probe.K()[0] <= K_target) {
-            n_steps = s;
-            break;
-          }
-        }
-      }
-    }
     if (n_steps == 0) {
       verdict(false, "T5: the Gamma_p = 6 ions never reached Gamma_p = 3", 0.0, 0.0);
       return;
@@ -670,9 +684,26 @@ namespace {
     }
     envelope_check("T5 base, Gamma_p = 6 group", R.K6, R.d6, mu_d, 1.0e-4, 100.0);
     envelope_check("T5 base, Gamma_p = 3 group", R.K3, R.d3, mu_d, 1.0e-4, 100.0);
+  }
 
+  /* the dt-convergence part of T5 (its own ctest entry, `t5fine`, since the
+   * three resolutions with eta_u scaled are the long part of the group) */
+  void test_dt_convergence_T5fine(const Tables& T) {
     // dt convergence: same end time, dt, dt/2, dt/4; error at the end time
     std::printf("---- T5 dt-convergence (end-time error, three resolutions) ----\n");
+    const double mu_d  = MU_R;
+    const double K6    = MU_R * 5.0;
+    const double coeff = 1.0; // tau0 = 1, skindepth0 = 1
+    const auto   S     = t5_setup(T, mu_d, coeff);
+    const double dt    = S.dt;
+    const int    n_steps = S.n_steps;
+    auto exact = [&](double K) { return -coeff * exact_rate_K(T, MU_R, K); };
+    auto table = [&](double K) { return -coeff * table_rate_K(T, MU_R, K); };
+    if (n_steps == 0) {
+      verdict(false, "T5 conv: the Gamma_p = 6 ions never reached Gamma_p = 3", 0.0, 0.0);
+      return;
+    }
+    const double h_ref = dt / 8.0;
     const double t_end = n_steps * dt;
     const double ref6_end = rk4(K6, t_end, h_ref / 4.0, exact);
     const double ref3_end = rk4(MU_R * 2.0, t_end, h_ref / 4.0, exact);
@@ -1161,6 +1192,9 @@ auto main(int argc, char* argv[]) -> int {
     }
     if (want("t5")) {
       test_cooling_T5(T);
+    }
+    if (want("t5fine")) {
+      test_dt_convergence_T5fine(T);
     }
     if (want("t5b")) {
       test_ulp_scan_T5b(T);

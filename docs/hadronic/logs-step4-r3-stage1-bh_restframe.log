@@ -1,0 +1,195 @@
+bh_restframe: 449 eps' nodes (first 2.000100, last regular 966.661620, cap 1000.0); quadrature gl 16, energy panels 16, h_t 0.50; angular gl 12, max panels 1.00 / 0.80
+
+########## the laws evaluated in [T=double] ##########
+
+== A1: int g dE' = sigma~ Maximon ==
+[PASS] A1: int g dE' vs sigma~ Maximon at every eps' node in [2.001, 1000] [T=double]: max |rel. dev.| = 1.005491e-04 (tol 1.000e-03)
+[DIAG] [T=double] A1: worst node eps' = 3.980957; over the whole grid (from eps' - 2 = 1e-4): 1.005e-04 at eps' = 3.980957
+[DIAG] [T=double] A1: eps' =    2.0001  int g = 2.6176339383e-13  sigma~ = 2.6176339383e-13  ratio - 1 = +2.318e-13
+[DIAG] [T=double] A1: eps' =    2.0010  int g = 2.6143975820e-10  sigma~ = 2.6143975820e-10  ratio - 1 = -9.881e-15
+[DIAG] [T=double] A1: eps' =    2.5000  int g = 1.7812913265e-02  sigma~ = 1.7812905981e-02  ratio - 1 = +4.090e-07
+[DIAG] [T=double] A1: eps' =    4.0000  int g = 3.2652524769e-01  sigma~ = 3.2654054333e-01  ratio - 1 = -4.684e-05
+[DIAG] [T=double] A1: eps' =   10.0000  int g = 1.9495513225e+00  sigma~ = 1.9495513384e+00  ratio - 1 = -8.147e-09
+[DIAG] [T=double] A1: eps' =  100.0000  int g = 8.4439769173e+00  sigma~ = 8.4439769173e+00  ratio - 1 = +2.665e-15
+[DIAG] [T=double] A1: eps' = 1000.0000  int g = 1.5574202541e+01  sigma~ = 1.5574202541e+01  ratio - 1 = +1.621e-14
+[PASS] (impl) A1 self-convergence: int g under refinement (order + 8, panels x 2), 8 nodes [T=double]: max |rel. dev.| = 1.493250e-13 (tol 1.000e-07)
+[PASS] A2: e-/e+ symmetry of g, exactly complementary energies [T=double]: g(E') == g(eps' - E') bitwise at 12 (eps', E') pairs
+[PASS] (impl) A2: e-/e+ symmetry of g at generic nodes (input rounding of eps' - E' plus evaluation; 53-bit significand) [T=double]: max |rel. dev.| = 1.539657e-12 (tol 1.000e-10)
+
+== A2: int h dcos theta' = g at every (eps', E') node ==
+[PASS] A2: int h dcos vs g at every (eps', E') node (449 x 31) [T=double]: max |rel. dev.| = 4.061818e-11 (tol 1.000e-03)
+[DIAG] [T=double] A2: worst at eps' = 2.018434; 13919 angular integrals in 0.1 s
+[PASS] (impl) A2 self-convergence: int h dcos under refinement, 18 nodes [T=double]: max |rel. dev.| = 8.548717e-15 (tol 1.000e-08)
+
+== transcription: closed form (MOK 3D-2000) vs numerical integral of MOK 3D-3000 ==
+[PASS] (impl) transcription: closed form (MOK 3D-2000, signs fixed) vs numerical integral of law 2, 384 points with x in [0.01, 0.95] [T=double]: max |rel. dev.| = 4.622799e-10 (tol 1.000e-06)
+[DIAG] [T=double] transcription: worst at eps' = 200, x = 0.5, 1 - cos = 0.001
+[PASS] (impl) transcription: the sign choice is unique [T=double]: none of the 15 other sign combinations matches the numerical integral to 1e-3 at 12 points
+[PASS] (impl) normalisation of law 2: int (numerical law) dcos vs g at 3 nodes [T=double]: max |rel. dev.| = 8.968604e-12 (tol 1.000e-06)
+[PASS] (impl) law 2 quadrature self-convergence (order + 4, panels / 2), 9 points [T=double]: max |rel. dev.| = 2.352376e-10 (tol 1.000e-08)
+[DIAG] [T=double] moments at 449 nodes in 2.5 s (4 threads)
+
+== A3: threshold limits ==
+[PASS] A3: q_k -> 2 at eps' - 2 = 1e-3 [T=double]: |q_k - 2| = -2.500062e-04 (tol 1.000e-03)
+[PASS] A3: <E'-> -> 1 at eps' - 2 = 1e-3 [T=double]: |<E'-> - 1| = 5.000000e-04 (tol 1.000e-03)
+[DIAG] [T=double] A3: eps' = 2.001: q_k = 1.99974999 (eq. 3.7: 1.99979151), <E'-> = 1.00050000, <p cos> = 6.250031e-04
+[DIAG] [T=double] A3: eps' = 2.000100: q_k = 1.9999749999, 2 - q_k = 2.500e-05, (eps' - 2) = 1.0e-04
+[DIAG] [T=double] A3: eps' = 2.000010: q_k = 1.9999975000, 2 - q_k = 2.500e-06, (eps' - 2) = 1.0e-05
+[DIAG] [T=double] A3: q_k eps'/(4 ln^2 eps') at eps' = 10: 0.45885; 30: 0.32367; 100: 0.26779; 300: 0.24496; 1000: 0.23209; (leading-order limit 3/14 = 0.21429; the eq. 3.7 values are 0.45932, 0.32545, 0.26821, 0.24444, 0.23214)
+
+== A4: q_k machinery vs eq. 3.7 and vs phi_fit'/(kappa sigma~) on [2.05, 1000] ==
+[PASS] A4: q_k machinery vs Chodorowski eq. 3.7, eps' nodes in [2.05, 1000] [T=double]: max |rel. dev.| = 5.469063e-03 (tol 2.000e-02)
+[PASS] A4: q_k machinery vs phi_fit'/(kappa sigma~), eps' nodes in [2.05, 1000] [T=double]: max |rel. dev.| = 4.036839e-03 (tol 2.000e-02)
+[DIAG] [T=double] A4: worst vs eq. 3.7 at eps' = 29.3842, worst vs phi_fit' at eps' = 48.9759
+[DIAG] [T=double] A4: eps' =    2.05  q_k = 1.987488  eq. 3.7 = 1.989366  (ratio - 1 = -9.441e-04)  <p cos> = 0.031256
+[DIAG] [T=double] A4: eps' =    2.50  q_k = 1.876176  eq. 3.7 = 1.883910  (ratio - 1 = -4.105e-03)  <p cos> = 0.311912
+[DIAG] [T=double] A4: eps' =    3.00  q_k = 1.760802  eq. 3.7 = 1.766659  (ratio - 1 = -3.315e-03)  <p cos> = 0.619599
+[DIAG] [T=double] A4: eps' =    5.00  q_k = 1.410453  eq. 3.7 = 1.409347  (ratio - 1 = +7.848e-04)  <p cos> = 1.794773
+[DIAG] [T=double] A4: eps' =   10.00  q_k = 0.973116  eq. 3.7 = 0.974115  (ratio - 1 = -1.026e-03)  <p cos> = 4.513442
+[DIAG] [T=double] A4: eps' =   20.00  q_k = 0.643240  eq. 3.7 = 0.646350  (ratio - 1 = -4.812e-03)  <p cos> = 9.678380
+[DIAG] [T=double] A4: eps' =   50.00  q_k = 0.359596  eq. 3.7 = 0.361231  (ratio - 1 = -4.524e-03)  <p cos> = 24.820202
+[DIAG] [T=double] A4: eps' =  100.00  q_k = 0.227170  eq. 3.7 = 0.227522  (ratio - 1 = -1.547e-03)  <p cos> = 49.886415
+[DIAG] [T=double] A4: eps' = 1000.00  q_k = 0.044298  eq. 3.7 = 0.044309  (ratio - 1 = -2.356e-04)  <p cos> = 499.977851
+[PASS] (impl) q_k and <p cos> self-convergence under refinement, 7 nodes [T=double]: max |rel. dev.| = 3.098632e-13 (tol 1.000e-07)
+[PASS] (impl) int int h dcos dE' vs sigma~ Maximon at every node (from eps' - 2 = 1e-4) [T=double]: max |rel. dev.| = 1.005491e-04 (tol 1.000e-03)
+
+== A5: phi(kappa) by int eps' sigma~ q_k (machinery) vs the step-1 fit ==
+[PASS] A5: phi by int eps' sigma~ q_k (machinery) vs phi_fit, 301 kappa in [2.001, 1000] [T=double]: max |rel. dev.| = 3.112884e-03 (tol 2.000e-02)
+[DIAG] [T=double] A5: worst at kappa = 74.3262
+[DIAG] [T=double] A5: kappa =    2.50  phi_machinery = 1.13836938e-02  phi_fit = 1.13705836e-02  ratio - 1 = +1.153e-03
+[DIAG] [T=double] A5: kappa =    3.00  phi_machinery = 1.34285057e-01  phi_fit = 1.34130006e-01  ratio - 1 = +1.156e-03
+[DIAG] [T=double] A5: kappa =    5.00  phi_machinery = 4.45767456e+00  phi_fit = 4.45697012e+00  ratio - 1 = +1.581e-04
+[DIAG] [T=double] A5: kappa =   10.00  phi_machinery = 6.18232184e+01  phi_fit = 6.18333806e+01  ratio - 1 = -1.643e-04
+[DIAG] [T=double] A5: kappa =   25.00  phi_machinery = 6.69327448e+02  phi_fit = 6.70464266e+02  ratio - 1 = -1.696e-03
+[DIAG] [T=double] A5: kappa =  100.00  phi_machinery = 1.06432255e+04  phi_fit = 1.06737030e+04  ratio - 1 = -2.855e-03
+[DIAG] [T=double] A5: kappa = 1000.00  phi_machinery = 4.57173448e+05  phi_fit = 4.56784382e+05  ratio - 1 = +8.517e-04
+[DIAG] [T=double] A5: phi_machinery vs the step-1 cumulative phi (eq. 3.7 q_k), 5 kappa: max |ratio - 1| = 3.860e-03
+
+== fixture qk_table.txt ==
+[PASS] (impl) fixture: columns canonical [T=double]: 7 named columns
+[PASS] (impl) fixture: node count [T=double]: 449 rows vs 449 grid nodes
+[PASS] (impl) fixture: every column vs the live computation (printed at %.12e) [T=double]: max |rel. dev.| = 4.984901e-13 (tol 1.000e-10)
+[DIAG] [T=double] fixture: producer "entity-cpp", version "31e82eb9e0629b8281447fa70adff1a7478e9bdb-mod", data_sha256 d36ef7a035299ad7374db87757ea64f9dcc066a5aa24cd2c1115d93da68bda05
+
+== the reference's qk_table.txt (bhref 0.2.0 (frozen)), A10 item 1 at 1e-4 ==
+[PASS] (impl) A10 item 1: eps' nodes identical to the reference's [T=double]: max |rel. dev.| = 4.789502e-13 (tol 1.000e-12)
+[PASS] A10 item 1: sigma from the energy law vs the reference, 449 nodes [T=double]: max |rel. dev.| = 9.664047e-12 (tol 1.000e-04)
+[PASS] A10 item 1: q_k vs the reference, 449 nodes [T=double]: max |rel. dev.| = 3.828271e-12 (tol 1.000e-04)
+[PASS] A10 item 1: <E'-> vs the reference, 449 nodes [T=double]: max |rel. dev.| = 4.984901e-13 (tol 1.000e-04)
+[PASS] A10 item 1: <p' cos theta'> vs the reference, 449 nodes [T=double]: max |rel. dev.| = 6.213727e-08 (tol 1.000e-04)
+[DIAG] [T=double] A10 item 1: worst at eps' = 2.031623 (sigma 9.66e-12), 2.000104 (q_k 3.83e-12), 2.000178 (<E> 4.98e-13), 2.000104 (<p cos> 6.21e-08)
+[DIAG] [T=double] A10 item 1: threshold node 0, eps' = 2.000100000000: sigma +1.99e-13, q_k -7.36e-13, <E> +0.00e+00, <p cos> +8.43e-09 (relative differences)
+[DIAG] [T=double] A10 item 1: threshold node 1, eps' = 2.000103663293: sigma -2.57e-13, q_k +3.83e-12, <E> +4.21e-13, <p cos> -6.21e-08 (relative differences)
+[DIAG] [T=double] A10 item 1: threshold node 2, eps' = 2.000107460783: sigma -1.74e-13, q_k +1.58e-12, <E> +4.16e-13, <p cos> -2.60e-08 (relative differences)
+[DIAG] [T=double] A10 item 1: threshold node 3, eps' = 2.000111397386: sigma -1.42e-13, q_k -5.09e-13, <E> -2.22e-16, <p cos> +8.38e-09 (relative differences)
+[DIAG] [T=double] A10 item 1: threshold node 4, eps' = 2.000115478198: sigma -2.71e-14, q_k +4.15e-14, <E> +2.35e-13, <p cos> +8.62e-10 (relative differences)
+
+== finding 1: the referee's threshold point and the region switches ==
+[PASS] finding 1: energy law at the referee's point (k = 2.0001113973859996, E = 1.0000002682044309) vs the referee's value 4.0538069e-10 (8 digits) [T=double]: |g/g_ref - 1| = 4.927701e-09 (tol 2.000e-08)
+[PASS] finding 1: A2 at the referee's point, |int h dcos / g - 1| [T=double]: |ratio - 1| = 2.062794e-13 (tol 1.000e-06)
+[DIAG] [T=double] finding 1: energy law 4.0538069200e-10, its angular integral 4.0538069200e-10; the round-1 form in double gives 3.7348910334e-10 (-7.867e-02), in long double 4.0538327795e-10 (+6.384e-06)
+[PASS] finding 1: law 1, threshold switch p- = P_SW: series vs the representation beyond it (p+ = 0.01 to 0.15) [T=double]: max |rel. dev.| = 9.116352e-11 (tol 1.000e-09)
+[PASS] finding 1: law 1, slow switch p+ = P_SLOW: slow series vs general form (p- = 0.151 to 500) [T=double]: max |rel. dev.| = 6.406875e-12 (tol 1.000e-10)
+[PASS] finding 1: law 3, threshold switch: series vs the representation beyond it (max |dK| / max |K| over the angle) [T=double]: max |rel. dev.| = 3.373733e-12 (tol 1.000e-09)
+[PASS] finding 1: law 3, slow switch p+ = P_SLOW: slow series vs general form (max |dK| / max |K|) [T=double]: max |rel. dev.| = 6.316037e-12 (tol 1.000e-10)
+[DIAG] [T=double] finding 1: switch differences: law 1 series/general 9.12e-11, slow/general 6.41e-12; law 3 series/general 3.37e-12, slow/general 6.32e-12
+[DIAG] [T=double] instantiation done in 4.3 s
+
+########## the laws evaluated in [T=long double] ##########
+
+== A1: int g dE' = sigma~ Maximon ==
+[PASS] A1: int g dE' vs sigma~ Maximon at every eps' node in [2.001, 1000] [T=long double]: max |rel. dev.| = 1.005491e-04 (tol 1.000e-03)
+[DIAG] [T=long double] A1: worst node eps' = 3.980957; over the whole grid (from eps' - 2 = 1e-4): 1.005e-04 at eps' = 3.980957
+[DIAG] [T=long double] A1: eps' =    2.0001  int g = 2.6176339383e-13  sigma~ = 2.6176339383e-13  ratio - 1 = +2.316e-13
+[DIAG] [T=long double] A1: eps' =    2.0010  int g = 2.6143975820e-10  sigma~ = 2.6143975820e-10  ratio - 1 = -9.437e-15
+[DIAG] [T=long double] A1: eps' =    2.5000  int g = 1.7812913265e-02  sigma~ = 1.7812905981e-02  ratio - 1 = +4.090e-07
+[DIAG] [T=long double] A1: eps' =    4.0000  int g = 3.2652524769e-01  sigma~ = 3.2654054333e-01  ratio - 1 = -4.684e-05
+[DIAG] [T=long double] A1: eps' =   10.0000  int g = 1.9495513225e+00  sigma~ = 1.9495513384e+00  ratio - 1 = -8.147e-09
+[DIAG] [T=long double] A1: eps' =  100.0000  int g = 8.4439769173e+00  sigma~ = 8.4439769173e+00  ratio - 1 = +1.332e-15
+[DIAG] [T=long double] A1: eps' = 1000.0000  int g = 1.5574202541e+01  sigma~ = 1.5574202541e+01  ratio - 1 = +4.441e-16
+[PASS] (impl) A1 self-convergence: int g under refinement (order + 8, panels x 2), 8 nodes [T=long double]: max |rel. dev.| = 1.491030e-13 (tol 1.000e-07)
+[PASS] A2: e-/e+ symmetry of g, exactly complementary energies [T=long double]: g(E') == g(eps' - E') bitwise at 12 (eps', E') pairs
+[PASS] (impl) A2: e-/e+ symmetry of g at generic nodes (input rounding of eps' - E' plus evaluation; 64-bit significand) [T=long double]: max |rel. dev.| = 2.331468e-14 (tol 1.000e-12)
+
+== A2: int h dcos theta' = g at every (eps', E') node ==
+[PASS] A2: int h dcos vs g at every (eps', E') node (449 x 31) [T=long double]: max |rel. dev.| = 5.185852e-13 (tol 1.000e-03)
+[DIAG] [T=long double] A2: worst at eps' = 2.000100; 13919 angular integrals in 0.2 s
+[PASS] (impl) A2 self-convergence: int h dcos under refinement, 18 nodes [T=long double]: max |rel. dev.| = 3.885781e-15 (tol 1.000e-08)
+
+== transcription: closed form (MOK 3D-2000) vs numerical integral of MOK 3D-3000 ==
+[PASS] (impl) transcription: closed form (MOK 3D-2000, signs fixed) vs numerical integral of law 2, 384 points with x in [0.01, 0.95] [T=long double]: max |rel. dev.| = 4.623235e-10 (tol 1.000e-06)
+[DIAG] [T=long double] transcription: worst at eps' = 200, x = 0.5, 1 - cos = 0.001
+[DIAG] [T=long double] moments at 449 nodes in 6.1 s (4 threads)
+
+== A3: threshold limits ==
+[PASS] A3: q_k -> 2 at eps' - 2 = 1e-3 [T=long double]: |q_k - 2| = -2.500062e-04 (tol 1.000e-03)
+[PASS] A3: <E'-> -> 1 at eps' - 2 = 1e-3 [T=long double]: |<E'-> - 1| = 5.000000e-04 (tol 1.000e-03)
+[DIAG] [T=long double] A3: eps' = 2.001: q_k = 1.99974999 (eq. 3.7: 1.99979151), <E'-> = 1.00050000, <p cos> = 6.250031e-04
+[DIAG] [T=long double] A3: eps' = 2.000100: q_k = 1.9999749999, 2 - q_k = 2.500e-05, (eps' - 2) = 1.0e-04
+[DIAG] [T=long double] A3: eps' = 2.000010: q_k = 1.9999975000, 2 - q_k = 2.500e-06, (eps' - 2) = 1.0e-05
+[DIAG] [T=long double] A3: q_k eps'/(4 ln^2 eps') at eps' = 10: 0.45885; 30: 0.32367; 100: 0.26779; 300: 0.24496; 1000: 0.23209; (leading-order limit 3/14 = 0.21429; the eq. 3.7 values are 0.45932, 0.32545, 0.26821, 0.24444, 0.23214)
+
+== A4: q_k machinery vs eq. 3.7 and vs phi_fit'/(kappa sigma~) on [2.05, 1000] ==
+[PASS] A4: q_k machinery vs Chodorowski eq. 3.7, eps' nodes in [2.05, 1000] [T=long double]: max |rel. dev.| = 5.469063e-03 (tol 2.000e-02)
+[PASS] A4: q_k machinery vs phi_fit'/(kappa sigma~), eps' nodes in [2.05, 1000] [T=long double]: max |rel. dev.| = 4.036839e-03 (tol 2.000e-02)
+[DIAG] [T=long double] A4: worst vs eq. 3.7 at eps' = 29.3842, worst vs phi_fit' at eps' = 48.9759
+[DIAG] [T=long double] A4: eps' =    2.05  q_k = 1.987488  eq. 3.7 = 1.989366  (ratio - 1 = -9.441e-04)  <p cos> = 0.031256
+[DIAG] [T=long double] A4: eps' =    2.50  q_k = 1.876176  eq. 3.7 = 1.883910  (ratio - 1 = -4.105e-03)  <p cos> = 0.311912
+[DIAG] [T=long double] A4: eps' =    3.00  q_k = 1.760802  eq. 3.7 = 1.766659  (ratio - 1 = -3.315e-03)  <p cos> = 0.619599
+[DIAG] [T=long double] A4: eps' =    5.00  q_k = 1.410453  eq. 3.7 = 1.409347  (ratio - 1 = +7.848e-04)  <p cos> = 1.794773
+[DIAG] [T=long double] A4: eps' =   10.00  q_k = 0.973116  eq. 3.7 = 0.974115  (ratio - 1 = -1.026e-03)  <p cos> = 4.513442
+[DIAG] [T=long double] A4: eps' =   20.00  q_k = 0.643240  eq. 3.7 = 0.646350  (ratio - 1 = -4.812e-03)  <p cos> = 9.678380
+[DIAG] [T=long double] A4: eps' =   50.00  q_k = 0.359596  eq. 3.7 = 0.361231  (ratio - 1 = -4.524e-03)  <p cos> = 24.820202
+[DIAG] [T=long double] A4: eps' =  100.00  q_k = 0.227170  eq. 3.7 = 0.227522  (ratio - 1 = -1.547e-03)  <p cos> = 49.886415
+[DIAG] [T=long double] A4: eps' = 1000.00  q_k = 0.044298  eq. 3.7 = 0.044309  (ratio - 1 = -2.356e-04)  <p cos> = 499.977851
+[PASS] (impl) q_k and <p cos> self-convergence under refinement, 7 nodes [T=long double]: max |rel. dev.| = 3.105294e-13 (tol 1.000e-07)
+[PASS] (impl) int int h dcos dE' vs sigma~ Maximon at every node (from eps' - 2 = 1e-4) [T=long double]: max |rel. dev.| = 1.005491e-04 (tol 1.000e-03)
+
+== A5: phi(kappa) by int eps' sigma~ q_k (machinery) vs the step-1 fit ==
+[PASS] A5: phi by int eps' sigma~ q_k (machinery) vs phi_fit, 301 kappa in [2.001, 1000] [T=long double]: max |rel. dev.| = 3.112884e-03 (tol 2.000e-02)
+[DIAG] [T=long double] A5: worst at kappa = 74.3262
+[DIAG] [T=long double] A5: kappa =    2.50  phi_machinery = 1.13836938e-02  phi_fit = 1.13705836e-02  ratio - 1 = +1.153e-03
+[DIAG] [T=long double] A5: kappa =    3.00  phi_machinery = 1.34285057e-01  phi_fit = 1.34130006e-01  ratio - 1 = +1.156e-03
+[DIAG] [T=long double] A5: kappa =    5.00  phi_machinery = 4.45767456e+00  phi_fit = 4.45697012e+00  ratio - 1 = +1.581e-04
+[DIAG] [T=long double] A5: kappa =   10.00  phi_machinery = 6.18232184e+01  phi_fit = 6.18333806e+01  ratio - 1 = -1.643e-04
+[DIAG] [T=long double] A5: kappa =   25.00  phi_machinery = 6.69327448e+02  phi_fit = 6.70464266e+02  ratio - 1 = -1.696e-03
+[DIAG] [T=long double] A5: kappa =  100.00  phi_machinery = 1.06432255e+04  phi_fit = 1.06737030e+04  ratio - 1 = -2.855e-03
+[DIAG] [T=long double] A5: kappa = 1000.00  phi_machinery = 4.57173448e+05  phi_fit = 4.56784382e+05  ratio - 1 = +8.517e-04
+[DIAG] [T=long double] A5: phi_machinery vs the step-1 cumulative phi (eq. 3.7 q_k), 5 kappa: max |ratio - 1| = 3.860e-03
+
+== fixture qk_table.txt ==
+[PASS] (impl) fixture: columns canonical [T=long double]: 7 named columns
+[PASS] (impl) fixture: node count [T=long double]: 449 rows vs 449 grid nodes
+[PASS] (impl) fixture: every column vs the live computation (printed at %.12e) [T=long double]: max |rel. dev.| = 2.538858e-12 (tol 1.000e-10)
+[DIAG] [T=long double] fixture: producer "entity-cpp", version "31e82eb9e0629b8281447fa70adff1a7478e9bdb-mod", data_sha256 d36ef7a035299ad7374db87757ea64f9dcc066a5aa24cd2c1115d93da68bda05
+
+== the reference's qk_table.txt (bhref 0.2.0 (frozen)), A10 item 1 at 1e-4 ==
+[PASS] (impl) A10 item 1: eps' nodes identical to the reference's [T=long double]: max |rel. dev.| = 4.789502e-13 (tol 1.000e-12)
+[PASS] A10 item 1: sigma from the energy law vs the reference, 449 nodes [T=long double]: max |rel. dev.| = 1.058809e-11 (tol 1.000e-04)
+[PASS] A10 item 1: q_k vs the reference, 449 nodes [T=long double]: max |rel. dev.| = 3.828049e-12 (tol 1.000e-04)
+[PASS] A10 item 1: <E'-> vs the reference, 449 nodes [T=long double]: max |rel. dev.| = 4.984901e-13 (tol 1.000e-04)
+[PASS] A10 item 1: <p' cos theta'> vs the reference, 449 nodes [T=long double]: max |rel. dev.| = 6.213727e-08 (tol 1.000e-04)
+[DIAG] [T=long double] A10 item 1: worst at eps' = 2.031623 (sigma 1.06e-11), 2.000104 (q_k 3.83e-12), 2.000178 (<E> 4.98e-13), 2.000104 (<p cos> 6.21e-08)
+[DIAG] [T=long double] A10 item 1: threshold node 0, eps' = 2.000100000000: sigma +1.99e-13, q_k -7.36e-13, <E> +2.22e-16, <p cos> +8.43e-09 (relative differences)
+[DIAG] [T=long double] A10 item 1: threshold node 1, eps' = 2.000103663293: sigma -2.57e-13, q_k +3.83e-12, <E> +4.21e-13, <p cos> -6.21e-08 (relative differences)
+[DIAG] [T=long double] A10 item 1: threshold node 2, eps' = 2.000107460783: sigma -1.74e-13, q_k +1.58e-12, <E> +4.16e-13, <p cos> -2.60e-08 (relative differences)
+[DIAG] [T=long double] A10 item 1: threshold node 3, eps' = 2.000111397386: sigma -1.42e-13, q_k -5.09e-13, <E> -2.22e-16, <p cos> +8.38e-09 (relative differences)
+[DIAG] [T=long double] A10 item 1: threshold node 4, eps' = 2.000115478198: sigma -2.70e-14, q_k +4.15e-14, <E> +2.35e-13, <p cos> +8.62e-10 (relative differences)
+
+== finding 1: the referee's threshold point and the region switches ==
+[PASS] finding 1: energy law at the referee's point (k = 2.0001113973859996, E = 1.0000002682044309) vs the referee's value 4.0538069e-10 (8 digits) [T=long double]: |g/g_ref - 1| = 4.927701e-09 (tol 2.000e-08)
+[PASS] finding 1: A2 at the referee's point, |int h dcos / g - 1| [T=long double]: |ratio - 1| = 2.062794e-13 (tol 1.000e-06)
+[DIAG] [T=long double] finding 1: energy law 4.0538069200e-10, its angular integral 4.0538069200e-10; the round-1 form in double gives 3.7348910334e-10 (-7.867e-02), in long double 4.0538327795e-10 (+6.384e-06)
+[PASS] finding 1: law 1, threshold switch p- = P_SW: series vs the representation beyond it (p+ = 0.01 to 0.15) [T=long double]: max |rel. dev.| = 8.452386e-15 (tol 1.000e-09)
+[PASS] finding 1: law 1, slow switch p+ = P_SLOW: slow series vs general form (p- = 0.151 to 500) [T=long double]: max |rel. dev.| = 1.395748e-14 (tol 1.000e-10)
+[PASS] finding 1: law 3, threshold switch: series vs the representation beyond it (max |dK| / max |K| over the angle) [T=long double]: max |rel. dev.| = 1.798411e-15 (tol 1.000e-09)
+[PASS] finding 1: law 3, slow switch p+ = P_SLOW: slow series vs general form (max |dK| / max |K|) [T=long double]: max |rel. dev.| = 1.647790e-15 (tol 1.000e-10)
+[DIAG] [T=long double] finding 1: switch differences: law 1 series/general 8.45e-15, slow/general 1.40e-14; law 3 series/general 1.80e-15, slow/general 1.65e-15
+[DIAG] [T=long double] instantiation done in 10.7 s
+
+== finding 1: the stable laws in double vs long double ==
+[PASS] (impl) finding 1: law 1 in double vs long double, 449 x 31 nodes, max relative difference: max |rel. dev.| = 3.929135e-11 (tol 1.000e-10)
+[PASS] (impl) finding 1: law 3 in double vs long double, 449 x 31 nodes, max of int |dh| / int |h| and |int cos dh| / int |h| over the angle: max |rel. dev.| = 5.107856e-12 (tol 1.000e-10)
+[DIAG] finding 1: worst eps' 2.018434 (law 1), 2.019110 (law 3)
+
+bh_restframe summary: contract items 36 passed, 0 failed; implementation-chosen checks 25 passed, 0 failed; 15.9 s

@@ -1,0 +1,16 @@
+[DIAG] tables: 113 eps' nodes (16 per decade), n_s = 256, n_tau = 256; 29041 + 7463537 entries (30.0 MB in single precision); built in 7.2 s
+[DIAG] cumulatives: 5067 nodes in t = ln(eps' - 2), h = 0.0050; Phi(1000) = 7.0107780549e+06 (step-1 Cumulatives: 7.0107780549e+06)
+[DIAG] q_k grids: laws at 449 nodes, tables at 897 fine nodes (8 per interval), 3.9 s
+[DIAG] bath powerlaw: 429 Gamma nodes in [1.047817, 30.610669], Gamma_th 1.041667; eps tables 2048 cells in ln eps
+[DIAG] bath blackbody: 406 Gamma nodes in [1.012206, 24.170216], Gamma_th 1.001316; eps tables 2048 cells in ln eps
+
+== A7: <D>_MC at every rate-table node, N = 1e6 ==
+[DIAG] A7 powerlaw: 429 nodes x 1e6 draws in 125 s; max |<D>_MC/(I/J) - 1| = 4.434e-03 at Gamma 1.22264; max |dev|/s.e. vs I/J 19.1, vs the chain's quadrature 3.5; nodes failing max(1%, 4 s.e.): 0; samples (Gamma, <D>_MC, I/J, <D>_chain): 1.0479 0.61904 0.61938 0.61904 | 1.0838 0.79278 0.79465 0.79268 | 30.6107 23.6855 23.7576 23.7215
+[DIAG] A7 blackbody: 406 nodes x 1e6 draws in 119 s; max |<D>_MC/(I/J) - 1| = 4.547e-03 at Gamma 1.08010; max |dev|/s.e. vs I/J 17.2, vs the chain's quadrature 3.5; nodes failing max(1%, 4 s.e.): 0; samples (Gamma, <D>_MC, I/J, <D>_chain): 1.0123 0.28087 0.28156 0.28094 | 1.0689 0.65969 0.66214 0.65969 | 24.1702 21.0348 21.0548 21.0242
+[PASS] A7: |<D>_MC - I/J| <= max(1%, 4 s.e.) at every rate-table node of the five baths (N = 1e6): see the per-bath failing-node counts
+[PASS] A7: max |<D>_MC/(I/J) - 1| over the 835 nodes (bath blackbody, Gamma 1.080097): max |rel. dev.| = 4.547424e-03 (tol 1.000e-02)
+[PASS] (impl) A7: max |<D>_MC - <D>_chain| / s.e. over all nodes (the chain's own quadrature): max |dev| / s.e. = 3.538215e+00 (tol 5.000e+00)
+[DIAG] A7: max |<D>_MC - I/J| / s.e. over all nodes = 19.1 (the eq. 3.7 fit of step 1 vs the Born laws, not a sampling error; see A5b)
+
+bh_chain summary: contract items 2 passed, 0 failed; implementation-chosen checks 1 passed, 0 failed; 256 s
+exit 0

@@ -1,0 +1,43 @@
+[DIAG] tables: 113 eps' nodes (16 per decade), n_s = 256, n_tau = 256; 29041 + 7463537 entries (30.0 MB in single precision); built in 22.2 s
+[DIAG] cumulatives: 5067 nodes in t = ln(eps' - 2), h = 0.0050; Phi(1000) = 7.0107780549e+06 (step-1 Cumulatives: 7.0107780549e+06)
+[DIAG] q_k grids: laws at 449 nodes, tables at 897 fine nodes (8 per interval), 9.0 s
+[DIAG] bath mono05: 466 Gamma nodes in [2.130009, 91.810223], Gamma_th 2.125000; eps tables mono (none)
+[DIAG] bath mono03: 465 Gamma nodes in [3.416954, 153.014134], Gamma_th 3.408333; eps tables mono (none)
+[DIAG] bath powerlaw: 429 Gamma nodes in [1.047817, 30.610669], Gamma_th 1.041667; eps tables 2709 cells per node in ln eps
+[DIAG] bath blackbody: 406 Gamma nodes in [1.012206, 24.170216], Gamma_th 1.001316; eps tables 3827 cells per node in ln eps
+[DIAG] bath mono05_mu100: 403 Gamma nodes in [2.126533, 5.050000], Gamma_th 2.125000; eps tables mono (none)
+
+== photon-energy tables: <eps> of the sampled table vs the marginal by quadrature, every node ==
+[DIAG] powerlaw: 429 nodes x 2 chains in 23.5 s; max |<eps>_table/<eps>_marginal - 1| = 8.087e-08 at Gamma 9.854708706 (weighted chain); <eps^2> 1.455e-07; quadrature refinement (16384 -> 32768 panels) 1.8e-13; first nodes (unweighted): -1.14e-09 -1.15e-09 -1.16e-09; last +2.18e-08
+[PASS] (impl) photon table: <eps> at the referee's powerlaw node Gamma = 1.048099570984 vs the referee's quadrature of the paper marginal 1.4946719776559543 (round 1: 1.494613576097, -3.9e-5): rel. dev. = -1.220210e-09 (tol 1.000e-06)
+[DIAG] photon table at Gamma = 1.048099570984: <eps> table 1.4946719758321, own quadrature 1.4946719776187
+[DIAG] blackbody: 406 nodes x 2 chains in 19.3 s; max |<eps>_table/<eps>_marginal - 1| = 8.328e-08 at Gamma 24.170216160 (unweighted chain); <eps^2> 3.330e-07; quadrature refinement (16384 -> 32768 panels) 1.7e-13; first nodes (unweighted): -2.12e-09 -2.13e-09 -2.14e-09; last +8.33e-08
+[PASS] photon table (round-2 brief stage 2 (i)): |<eps>_table / <eps>_marginal - 1| at every node of the broad baths, both chains (1670 node-chains; worst blackbody Gamma 24.170216 unweighted): max |rel. dev.| = 8.328143e-08 (tol 1.000e-06)
+[PASS] (impl) photon table: the marginal's quadrature under refinement (16384 -> 32768 panels), every node: max |rel. change| = 1.831868e-13 (tol 1.000e-09)
+[DIAG] photon table: max |<eps^2>_table/<eps^2>_marginal - 1| = 3.330e-07
+
+== accuracy budget: table moments vs the laws at every eps' node ==
+[PASS] budget: <E'-> from the interpolated CDFs vs quadrature of the laws, every eps' node: max |rel. dev.| = 1.820766e-14 (tol 1.000e-03)
+[PASS] budget: <p' cos theta'> from the interpolated CDFs vs quadrature, every eps' node: max |rel. dev.| = 1.644000e-05 (tol 1.000e-03)
+[PASS] budget: q_k from the interpolated CDFs vs quadrature, every eps' node: max |rel. dev.| = 5.978789e-04 (tol 1.000e-03)
+[DIAG] budget: worst nodes eps' = 751.894 (<E>), 2.0001 (<p cos>), 1000 (q_k); 113 nodes in 1.1 s
+[DIAG] budget: eps' =    2.00010  q_k table 1.99997500  laws 1.99997500  (+1.03e-09); <p cos> -1.64e-05; <E> -4.44e-16
+[DIAG] budget: eps' =    2.00562  q_k table 1.99859407  laws 1.99859395  (+5.77e-08); <p cos> -1.64e-05; <E> +8.88e-16
+[DIAG] budget: eps' =    2.31623  q_k table 1.92109078  laws 1.92108488  (+3.07e-06); <p cos> -1.49e-05; <E> -9.99e-16
+[DIAG] budget: eps' =   19.78279  q_k table 0.64763013  laws 0.64758280  (+7.31e-05); <p cos> -2.47e-06; <E> +4.44e-16
+[DIAG] budget: eps' = 1000.00000  q_k table 0.04432492  laws 0.04429843  (+5.98e-04); <p cos> -2.65e-08; <E> +5.55e-15
+
+== accuracy budget: <D> of the sampled chain at every Gamma_p node by quadrature over the tables; A5b ==
+[DIAG] sampled-chain quadrature: tables' q_k on 16 and 32 sub-nodes per eps' interval, 17.9 s
+[DIAG] mono05: 466 nodes in 0.0 s; <D>_sampled/<D>_laws - 1 max 9.665e-04 at Gamma 85.01161 (convergence 8.5e-07); q_k part alone (round-1 budget) 9.632e-04; I_laws/I_exact - 1 max 4.833e-03 at Gamma 43.96670; I_tables/I_exact - 1 max 4.058e-03; samples (Gamma, <D>_sampled, <D>_laws): 2.1300 3.75907275 3.75907420 | 2.1657 3.82330375 3.82331396 | 91.8102 29.680508 29.652637
+[DIAG] mono03: 465 nodes in 0.0 s; <D>_sampled/<D>_laws - 1 max 9.671e-04 at Gamma 146.05991 (convergence 8.5e-07); q_k part alone (round-1 budget) 9.638e-04; I_laws/I_exact - 1 max 4.833e-03 at Gamma 75.41979; I_tables/I_exact - 1 max 4.059e-03; samples (Gamma, <D>_sampled, <D>_laws): 3.4170 6.53108079 6.53108323 | 3.4778 6.63222415 6.63224214 | 153.0141 49.470177 49.423722
+[DIAG] powerlaw: 429 nodes in 12.8 s; <D>_sampled/<D>_laws - 1 max 4.931e-04 at Gamma 30.61067 (convergence 8.1e-07); q_k part alone (round-1 budget) 4.899e-04; I_laws/I_exact - 1 max 3.927e-03 at Gamma 1.21625; I_tables/I_exact - 1 max 3.963e-03; samples (Gamma, <D>_sampled, <D>_laws): 1.0478 0.61873447 0.61873591 | 1.0838 0.79268155 0.79269233 | 30.6107 23.721550 23.709860
+[DIAG] blackbody: 406 nodes in 17.6 s; <D>_sampled/<D>_laws - 1 max 4.613e-04 at Gamma 24.17022 (convergence 8.1e-07); q_k part alone (round-1 budget) 4.580e-04; I_laws/I_exact - 1 max 3.763e-03 at Gamma 1.11835; I_tables/I_exact - 1 max 3.796e-03; samples (Gamma, <D>_sampled, <D>_laws): 1.0122 0.27986104 0.27986429 | 1.0689 0.65969406 0.65971279 | 24.1702 21.024242 21.014549
+[DIAG] mono05_mu100: 403 nodes in 0.0 s; <D>_sampled/<D>_laws - 1 max 4.330e-05 at Gamma 3.05154 (convergence 5.5e-07); q_k part alone (round-1 budget) 4.439e-05; I_laws/I_exact - 1 max 4.019e-03 at Gamma 2.79525; I_tables/I_exact - 1 max 4.057e-03; samples (Gamma, <D>_sampled, <D>_laws): 2.1265 3.75277906 3.75277947 | 2.1343 3.76692151 3.76692406 | 5.0500 7.504462 7.504191
+[PASS] budget: <D> of the sampled chain (photon table, eps' interpolant, tables' q_k) vs <D> of the laws, every Gamma_p node of the five rate tables (2169 nodes; worst mono03 Gamma 146.059913): max |rel. dev.| = 9.670949e-04 (tol 1.000e-03)
+[PASS] budget: the same with the quadrature's convergence estimate added at every node, |dev| + |change under refinement| (q_k sub-nodes 16 -> 32, Gauss-Legendre orders 16 -> 24): max (|dev| + |change|) = 9.679281e-04 (tol 1.000e-03)
+[DIAG] budget: sampled-chain quadrature, max |rel. change| under refinement 8.55e-07 over all nodes
+[PASS] A5b: direct-boost loss table I (laws' q_k) vs I_exact of step 1, every node of the five tables: max |rel. dev.| = 4.833295e-03 (tol 5.000e-03)
+[DIAG] budget: the q_k part alone (round 1's check: tables' q_k in the analytic chain vs the laws) max 9.638e-04 (bath mono03); A5b worst bath mono03; I_tables vs I_exact worst 4.059e-03
+
+bh_chain summary: contract items 7 passed, 0 failed; implementation-chosen checks 2 passed, 0 failed; 126 s

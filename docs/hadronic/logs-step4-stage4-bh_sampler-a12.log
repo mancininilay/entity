@@ -1,0 +1,18 @@
+bh_sampler: real_t = float, Kokkos default execution space = OpenMP
+(diag) sampler tables: 113 eps' nodes, 256 x 256 cells, 5067 cumulative nodes, 30.09 MB on the device (budget 64 MB), built in 27.8 s
+---- A12: mean cost, pair number and energy per unit paid energy at every rate-table node ----
+(diag) A12: 9320000 pairs at 466 nodes in 203 s; sampler attempts 172426855 (18.5 per pair), overflow 0
+PASS: A12: the sampler's mean cost per pair vs I/J at every node, within max(1%, 4 s.e.): failing nodes : 0.000000e+00 (tolerance 0.000e+00)
+(diag) A12: max |cost/(I/J) - 1| over the nodes 2.357e-02 at Gamma_p 68.9185; nodes beyond 1%: 21 (all within 4 s.e.: the relative s.e. of the cost reaches 1% at the upper nodes with 2e4 pairs per node)
+PASS: A12: pairs per unit paid energy vs 1/<D>_chain (host quadrature) at every node, within max(2%, 4 s.e.): failing nodes : 0.000000e+00 (tolerance 0.000e+00)
+(diag) A12: max |pairs per paid energy x <D>_chain - 1| = 2.058e-02 at Gamma_p 68.9185; nodes beyond 2%: 1
+PASS: A12: pair energy per unit paid energy vs 1 + eps0/<D>_chain, every node : 5.345489e-04 (tolerance 2.000e-02)
+PASS: A12: pair payload Gamma_p = the parent's Gamma_p : 5.563661e-08 (tolerance 1.000e-06)
+(diag) A12: relative s.e. of the cost up to 1.07e-02 (20000 pairs per node); max |dev|/s.e. vs I/J 5.5 (the step-1 fit vs the Born law, see the report); overflow 0
+(diag) A12 node Gamma_p 2.13001: cost 3.75941, I/J 3.75941, <D>_chain 3.75907, energy per paid energy 1.13300 vs 1.13301, pairs 20000
+(diag) A12 node Gamma_p 2.13922: cost 3.77467, I/J 3.77665, <D>_chain 3.77571, energy per paid energy 1.13246 vs 1.13243, pairs 20000
+(diag) A12 node Gamma_p 2.16573: cost 3.82643, I/J 3.82589, <D>_chain 3.82330, energy per paid energy 1.13067 vs 1.13078, pairs 20000
+(diag) A12 node Gamma_p 3.54687: cost 5.85569, I/J 5.87831, <D>_chain 5.86131, energy per paid energy 1.08539 vs 1.08531, pairs 20000
+(diag) A12 node Gamma_p 91.81022: cost 29.56240, I/J 29.75960, <D>_chain 29.68041, energy per paid energy 1.01691 vs 1.01685, pairs 20000
+bh_sampler summary: 4 passed, 0 failed
+exit 0

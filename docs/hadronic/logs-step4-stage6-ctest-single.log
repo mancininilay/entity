@@ -1,0 +1,96 @@
+ 1/94 Test  #2: GLOBAL::enums .....................   Passed    0.01 sec
+ 2/94 Test  #4: GLOBAL::directions ................   Passed    0.00 sec
+ 3/94 Test  #5: GLOBAL::comparators ...............   Passed    0.01 sec
+ 4/94 Test  #1: GLOBAL::global ....................   Passed    0.03 sec
+ 5/94 Test  #6: GLOBAL::numeric ...................   Passed    0.01 sec
+ 6/94 Test  #7: GLOBAL::param_container ...........   Passed    0.02 sec
+ 7/94 Test  #3: GLOBAL::kokkos_aliases ............   Passed    0.05 sec
+ 8/94 Test  #8: GLOBAL::sorting ...................   Passed    0.01 sec
+ 9/94 Test #10: GLOBAL::traits_archetypes .........   Passed    0.01 sec
+10/94 Test #11: GLOBAL::traits_metric .............   Passed    0.00 sec
+11/94 Test #12: GLOBAL::traits_pgen ...............   Passed    0.01 sec
+12/94 Test #13: GLOBAL::traits_policies ...........   Passed    0.00 sec
+13/94 Test  #9: GLOBAL::tiling ....................   Passed    0.04 sec
+14/94 Test #16: METRICS::coord_trans ..............   Passed    0.00 sec
+15/94 Test #15: METRICS::vec_trans ................   Passed    0.02 sec
+16/94 Test #14: METRICS::minkowski ................   Passed    0.03 sec
+17/94 Test #18: METRICS::ks-qks ...................   Passed    0.00 sec
+18/94 Test #17: METRICS::sph-qsph .................   Passed    0.00 sec
+19/94 Test #19: METRICS::sr-cart-sph ..............   Passed    0.01 sec
+20/94 Test #20: METRICS::ks-qks-4d ................   Passed    0.04 sec
+21/94 Test #22: KERNELS::ampere_mink ..............   Passed    0.10 sec
+22/94 Test #21: KERNELS::faraday_mink .............   Passed    0.17 sec
+23/94 Test #24: KERNELS::digital_filter ...........   Passed    0.08 sec
+24/94 Test #25: KERNELS::particle_moments .........   Passed    0.04 sec
+25/94 Test #23: KERNELS::deposit ..................   Passed    0.18 sec
+26/94 Test #26: KERNELS::fields_to_phys ...........   Passed    0.04 sec
+27/94 Test #27: KERNELS::prtls_to_phys ............   Passed    0.01 sec
+28/94 Test #30: KERNELS::flds_bc ..................   Passed    0.09 sec
+29/94 Test #29: KERNELS::prtl_bc ..................   Passed    0.17 sec
+30/94 Test #32: KERNELS::ext_force ................   Passed    0.20 sec
+31/94 Test #33: KERNELS::reduced_stats ............   Passed    0.18 sec
+32/94 Test #34: KERNELS::custom_emission ..........   Passed    0.05 sec
+33/94 Test #35: KERNELS::custom_prtl_update .......   Passed    0.04 sec
+34/94 Test #28: KERNELS::gca_pusher ...............   Passed    0.72 sec
+35/94 Test #36: KERNELS::injectors_payloads .......   Passed    0.07 sec
+36/94 Test #38: KERNELS::bh_loss_tables ...........   Passed    0.04 sec
+37/94 Test #39: KERNELS::bh_loss_overflow .........   Passed    0.04 sec
+38/94 Test #40: KERNELS::bh_loss_huge .............   Passed    0.02 sec
+39/94 Test #31: KERNELS::pusher ...................   Passed    0.91 sec
+40/94 Test #41: KERNELS::bh_loss_t9 ...............   Passed    0.19 sec
+41/94 Test #37: KERNELS::reduced_stats_weights ....   Passed    0.30 sec
+42/94 Test #42: KERNELS::bh_loss_tags .............   Passed    0.01 sec
+43/94 Test #43: KERNELS::bh_loss_above ............   Passed    0.74 sec
+44/94 Test #44: KERNELS::bh_loss_subcycling .......   Passed    6.45 sec
+45/94 Test #46: KERNELS::bh_loss_t5 ...............   Passed  461.21 sec
+46/94 Test #45: KERNELS::bh_loss_t6 ...............   Passed  470.11 sec
+47/94 Test #49: KERNELS::bh_pairs_t10 .............   Passed    3.58 sec
+48/94 Test #50: KERNELS::bh_pairs_poisson .........   Passed    1.38 sec
+49/94 Test #51: KERNELS::bh_pairs_none ............   Passed    0.18 sec
+50/94 Test #52: KERNELS::bh_pairs_energy ..........   Passed    2.67 sec
+51/94 Test #53: KERNELS::bh_pairs_momentum ........   Passed    1.78 sec
+52/94 Test #54: KERNELS::bh_pairs_t12 .............   Passed    0.34 sec
+53/94 Test #55: KERNELS::bh_pairs_t10b ............   Passed    0.14 sec
+54/94 Test #56: KERNELS::bh_pairs_texp ............   Passed    0.44 sec
+55/94 Test #57: KERNELS::bh_pairs_r1 ..............   Passed    0.14 sec
+56/94 Test #58: KERNELS::bh_pairs_r2 ..............   Passed    0.59 sec
+57/94 Test #59: KERNELS::bh_pairs_r3 ..............   Passed    0.05 sec
+58/94 Test #60: KERNELS::bh_pairs_cmpi1 ...........   Passed    0.11 sec
+59/94 Test #47: KERNELS::bh_loss_t5fine ...........   Passed  537.76 sec
+60/94 Test #62: KERNELS::bh_sampler_a11 ...........   Passed   71.25 sec
+61/94 Test #63: KERNELS::bh_sampler_identity ......   Passed   77.68 sec
+62/94 Test #61: KERNELS::bh_sampler_tables ........   Passed  252.44 sec
+63/94 Test #48: KERNELS::bh_loss_t5b ..............   Passed  313.92 sec
+64/94 Test #66: KERNELS::bh_reduction_timing ......   Passed    8.43 sec
+65/94 Test #67: ARCHETYPES::energy_dist ...........   Passed    0.04 sec
+66/94 Test #68: ARCHETYPES::spatial_dist ..........   Passed    0.02 sec
+67/94 Test #69: ARCHETYPES::field_setter ..........   Passed    0.03 sec
+68/94 Test #70: ARCHETYPES::powerlaw ..............   Passed    0.02 sec
+69/94 Test #71: ARCHETYPES::pgen ..................   Passed    0.04 sec
+70/94 Test #72: ARCHETYPES::bh_physics ............   Passed    2.44 sec
+71/94 Test #73: ARCHETYPES::bh_fixtures ...........   Passed    0.78 sec
+72/94 Test #74: ARCHETYPES::bh_restframe ..........   Passed    4.82 sec
+73/94 Test #75: ARCHETYPES::bh_chain_budget .......   Passed   20.77 sec
+74/94 Test #76: ARCHETYPES::bh_chain_kinematics ...   Passed   20.01 sec
+75/94 Test #65: KERNELS::bh_sampler_spectrum ......   Passed  110.99 sec
+76/94 Test #77: ARCHETYPES::bh_chain_efficiency ...   Passed   80.18 sec
+77/94 Test #78: ARCHETYPES::bh_chain_a9 ...........   Passed   95.96 sec
+78/94 Test #79: ARCHETYPES::bh_chain_a7w ..........***Failed  362.74 sec
+79/94 Test #64: KERNELS::bh_sampler_a12 ...........   Passed  781.57 sec
+80/94 Test #82: FRAMEWORK::parameters .............   Passed    0.08 sec
+81/94 Test #83: FRAMEWORK::particles ..............   Passed    0.09 sec
+82/94 Test #84: FRAMEWORK::particles_sort .........   Passed    1.98 sec
+83/94 Test #85: FRAMEWORK::fields .................   Passed    0.35 sec
+84/94 Test #86: FRAMEWORK::grid_mesh ..............   Passed    0.10 sec
+85/94 Test #87: FRAMEWORK::comm-nompi .............   Passed    0.18 sec
+86/94 Test #88: FRAMEWORK::checkpoint-extents .....   Passed    0.12 sec
+87/94 Test #89: FRAMEWORK::checkpoint-data ........   Passed    0.04 sec
+88/94 Test #90: FRAMEWORK::spectra ................   Passed    0.18 sec
+89/94 Test #91: OUTPUT::stats .....................   Passed    0.02 sec
+90/94 Test #92: OUTPUT::fields ....................   Passed    0.01 sec
+91/94 Test #93: OUTPUT::writer-nompi ..............   Passed    0.44 sec
+92/94 Test #94: HADRONIC::bh_proto_params .........   Passed    0.30 sec
+93/94 Test #81: ARCHETYPES::bh_ka2008 .............   Passed  700.48 sec
+94/94 Test #80: ARCHETYPES::bh_chain_a7 ...........   Passed  1349.62 sec
+99% tests passed, 1 tests failed out of 94
+exit 8

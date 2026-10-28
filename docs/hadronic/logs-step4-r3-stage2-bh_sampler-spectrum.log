@@ -1,0 +1,44 @@
+bh_sampler: real_t = float, Kokkos default execution space = OpenMP
+(diag) sampler tables: 113 eps' nodes, 256 x 256 cells, 5067 cumulative nodes, 30.09 MB on the device (budget 64 MB), built in 43.7 s
+---- the spectrum of created pairs vs the reference's weighted-chain histograms (bhref 0.2.0, frozen), mono05 and powerlaw, every reference Gamma_p inside the rate table; the calibrated weighted two-sample test (bhref-0.2.0-suppl1/COMPARISON.md) ----
+(diag) mono05 Gamma_p 2.23125: 100000 pairs; values outside the reference's edges 0
+(diag) spectrum mono05 Gamma_p 2.23125 E-: ESS_A 98871 ESS_B 988795 T_AD 6.2642e-06 p 0.68050 q99 4.3053e-05 merged bins 106
+(diag) spectrum mono05 Gamma_p 2.23125 E+: ESS_A 98871 ESS_B 988795 T_AD 1.3436e-05 p 0.26180 q99 4.1555e-05 merged bins 107
+(diag) spectrum mono05 Gamma_p 2.23125 cos-: ESS_A 98871 ESS_B 988795 T_AD 1.4031e-06 p 0.64690 q99 2.5343e-05 merged bins 3
+(diag) spectrum mono05 Gamma_p 2.23125 cos+: ESS_A 98871 ESS_B 988795 T_AD 6.1289e-06 p 0.21470 q99 2.4556e-05 merged bins 3
+(diag) spectrum mono05 Gamma_p 2.23125 D: ESS_A 98871 ESS_B 988795 T_AD 9.5033e-06 p 0.43690 q99 4.3312e-05 merged bins 106
+(diag) mono05 Gamma_p 3: 100000 pairs; values outside the reference's edges 0
+(diag) spectrum mono05 Gamma_p 3 E-: ESS_A 91536 ESS_B 916016 T_AD 3.9057e-05 p 0.02140 q99 4.6692e-05 merged bins 151
+(diag) spectrum mono05 Gamma_p 3 E+: ESS_A 91536 ESS_B 916016 T_AD 1.6177e-05 p 0.21250 q99 4.6909e-05 merged bins 152
+(diag) spectrum mono05 Gamma_p 3 cos-: ESS_A 91536 ESS_B 916016 T_AD 2.2663e-05 p 0.07930 q99 4.2954e-05 merged bins 16
+(diag) spectrum mono05 Gamma_p 3 cos+: ESS_A 91536 ESS_B 916016 T_AD 3.1387e-06 p 0.87865 q99 4.1533e-05 merged bins 16
+(diag) spectrum mono05 Gamma_p 3 D: ESS_A 91536 ESS_B 916016 T_AD 3.0786e-05 p 0.05620 q99 5.0716e-05 merged bins 129
+(diag) mono05 Gamma_p 10: 100000 pairs; values outside the reference's edges 0
+(diag) spectrum mono05 Gamma_p 10 E-: ESS_A 62393 ESS_B 622220 T_AD 4.1805e-05 p 0.05230 q99 6.5271e-05 merged bins 166
+(diag) spectrum mono05 Gamma_p 10 E+: ESS_A 62393 ESS_B 622220 T_AD 9.1106e-06 p 0.66945 q99 6.6626e-05 merged bins 166
+(diag) spectrum mono05 Gamma_p 10 cos-: ESS_A 62393 ESS_B 622220 T_AD 1.3642e-05 p 0.38355 q99 5.9152e-05 merged bins 38
+(diag) spectrum mono05 Gamma_p 10 cos+: ESS_A 62393 ESS_B 622220 T_AD 2.4507e-05 p 0.14520 q99 5.9206e-05 merged bins 37
+(diag) spectrum mono05 Gamma_p 10 D (log bins): ESS_A 62393 ESS_B 622016 T_AD 1.8527e-05 p 0.37465 q99 8.3679e-05 merged bins 150
+(diag) sampler tables: 113 eps' nodes, 256 x 256 cells, 5067 cumulative nodes, 39.40 MB on the device (budget 64 MB), built in 45.1 s
+(diag) powerlaw Gamma_p 1.09375: 100000 pairs; values outside the reference's edges 0
+(diag) spectrum powerlaw Gamma_p 1.09375 E-: ESS_A 97269 ESS_B 972520 T_AD 4.5702e-06 p 0.83745 q99 4.4007e-05 merged bins 139
+(diag) spectrum powerlaw Gamma_p 1.09375 E+: ESS_A 97269 ESS_B 972520 T_AD 4.6954e-06 p 0.82670 q99 4.3467e-05 merged bins 139
+(diag) spectrum powerlaw Gamma_p 1.09375 cos-: ESS_A 97269 ESS_B 972520 T_AD 2.2964e-05 p 0.08920 q99 4.4984e-05 merged bins 138
+(diag) spectrum powerlaw Gamma_p 1.09375 cos+: ESS_A 97269 ESS_B 972520 T_AD 5.9791e-06 p 0.71740 q99 4.3057e-05 merged bins 139
+(diag) spectrum powerlaw Gamma_p 1.09375 D: ESS_A 97269 ESS_B 972520 T_AD 8.0179e-06 p 0.55215 q99 4.4887e-05 merged bins 137
+(diag) powerlaw Gamma_p 3: 100000 pairs; values outside the reference's edges 0
+(diag) spectrum powerlaw Gamma_p 3 E-: ESS_A 70182 ESS_B 701205 T_AD 6.3841e-06 p 0.81025 q99 6.4403e-05 merged bins 143
+(diag) spectrum powerlaw Gamma_p 3 E+: ESS_A 70182 ESS_B 701205 T_AD 9.2923e-06 p 0.63660 q99 6.3554e-05 merged bins 145
+(diag) spectrum powerlaw Gamma_p 3 cos-: ESS_A 70182 ESS_B 701205 T_AD 8.8269e-06 p 0.68475 q99 6.1817e-05 merged bins 143
+(diag) spectrum powerlaw Gamma_p 3 cos+: ESS_A 70182 ESS_B 701205 T_AD 2.1578e-05 p 0.21745 q99 6.2903e-05 merged bins 143
+(diag) spectrum powerlaw Gamma_p 3 D: ESS_A 70182 ESS_B 701205 T_AD 9.0729e-06 p 0.65810 q99 7.3370e-05 merged bins 77
+(diag) powerlaw Gamma_p 10: 100000 pairs; values outside the reference's edges 0
+(diag) spectrum powerlaw Gamma_p 10 E-: ESS_A 49724 ESS_B 498793 T_AD 7.1747e-06 p 0.90440 q99 9.9359e-05 merged bins 143
+(diag) spectrum powerlaw Gamma_p 10 E+: ESS_A 49724 ESS_B 498793 T_AD 3.4348e-06 p 0.99595 q99 1.0089e-04 merged bins 143
+(diag) spectrum powerlaw Gamma_p 10 cos-: ESS_A 49724 ESS_B 498793 T_AD 1.1193e-05 p 0.68645 q99 9.6604e-05 merged bins 95
+(diag) spectrum powerlaw Gamma_p 10 cos+: ESS_A 49724 ESS_B 498793 T_AD 1.2160e-05 p 0.64040 q99 9.3394e-05 merged bins 95
+(diag) spectrum powerlaw Gamma_p 10 D (log bins): ESS_A 49724 ESS_B 497908 T_AD 1.1821e-05 p 0.74900 q99 1.2773e-04 merged bins 126
+PASS: spectrum: the kernel's weighted pairs vs the reference's weighted-chain histograms (E-, E+, cos-, cos+, D; the calibrated weighted two-sample test of COMPARISON.md, pass iff p >= 0.01), fraction of the 30 comparisons passing (>= 95% required) : 1.000000e+00 (tolerance 9.500e-01)
+(diag) spectrum: 30 of 30 pass; failures: none
+(diag) spectrum: not reachable by the box (outside the bath's rate table): mono05 Gamma_p 100 (rate table [2.1300, 91.8102]); powerlaw Gamma_p 100 (rate table [1.0478, 30.6107]); the unweighted-chain histograms of the reference are not used here (the kernel draws the weighted chain)
+bh_sampler summary: 1 passed, 0 failed

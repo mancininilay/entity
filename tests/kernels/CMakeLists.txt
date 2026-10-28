@@ -51,9 +51,13 @@ gen_test(reduced_stats_weights)
 add_executable(test-kernels-bh_loss.xc bh_loss.cpp)
 add_dependencies(test-kernels-bh_loss.xc ntt_kernels ntt_metrics ntt_framework)
 target_link_libraries(test-kernels-bh_loss.xc PRIVATE ntt_kernels ntt_metrics ntt_framework)
-foreach(grp tables overflow huge t9 tags above subcycling t6 t5 t5b)
+foreach(grp tables overflow huge t9 tags above subcycling t6 t5 t5fine t5b)
   add_test(NAME "KERNELS::bh_loss_${grp}" COMMAND test-kernels-bh_loss.xc ${grp})
 endforeach()
+# the two long groups (T5 dt-convergence at three resolutions, T5b ulp scan) get
+# their own timeouts (seconds); every other group keeps the ctest default
+set_tests_properties("KERNELS::bh_loss_t5fine" PROPERTIES TIMEOUT 7200)
+set_tests_properties("KERNELS::bh_loss_t5b" PROPERTIES TIMEOUT 7200)
 # Bethe-Heitler pair plumbing (P2 step 3): T10 (budget, capped, closing), poisson,
 # none, pairs per unit energy, T12, T10b, T-exp; one ctest entry per group
 add_executable(test-kernels-bh_pairs.xc bh_pairs.cpp)
@@ -66,3 +70,17 @@ endforeach()
 if("${pgen}" STREQUAL "rec_mix")
   gen_test(rec_mix_segments)
 endif()
+# Bethe-Heitler rest-frame sampler in the kernel (P2 step 4, stage 4): device
+# tables, A11 (mu_d independence), A12 (cost, number and energy per paid energy,
+# the ledger identity, the pair spectrum vs the host chain); one entry per group
+add_executable(test-kernels-bh_sampler.xc bh_sampler.cpp)
+add_dependencies(test-kernels-bh_sampler.xc ntt_kernels ntt_metrics ntt_framework)
+target_link_libraries(test-kernels-bh_sampler.xc PRIVATE ntt_kernels ntt_metrics ntt_framework)
+target_compile_definitions(test-kernels-bh_sampler.xc PRIVATE BH_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data/hadronic")
+foreach(grp tables a11 identity a12 spectrum)
+  add_test(NAME "KERNELS::bh_sampler_${grp}" COMMAND test-kernels-bh_sampler.xc ${grp})
+endforeach()
+set_tests_properties("KERNELS::bh_sampler_a12" PROPERTIES TIMEOUT 14400)
+# Bethe-Heitler ledger reduction timing harness (P2 step 4, stage 5; G3 open item):
+# the double-double reducer vs Kokkos::atomic_add on double, a diagnostic
+gen_test(bh_reduction_timing)

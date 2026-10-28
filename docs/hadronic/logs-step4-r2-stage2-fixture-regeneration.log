@@ -1,0 +1,43 @@
++ build/tools/bh_sampler_dump qk_table --out tests/data/hadronic/cpp-sampler-candidate/qk_table.txt
+bh_sampler_dump qk_table: 449 nodes written to tests/data/hadronic/cpp-sampler-candidate/qk_table.txt (data_sha256 d36ef7a035299ad7374db87757ea64f9dcc066a5aa24cd2c1115d93da68bda05)
++ for g in 2.23125 3 10 100
++ build/tools/bh_sampler_dump hist --bath mono05 --gamma 2.23125 --out tests/data/hadronic/cpp-sampler-candidate/hist_mono05_G2.23125.txt --bins-from tests/data/hadronic/bhref-0.2.0-candidate/hist_mono05_G2.23125.txt
+bh_sampler_dump hist mono05 Gamma 2.23125: 1000 rows (Eminus) written to tests/data/hadronic/cpp-sampler-candidate/hist_mono05_G2.23125.txt in 13 s; weighted 1000000 accepted of 1362893 attempts, ESS 988766; 0 values outside the edges (data_sha256 4545934b37b1f8043054d4d4d98a6bab4840e601582c30671e3f5a2132e5efe0)
++ for g in 2.23125 3 10 100
++ build/tools/bh_sampler_dump hist --bath mono05 --gamma 3 --out tests/data/hadronic/cpp-sampler-candidate/hist_mono05_G3.txt --bins-from tests/data/hadronic/bhref-0.2.0-candidate/hist_mono05_G3.txt
+bh_sampler_dump hist mono05 Gamma 3: 1000 rows (Eminus) written to tests/data/hadronic/cpp-sampler-candidate/hist_mono05_G3.txt in 13 s; weighted 1000000 accepted of 2494123 attempts, ESS 915747; 0 values outside the edges (data_sha256 af78c96b1f6fb8c4e0992cac34a69ffefa6a5c2989cd8c4ed727a07d50c2be2c)
++ for g in 2.23125 3 10 100
++ build/tools/bh_sampler_dump hist --bath mono05 --gamma 10 --out tests/data/hadronic/cpp-sampler-candidate/hist_mono05_G10.txt --bins-from tests/data/hadronic/bhref-0.2.0-candidate/hist_mono05_G10.txt
+bh_sampler_dump hist mono05 Gamma 10: 1000 rows (Eminus) written to tests/data/hadronic/cpp-sampler-candidate/hist_mono05_G10.txt in 18 s; weighted 1000000 accepted of 13858423 attempts, ESS 621612; 0 values outside the edges (data_sha256 7313c90cbc3e905cf4d1173c41b4adc5a652cc69f8d165d73619fa573820f158)
++ for g in 2.23125 3 10 100
++ build/tools/bh_sampler_dump hist --bath mono05 --gamma 100 --out tests/data/hadronic/cpp-sampler-candidate/hist_mono05_G100.txt --bins-from tests/data/hadronic/bhref-0.2.0-candidate/hist_mono05_G100.txt
+bh_sampler_dump hist mono05 Gamma 100: 1000 rows (Eminus) written to tests/data/hadronic/cpp-sampler-candidate/hist_mono05_G100.txt in 177 s; weighted 1000000 accepted of 464729073 attempts, ESS 296962; 0 values outside the edges (data_sha256 5fc193f47f54b654aed8a3f47046cbea5d5b583bb8ad6673625743fc88bc9c32)
++ for g in 1.09375 3 10 100
++ build/tools/bh_sampler_dump hist --bath powerlaw --gamma 1.09375 --out tests/data/hadronic/cpp-sampler-candidate/hist_powerlaw_G1.09375.txt --bins-from tests/data/hadronic/bhref-0.2.0-candidate/hist_powerlaw_G1.09375.txt
+bh_sampler_dump hist powerlaw Gamma 1.09375: 1000 rows (Eminus) written to tests/data/hadronic/cpp-sampler-candidate/hist_powerlaw_G1.09375.txt in 25 s; weighted 1000000 accepted of 1606861 attempts, ESS 972445; 0 values outside the edges (data_sha256 0afd79b0ee263824fa1686e8eb151fbefcd293d51f8976d513a07dadc59e1239)
++ for g in 1.09375 3 10 100
++ build/tools/bh_sampler_dump hist --bath powerlaw --gamma 3 --out tests/data/hadronic/cpp-sampler-candidate/hist_powerlaw_G3.txt --bins-from tests/data/hadronic/bhref-0.2.0-candidate/hist_powerlaw_G3.txt
+bh_sampler_dump hist powerlaw Gamma 3: 1000 rows (Eminus) written to tests/data/hadronic/cpp-sampler-candidate/hist_powerlaw_G3.txt in 21 s; weighted 1000000 accepted of 7196283 attempts, ESS 700357; 0 values outside the edges (data_sha256 250c4b6faf550bdfc27c21a68317ceadf76dd216e6f56c37bc824c9152a20539)
++ for g in 1.09375 3 10 100
++ build/tools/bh_sampler_dump hist --bath powerlaw --gamma 10 --out tests/data/hadronic/cpp-sampler-candidate/hist_powerlaw_G10.txt --bins-from tests/data/hadronic/bhref-0.2.0-candidate/hist_powerlaw_G10.txt
+bh_sampler_dump hist powerlaw Gamma 10: 1000 rows (Eminus) written to tests/data/hadronic/cpp-sampler-candidate/hist_powerlaw_G10.txt in 30 s; weighted 1000000 accepted of 21382619 attempts, ESS 499089; 0 values outside the edges (data_sha256 ebf1551eee47c439ff39182ea1147a82689dd99d5fb7be121aef1771a19bee09)
++ for g in 1.09375 3 10 100
++ build/tools/bh_sampler_dump hist --bath powerlaw --gamma 100 --out tests/data/hadronic/cpp-sampler-candidate/hist_powerlaw_G100.txt --bins-from tests/data/hadronic/bhref-0.2.0-candidate/hist_powerlaw_G100.txt
+bh_sampler_dump hist powerlaw Gamma 100: 1000 rows (Eminus) written to tests/data/hadronic/cpp-sampler-candidate/hist_powerlaw_G100.txt in 260 s; weighted 1000000 accepted of 239966199 attempts, ESS 251052; 0 values outside the edges (data_sha256 524701fe5d220116e31d3c5e52a9fb1faf920f7e9bf24f99cee249dee14c02ae)
++ for b in mono05_mu100 blackbody powerlaw mono03 mono05
++ build/tools/bh_sampler_dump moments --bath mono05_mu100 --out tests/data/hadronic/cpp-sampler-candidate/moments_mono05_mu100.txt
+bh_sampler_dump moments mono05_mu100: 403 nodes written to tests/data/hadronic/cpp-sampler-candidate/moments_mono05_mu100.txt in 196 s; weighted chain 100000 accepted per node, 56809732 attempts in total, at most 533451 at one node (data_sha256 31fc64d75f4b32e2c187b9c0d5882347926c215e48b5082386a0affaf058b51e)
++ for b in mono05_mu100 blackbody powerlaw mono03 mono05
++ build/tools/bh_sampler_dump moments --bath blackbody --out tests/data/hadronic/cpp-sampler-candidate/moments_blackbody.txt
+bh_sampler_dump moments blackbody: 406 nodes written to tests/data/hadronic/cpp-sampler-candidate/moments_blackbody.txt in 283 s; weighted chain 100000 accepted per node, 158375197 attempts in total, at most 3318428 at one node (data_sha256 471fbb4748ce47725bcd0c942cfb1b0f04465fc59564f9fcdea746586daa3b89)
++ for b in mono05_mu100 blackbody powerlaw mono03 mono05
++ build/tools/bh_sampler_dump moments --bath powerlaw --out tests/data/hadronic/cpp-sampler-candidate/moments_powerlaw.txt
+bh_sampler_dump moments powerlaw: 429 nodes written to tests/data/hadronic/cpp-sampler-candidate/moments_powerlaw.txt in 289 s; weighted chain 100000 accepted per node, 242983490 attempts in total, at most 5643320 at one node (data_sha256 b4659239af74ad8ad6ed8b0313170f0439639dbe8565aab3c39768a581f7c4d6)
++ for b in mono05_mu100 blackbody powerlaw mono03 mono05
++ build/tools/bh_sampler_dump moments --bath mono03 --out tests/data/hadronic/cpp-sampler-candidate/moments_mono03.txt
+bh_sampler_dump moments mono03: 465 nodes written to tests/data/hadronic/cpp-sampler-candidate/moments_mono03.txt in 598 s; weighted chain 100000 accepted per node, 856320463 attempts in total, at most 40579071 at one node (data_sha256 efcab366841c2af3ce77348a833df067c6558cfe07ad98290f464e16ffc541f0)
++ for b in mono05_mu100 blackbody powerlaw mono03 mono05
++ build/tools/bh_sampler_dump moments --bath mono05 --out tests/data/hadronic/cpp-sampler-candidate/moments_mono05.txt
+bh_sampler_dump moments mono05: 466 nodes written to tests/data/hadronic/cpp-sampler-candidate/moments_mono05.txt in 596 s; weighted chain 100000 accepted per node, 863463833 attempts in total, at most 40426451 at one node (data_sha256 be9a3c3703026cc703ed8b9b7d5f653590546ba548d7a0a64cd0b322c467a7a0)
++ echo REGEN-DONE
+REGEN-DONE

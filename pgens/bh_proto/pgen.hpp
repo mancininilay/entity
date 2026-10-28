@@ -60,6 +60,7 @@
 #include "archetypes/energy_dist.h"
 #include "archetypes/hadronic/bh_interpolate.h"
 #include "archetypes/hadronic/bh_physics.h"
+#include "archetypes/hadronic/bh_sampler_device.h"
 #include "archetypes/hadronic/bh_table_io.h"
 #include "archetypes/hadronic/bh_tables_device.h"
 #include "archetypes/particle_injector.h"
@@ -492,6 +493,7 @@ namespace user {
     std::shared_ptr<const arch::bh::PhotonBath> bath;
     arch::bh::Quadrature                        quadrature;
     arch::bh::HadronicTablesHost                tables_host;
+    arch::bh::SamplerTables                     sampler_tables; // restframe spectrum (step 4)
     arch::bh::HadronicTables                    tables;
 
     // R6 Gauss-law sample (test.gauss): one residual evaluation of the domain
@@ -754,6 +756,18 @@ namespace user {
           tables_host = arch::bh::build_tables(rates, setup.mu_r, setup.gamma_p_max);
           arch::bh::validate_tables(tables_host);
           tables = arch::bh::mirror_tables_to_device(tables_host);
+          if (setup.spectrum == "restframe") {
+            // the rest-frame sampler tables (step 4): built on the host, mirrored
+            // to the device in single precision (contract section 3, <= 64 MB)
+            sampler_tables = arch::bh::build_sampler_tables(*bath, tables_host);
+            raise::ErrorIf(sampler_tables.bytes > 64u * 1024u * 1024u, "bh_proto: the rest-frame sampler tables exceed 64 MB", HERE);
+            std::printf("bh_proto: rest-frame sampler tables: %d eps' nodes, %d x %d cells, %d cumulative nodes, "
+                        "%s photon-energy table, %.1f MB on the device\n",
+                        sampler_tables.n_k, sampler_tables.n_s, sampler_tables.n_tau, sampler_tables.n_cum,
+                        sampler_tables.mono ? "no" : (std::to_string(sampler_tables.n_gamma) + " x " +
+                                                      std::to_string(sampler_tables.n_eps)).c_str(),
+                        static_cast<double>(sampler_tables.bytes) * 1.0e-6);
+          }
           if (setup.table_dump) {
             arch::bh::TableFileMeta meta;
             meta.status = "cpp_candidate";
@@ -1193,8 +1207,9 @@ namespace user {
         prm.source = setup.source == "budget"    ? static_cast<int>(kernel::hadronic::PairSource::Budget)
                      : setup.source == "poisson" ? static_cast<int>(kernel::hadronic::PairSource::Poisson)
                                                  : static_cast<int>(kernel::hadronic::PairSource::None);
-        prm.spectrum = setup.spectrum == "threshold"
-                         ? static_cast<int>(kernel::hadronic::PairSpectrum::Threshold)
+        prm.spectrum = setup.spectrum == "threshold" ? static_cast<int>(kernel::hadronic::PairSpectrum::Threshold)
+                       : setup.spectrum == "restframe"
+                         ? static_cast<int>(kernel::hadronic::PairSpectrum::RestFrame)
                          : static_cast<int>(kernel::hadronic::PairSpectrum::Delta);
         prm.r_th_factor         = setup.r_th_factor;
         prm.f_r                 = setup.f_r;
@@ -1202,6 +1217,7 @@ namespace user {
         prm.pair_weight         = setup.pair_weight;
         prm.max_events_per_step = setup.max_events_per_step;
         prm.kick                = setup.test_kick;
+        prm.max_sampler_attempts = setup.test_max_sampler_attempts;
 
         for (auto& sp : domain.species) {
           if (ion_mass.count(sp.index()) == 0 || sp.npart() == 0) {
@@ -1280,7 +1296,7 @@ namespace user {
             CreateParticleRangePolicy<Dim::_1D>({ 0u }, { sp.npart() }),
             kernel::hadronic::BetheHeitler_kernel<M> {
               static_cast<const ParticleArrays&>(sp), ion_mass.at(sp.index()), tables, prm,
-              targets, *pools[sp.index()] },
+              targets, *pools[sp.index()], sampler_tables },
             Kokkos::Sum<kernel::hadronic::LossLedger>(L));
           Kokkos::fence();
             if (setup.pairs_enabled()) {
@@ -1565,6 +1581,7 @@ namespace user {
                                       &G.C.n_capped_events, &G.C.n_above_table,   &G.C.n_latency,
                                       &G.C.n_resolution,    &G.C.n_processed,     &G.C.n_alive,
                                       &G.C.n_applied,       &G.C.n_rng,           &G.C.n_k0_trigger,
+                                      &G.C.n_sampler_attempts, &G.C.n_sampler_overflow, // round 2, finding 5
                                       &G.n_dead_host };
         constexpr int NC = sizeof(cnt) / sizeof(cnt[0]);
         unsigned long long cbuf[NC];
@@ -1676,7 +1693,9 @@ namespace user {
                "n_closing | n_capped | n_capped_events | n_above_table | n_latency | n_processed | "
                "n_applied | n_rng | n_k0_trigger | n_closing_at_rest [1, cumulative] | sum_wK [snapshot: sum over alive "
                "ions of w K in double from the stored u] | B_budget [cumulative single-precision "
-               "rounding budget of the transfers] | npart_minus | npart_plus [snapshots]\n";
+               "rounding budget of the transfers] | npart_minus | npart_plus [snapshots] | "
+               "n_sampler_attempts | n_sampler_overflow [1, cumulative: restframe trials of the chains and "
+               "packets whose rejection loop hit the bound; reduced over ranks; round 2]\n";
         H.file_started = true;
       }
       const auto& C = G.C;
@@ -1693,7 +1712,7 @@ namespace user {
           << C.n_capped_events << " " << C.n_above_table << " " << C.n_latency << " "
           << C.n_processed << " " << C.n_applied << " " << C.n_rng << " " << C.n_k0_trigger << " "
           << C.n_closing_at_rest << " " << swk << " " << C.B_budget.value() << " " << npm << " " << npp
-          << "\n";
+          << " " << C.n_sampler_attempts << " " << C.n_sampler_overflow << "\n";
     }
 
     npart_t pair_npart_minus { 0 }, pair_npart_plus { 0 };
@@ -2031,6 +2050,12 @@ namespace user {
                     C.n_capped_events, C.n_above_table, C.n_latency, C.n_processed, C.n_applied,
                     C.n_rng, C.n_k0_trigger, C.n_closing_at_rest, C.sum_wK, C.B_budget.value(), (unsigned)npm_g,
                     (unsigned)npp_g, estimate_bare, estimate_sized);
+        if (setup.spectrum == "restframe") {
+          std::printf("bh_proto: restframe sampler species %d : n_sampler_attempts %llu n_sampler_overflow %llu "
+                      "attempts per pair %.3f\n",
+                      (int)sp.index(), C.n_sampler_attempts, C.n_sampler_overflow,
+                      C.n_spawned > 0 ? static_cast<double>(C.n_sampler_attempts) / C.n_spawned : 0.0);
+        }
         if (any_absorbing) {
           std::printf("bh_proto: exported species %d : E_exported_host %.17g E_exported %.17g difference %.6e "
                       "pending_discarded_host %.17g pending_discarded %.17g difference %.6e n_dead_with_payload %llu "

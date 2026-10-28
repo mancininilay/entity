@@ -1,0 +1,52 @@
+bh_sampler: real_t = float, Kokkos default execution space = OpenMP
+(diag) sampler tables: 113 eps' nodes, 256 x 256 cells, 5067 cumulative nodes, 30.09 MB on the device (budget 64 MB), built in 43.6 s
+---- device tables and chains vs the host chain ----
+PASS: mono05: device sampler tables within 64 MB (bytes) : 3.009282e+07 (tolerance 6.711e+07)
+PASS: mono05: device chain vs host chain, <D> at Gamma_p = 2.3 (1e6 draws each), |dev|/s.e. : 7.937815e-02 (tolerance 4.000e+00)
+PASS: mono05: device draws inside [D_min, D_max] at Gamma_p = 2.3 : 0.000000e+00 (tolerance 0.000e+00)
+PASS: mono05: device weighted chain: E_p[1/D] <D>_device = 1 at Gamma_p = 2.3, |dev|/s.e. : 1.067130e+00 (tolerance 4.000e+00)
+(diag) mono05 Gamma_p 2.3: device <D> 4.05805 +- 0.00056, host 4.05811, I/J 4.06714, min/max D 2.7234 / 6.29; weighted: efficiency 0.6698, overflow 0; 0.23 us per unweighted draw (OpenMP), rng per draw 8.0
+PASS: mono05: device chain vs host chain, <D> at Gamma_p = 3 (1e6 draws each), |dev|/s.e. : 2.618681e-01 (tolerance 4.000e+00)
+PASS: mono05: device draws inside [D_min, D_max] at Gamma_p = 3 : 0.000000e+00 (tolerance 0.000e+00)
+PASS: mono05: device weighted chain: E_p[1/D] <D>_device = 1 at Gamma_p = 3, |dev|/s.e. : 8.997064e-01 (tolerance 4.000e+00)
+(diag) mono05 Gamma_p 3: device <D> 5.13897 +- 0.00157, host 5.13955, I/J 5.15861, min/max D 2.2746 / 13.89; weighted: efficiency 0.4014, overflow 0; 0.23 us per unweighted draw (OpenMP), rng per draw 8.0
+PASS: mono05: device chain vs host chain, <D> at Gamma_p = 10 (1e6 draws each), |dev|/s.e. : 3.271212e-01 (tolerance 4.000e+00)
+PASS: mono05: device draws inside [D_min, D_max] at Gamma_p = 10 : 0.000000e+00 (tolerance 0.000e+00)
+PASS: mono05: device weighted chain: E_p[1/D] <D>_device = 1 at Gamma_p = 10, |dev|/s.e. : 2.464000e-02 (tolerance 4.000e+00)
+(diag) mono05 Gamma_p 10: device <D> 11.19725 +- 0.01006, host 11.20191, I/J 11.18817, min/max D 2.0539 / 170.41; weighted: efficiency 0.0720, overflow 0; 0.26 us per unweighted draw (OpenMP), rng per draw 8.0
+PASS: mono05: device chain vs host chain, <D> at Gamma_p = 60 (1e6 draws each), |dev|/s.e. : 4.686836e-01 (tolerance 4.000e+00)
+PASS: mono05: device draws inside [D_min, D_max] at Gamma_p = 60 : 0.000000e+00 (tolerance 0.000e+00)
+PASS: mono05: device weighted chain: E_p[1/D] <D>_device = 1 at Gamma_p = 60, |dev|/s.e. : 2.231839e+00 (tolerance 4.000e+00)
+(diag) mono05 Gamma_p 60: device <D> 25.22974 +- 0.06423, host 25.27238, I/J 25.27395, min/max D 2.0491 / 3974.97; weighted: efficiency 0.0048, overflow 0; 0.26 us per unweighted draw (OpenMP), rng per draw 8.0
+(diag) sampler tables: 113 eps' nodes, 256 x 256 cells, 5067 cumulative nodes, 39.40 MB on the device (budget 64 MB), built in 45.0 s
+PASS: powerlaw: device sampler tables within 64 MB (bytes) : 3.939698e+07 (tolerance 6.711e+07)
+PASS: powerlaw: device chain vs host chain, <D> at Gamma_p = 1.05 (1e6 draws each), |dev|/s.e. : 1.098611e-01 (tolerance 4.000e+00)
+PASS: powerlaw: device draws inside [D_min, D_max] at Gamma_p = 1.05 : 0.000000e+00 (tolerance 0.000e+00)
+PASS: powerlaw: device weighted chain: E_p[1/D] <D>_device = 1 at Gamma_p = 1.05, |dev|/s.e. : 1.754391e-01 (tolerance 4.000e+00)
+(diag) powerlaw Gamma_p 1.05: device <D> 0.63081 +- 0.00004, host 0.63080, I/J 0.63122, min/max D 0.5097 / 0.80; weighted: efficiency 0.8220, overflow 0; 0.32 us per unweighted draw (OpenMP), rng per draw 8.0
+PASS: powerlaw: device chain vs host chain, <D> at Gamma_p = 1.3 (1e6 draws each), |dev|/s.e. : 3.523225e-01 (tolerance 4.000e+00)
+PASS: powerlaw: device draws inside [D_min, D_max] at Gamma_p = 1.3 : 0.000000e+00 (tolerance 0.000e+00)
+PASS: powerlaw: device weighted chain: E_p[1/D] <D>_device = 1 at Gamma_p = 1.3, |dev|/s.e. : 1.031457e-01 (tolerance 4.000e+00)
+(diag) powerlaw Gamma_p 1.3: device <D> 1.44727 +- 0.00047, host 1.44751, I/J 1.45262, min/max D 0.5135 / 4.45; weighted: efficiency 0.3919, overflow 0; 0.34 us per unweighted draw (OpenMP), rng per draw 8.0
+PASS: powerlaw: device chain vs host chain, <D> at Gamma_p = 3 (1e6 draws each), |dev|/s.e. : 3.450296e-01 (tolerance 4.000e+00)
+PASS: powerlaw: device draws inside [D_min, D_max] at Gamma_p = 3 : 0.000000e+00 (tolerance 0.000e+00)
+PASS: powerlaw: device weighted chain: E_p[1/D] <D>_device = 1 at Gamma_p = 3, |dev|/s.e. : 7.953848e-01 (tolerance 4.000e+00)
+(diag) powerlaw Gamma_p 3: device <D> 3.92312 +- 0.00259, host 3.92439, I/J 3.92232, min/max D 0.5493 / 37.16; weighted: efficiency 0.1390, overflow 0; 0.36 us per unweighted draw (OpenMP), rng per draw 8.0
+PASS: powerlaw: device chain vs host chain, <D> at Gamma_p = 10 (1e6 draws each), |dev|/s.e. : 2.027411e-01 (tolerance 4.000e+00)
+PASS: powerlaw: device draws inside [D_min, D_max] at Gamma_p = 10 : 0.000000e+00 (tolerance 0.000e+00)
+PASS: powerlaw: device weighted chain: E_p[1/D] <D>_device = 1 at Gamma_p = 10, |dev|/s.e. : 3.776648e-01 (tolerance 4.000e+00)
+(diag) powerlaw Gamma_p 10: device <D> 10.22404 +- 0.01046, host 10.22704, I/J 10.21349, min/max D 0.5371 / 356.85; weighted: efficiency 0.0468, overflow 0; 0.36 us per unweighted draw (OpenMP), rng per draw 8.0
+PASS: powerlaw: device chain vs host chain, <D> at Gamma_p = 25 (1e6 draws each), |dev|/s.e. : 3.753852e-01 (tolerance 4.000e+00)
+PASS: powerlaw: device draws inside [D_min, D_max] at Gamma_p = 25 : 0.000000e+00 (tolerance 0.000e+00)
+PASS: powerlaw: device weighted chain: E_p[1/D] <D>_device = 1 at Gamma_p = 25, |dev|/s.e. : 8.362894e-02 (tolerance 4.000e+00)
+(diag) powerlaw Gamma_p 25: device <D> 20.68649 +- 0.02712, host 20.70091, I/J 20.69310, min/max D 0.5361 / 1475.91; weighted: efficiency 0.0217, overflow 0; 0.37 us per unweighted draw (OpenMP), rng per draw 8.0
+---- the spectrum of created pairs vs the reference's weighted-chain histograms (bhref candidate), mono05 and powerlaw, every reference Gamma_p inside the rate table ----
+(diag) mono05 Gamma_p 2.23125: 100000 pairs (N_eff 98871), reference ESS 988795, values outside the reference's edges 0; E- KS 0.00187 E+ KS 0.00299 cos- KS 0.00085 cos+ KS 0.00189 D KS 0.00253; 99% critical 0.00543
+(diag) mono05 Gamma_p 3: 100000 pairs (N_eff 91536), reference ESS 916016, values outside the reference's edges 0; E- KS 0.00513 E+ KS 0.00316 cos- KS 0.00292 cos+ KS 0.00195 D KS 0.00396; 99% critical 0.00564
+(diag) mono05 Gamma_p 10: 100000 pairs (N_eff 62393), reference ESS 622220, values outside the reference's edges 0; E- KS 0.00442 E+ KS 0.00362 cos- KS 0.00366 cos+ KS 0.00450 D KS 0.00372; 99% critical 0.00684
+(diag) powerlaw Gamma_p 1.09375: 100000 pairs (N_eff 97269), reference ESS 972520, values outside the reference's edges 0; E- KS 0.00169 E+ KS 0.00247 cos- KS 0.00499 cos+ KS 0.00256 D KS 0.00239; 99% critical 0.00547
+(diag) powerlaw Gamma_p 3: 100000 pairs (N_eff 70182), reference ESS 701205, values outside the reference's edges 0; E- KS 0.00176 E+ KS 0.00276 cos- KS 0.00227 cos+ KS 0.00370 D KS 0.00223; 99% critical 0.00645
+(diag) powerlaw Gamma_p 10: 100000 pairs (N_eff 49724), reference ESS 498793, values outside the reference's edges 0; E- KS 0.00297 E+ KS 0.00154 cos- KS 0.00267 cos+ KS 0.00253 D KS 0.00149; 99% critical 0.00766
+PASS: spectrum: the kernel's weighted pairs vs the reference's weighted-chain histograms (E-, E+, cos-, cos+, D; binned weighted two-sample KS at 99% with Kish effective sizes, the A10 test), fraction of the 30 combinations passing (>= 95% required) : 1.000000e+00 (tolerance 9.500e-01)
+(diag) spectrum: not reachable by the box (outside the bath's rate table): mono05 Gamma_p 100 (rate table [2.1300, 91.8102]); powerlaw Gamma_p 100 (rate table [1.0478, 30.6107]); the unweighted-chain histograms of the reference are not used here (the kernel draws the weighted chain)
+bh_sampler summary: 30 passed, 0 failed

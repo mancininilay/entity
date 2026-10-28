@@ -1,0 +1,80 @@
+# bash tests/hadronic/sampler_overflow.sh build-bhproto/src/entity.xc build/tests/hadronic/bh_check pgens/bh_proto/inputs <workdir>  (non-MPI, single, OpenMP)
+ok: sampler overflow run
+LEDGER_ROW step 199 n_events 244 n_spawned 244 n_dropped 0 n_closing 0 n_capped 0 n_capped_events 0 n_rng 2196 npart_minus 244 npart_plus 244 E_drag 266.42187340833334 E_pairs 278.42237103524008 E_absorbed 15.770081379450858 E_exported 0 E_round -4.2638042106015922e-07 E_stochastic 0 E_lost_nopairs 0 debt_outstanding 3.7695841789245605 residual 0.000000e+00 B 0.5758212681460112 n_sampler_attempts 244 n_sampler_overflow 216
+PASS: ledger identity residual / E_drag (last row) : 0.000000e+00 (tolerance 1.000e-12)
+PASS: ledger: n_spawned >= 100 : 2.440000e+02 (tolerance 1.000e+02)
+PASS: ledger: n_sampler_overflow >= 1 : 2.160000e+02 (tolerance 1.000e+00)
+PASS: ledger: n_sampler_attempts >= n_sampler_overflow : 2.440000e+02 (tolerance 2.160e+02)
+(diag) bh_proto: restframe sampler species 1 : n_sampler_attempts 244 n_sampler_overflow 216 attempts per pair 1.000
+PASS: ledger counters = run summary counters (attempts 244, overflow 216)
+sampler_overflow.sh summary: 1 registered runs executed, all checks passed
+
+real	0m45.142s
+user	0m44.304s
+sys	0m0.073s
+
+# bash tests/hadronic/r2_tiny.sh (same builds; rerun with the 45-column ledger file)
+ok: R2 run (pair_weight = 1e-20, poisson)
+LEDGER_ROW step 199 n_events 25600 n_spawned 25600 n_dropped 0 n_closing 0 n_capped 0 n_capped_events 3200 n_rng 0 npart_minus 25600 npart_plus 25600 E_drag 23046.749837879193 E_pairs 2.1732276501890746e-15 E_absorbed 1.2799999593798688e-16 E_exported 0 E_round 6.7773017241562478e-23 E_stochastic 23046.749837879193 E_lost_nopairs 0 debt_outstanding 0 residual 0.000000e+00 B 6.4125955019561589 n_sampler_attempts 0 n_sampler_overflow 0
+PASS: ledger identity residual / E_drag (last row) : 0.000000e+00 (tolerance 1.000e-12)
+PASS: ledger: npart of both pair species = 25600 : 2.560000e+04 (tolerance 2.560e+04)
+PASS: ledger: n_events = n_spawned = 25600 : 2.560000e+04 (tolerance 2.560e+04)
+PASS: ledger: n_capped_events = 3200 : 3.200000e+03 (tolerance 3.200e+03)
+(diag) on_max_events warnings in the log: 5
+ok: no sanitizer runtime error in the log
+PASS: on_max_events = error: the run aborted (exit 1)
+(diag) bh_proto: on_max_events: 16 ion-steps exceeded max_events_per_step = 8 at step 0 (species 1) [setup.on_max_events = error] (error: the run aborts after every rank wrote its ledger row)
+(diag) ERROR : bh_proto: on_max_events: max_events_per_step exceeded on this rank at step 0: every rank wrote its ledger row; the run aborts [setup.on_capacity = error, setup.on_max_events = error]
+(diag) FATAL : bh_proto: on_max_events: max_events_per_step exceeded on this rank at step 0: every rank wrote its ledger row; the run aborts [setup.on_capacity = error, setup.on_max_events = error] /home/user/entity/pgens/bh_proto/pgen.hpp:1411 @ HadronicStage
+(diag) Error: bh_proto: on_max_events: max_events_per_step exceeded on this rank at step 0: every rank wrote its ledger row; the run aborts [setup.on_capacity = error, setup.on_max_events = error] /home/user/entity/pgens/bh_proto/pgen.hpp:1411 @ HadronicStage /home/user/entity/src/framework/simulation.h:45 @ run
+PASS: abort: the log names on_max_events: with the step : 0.000000e+00 (tolerance 0.000e+00)
+PASS: abort: the exhaustion step lies in [0, 0] : 0.000000e+00 (tolerance 0.000e+00)
+LEDGER_ROW step 0 n_events 128 n_spawned 128 n_dropped 0 n_closing 0 n_capped 0 n_capped_events 16 n_rng 0 npart_minus 128 npart_plus 128 E_drag 146.90624912784551 E_pairs 1.1340655936921422e-17 E_absorbed 6.3999997968993442e-19 E_exported 0 E_round 6.7326923473006766e-26 E_stochastic 146.90624912784551 E_lost_nopairs 0 debt_outstanding 0 residual 4.622232e-33 B 0.0350217821291193 n_sampler_attempts 0 n_sampler_overflow 0
+PASS: ledger identity residual / E_drag (last row) : 3.146382e-35 (tolerance 1.000e-12)
+PASS: ledger: n_events = n_spawned = 128 : 1.280000e+02 (tolerance 1.280e+02)
+PASS: ledger: n_capped_events = 16 : 1.600000e+01 (tolerance 1.600e+01)
+PASS: C-MPI-2: the gathered failure line of rank 0 is in the log
+PASS: C-MPI-2: exactly one ledger row (the abort step) was written
+r2_tiny.sh summary: 2 runs executed, all checks passed
+
+# bash tests/hadronic/t12.sh (same builds; rerun with the 45-column ledger file)
+PASS: T12 on_capacity = error: the run aborted (exit 1)
+(diag) bh_proto: on_capacity: pair capacity exhausted at step 1239 (species 1): capacity = 0, tickets = 4, inserted = 0, n_dropped = 4 this step; e- npart 60 / maxnpart 60, e+ npart 60 / maxnpart 60; the debt is kept [setup.on_capacity = error] (error: the run aborts after every rank wrote its ledger row)
+(diag) ERROR : bh_proto: on_capacity: pair capacity exhausted on this rank at step 1239: every rank wrote its ledger row; the run aborts [setup.on_capacity = error, setup.on_max_events = error]
+(diag) FATAL : bh_proto: on_capacity: pair capacity exhausted on this rank at step 1239: every rank wrote its ledger row; the run aborts [setup.on_capacity = error, setup.on_max_events = error] /home/user/entity/pgens/bh_proto/pgen.hpp:1411 @ HadronicStage
+(diag) Error: bh_proto: on_capacity: pair capacity exhausted on this rank at step 1239: every rank wrote its ledger row; the run aborts [setup.on_capacity = error, setup.on_max_events = error] /home/user/entity/pgens/bh_proto/pgen.hpp:1411 @ HadronicStage /home/user/entity/src/framework/simulation.h:45 @ run
+PASS: abort: the log names on_capacity: pair capacity exhausted with the step : 1.239000e+03 (tolerance 0.000e+00)
+PASS: abort: the exhaustion step lies in [600, 1400] : 1.239000e+03 (tolerance 1.400e+03)
+LEDGER_ROW step 1239 n_events 64 n_spawned 60 n_dropped 4 n_closing 0 n_capped 0 n_capped_events 0 n_rng 0 npart_minus 60 npart_plus 60 E_drag 3892.9257554240758 E_pairs 3792.0097336359268 E_absorbed 219.62310814857483 E_exported 0 E_round 6.7436723830538201e-05 E_stochastic 0 E_lost_nopairs 0 debt_outstanding 320.5390625 residual 0.000000e+00 B 5.1351764918791893 n_sampler_attempts 0 n_sampler_overflow 0
+PASS: ledger identity residual / E_drag (last row) : 0.000000e+00 (tolerance 1.000e-12)
+PASS: ledger: n_dropped > 0 : 4.000000e+00 (tolerance 1.000e+00)
+PASS: ledger: npart of both pair species = 60 : 6.000000e+01 (tolerance 6.000e+01)
+PASS: C-MPI-2: the gathered failure line of rank 0 is in the log
+PASS: C-MPI-2: the abort message states that every rank wrote its ledger row
+PASS: C-MPI-2: the ledger row of the abort step 1239 is written exactly once
+ok: T12 on_capacity = warn: the run completes
+bh_proto: on_capacity_estimate: the startup estimate of 316.1324336 macro-particles per pair species (bare 87.8145649) exceeds maxnpart (e- 60, e+ 60) [setup.on_capacity_estimate = warn] (warning, continuing)
+bh_proto: on_capacity: pair capacity exhausted at step 1239 (species 1): capacity = 0, tickets = 4, inserted = 0, n_dropped = 4 this step; e- npart 60 / maxnpart 60, e+ npart 60 / maxnpart 60; the debt is kept [setup.on_capacity = warn] (warning, continuing)
+LEDGER_ROW step 1999 n_events 3104 n_spawned 60 n_dropped 3044 n_closing 0 n_capped 0 n_capped_events 0 n_rng 0 npart_minus 60 npart_plus 60 E_drag 5757.2597251317347 E_pairs 3792.0097336359268 E_absorbed 219.62310814857483 E_exported 0 E_round 5.276938281057995e-05 E_stochastic 0 E_lost_nopairs 0 debt_outstanding 2184.873046875 residual 0.000000e+00 B 8.0228444979275011 n_sampler_attempts 0 n_sampler_overflow 0
+PASS: ledger identity residual / E_drag (last row) : 0.000000e+00 (tolerance 1.000e-12)
+PASS: ledger: n_dropped > 0 : 3.044000e+03 (tolerance 1.000e+00)
+PASS: ledger: npart of both pair species = 60 : 6.000000e+01 (tolerance 6.000e+01)
+bh_proto: array identity species 1 : sum_pairs w_s (E- + E+ - eps_s) = 3572.3866254873519 (60 kernel-born pairs, sum w_pair = 439.24621629714966, sum w_s E = 3792.0097336359268, sum w_s eps = 219.62310814857483), rhs = sum w dK - sum w r - E_exported - E_lost_nopairs - E_stochastic + debt_initial = 3572.3866782567347, residual = 5.276938281057995e-05, E_round (ledger) = 5.276938281057995e-05, resi
+t12.sh summary: 2 runs executed, all checks passed
+
+# bash tests/hadronic/texp.sh (same builds; rerun with the 45-column ledger file)
+ok: T-exp run (absorbing walls)
+(diag) bh_proto: exported species 1 : E_exported_host 249.3964991569519 E_exported 249.3964991569519 difference 0.000000e+00 pending_discarded_host -0.0005008141124562826 pending_discarded -0.0005008141124562826 difference 0.000000e+00 n_dead_with_payload 15 (host sums over dead-tagged ions before each launch, i.e. before the sort)
+PASS: T-exp: E_exported = host sum w r over the dead ions, relative : 0.000000e+00 (tolerance 1.000e-12)
+PASS: T-exp: pending_discarded = host sum w delta (signed), |difference| / |host sum| : 0.000000e+00 (tolerance 1.000e-12)
+PASS: T-exp: dead ions with a payload were seen by the hook before the sort : 1.500000e+01 (tolerance 1.000e+00)
+PASS: T-exp: ledger identity with the exported term, residual / E_drag : 0.000000e+00 (tolerance 1.000e-12)
+LEDGER_ROW step 59 n_events 82 n_spawned 82 n_dropped 0 n_closing 0 n_capped 0 n_capped_events 0 n_rng 0 npart_minus 82 npart_plus 82 E_drag 2557.0488126069959 E_pairs 2446.5030047547971 E_absorbed 138.85066759586334 E_exported 249.3964991569519 E_round -2.3708889718675691e-05 E_stochastic 0 E_lost_nopairs 0 debt_outstanding 0 residual 0.000000e+00 B 0.62157861020449923 n_sampler_attempts 0 n_sampler_overflow 0
+PASS: ledger identity residual / E_drag (last row) : 0.000000e+00 (tolerance 1.000e-12)
+PASS: t_latency = 0 with absorbing boundaries refused (exit 1), message names t_latency
+texp.sh summary: 2 runs executed, all checks passed
+
+# build/tests/hadronic/test-hadronic-bh_proto_params.xc pgens/bh_proto/inputs/mpi
+PASS: MPI input g3_asymmetric_capacity_2ranks accepted at parse time (production placement, 2 domains, source budget)
+PASS: MPI input t14b_absorb_production_4ranks accepted at parse time (production placement, 4 domains, source budget)
+bh_proto_params summary: 118 passed, 0 failed

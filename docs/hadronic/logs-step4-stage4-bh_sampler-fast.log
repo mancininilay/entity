@@ -1,0 +1,44 @@
+bh_sampler: real_t = float, Kokkos default execution space = OpenMP
+(diag) sampler tables: 113 eps' nodes, 256 x 256 cells, 5067 cumulative nodes, 30.09 MB on the device (budget 64 MB), built in 29.1 s
+---- device tables and chains vs the host chain ----
+PASS: device sampler tables within 64 MB (bytes) : 3.009282e+07 (tolerance 6.711e+07)
+PASS: device chain vs host chain, <D> at Gamma_p = 2.3 (1e6 draws each), |dev|/s.e. : 7.937815e-02 (tolerance 4.000e+00)
+PASS: device draws inside [D_min, D_max] at Gamma_p = 2.3 : 0.000000e+00 (tolerance 0.000e+00)
+PASS: device weighted chain: E_p[1/D] <D>_device = 1 at Gamma_p = 2.3, |dev|/s.e. : 1.067130e+00 (tolerance 4.000e+00)
+(diag) Gamma_p 2.3: device <D> 4.05805 +- 0.00056, host 4.05811, I/J 4.06714, min/max D 2.7234 / 6.29; weighted: efficiency 0.6698, overflow 0; 0.28 us per unweighted draw (OpenMP), rng per draw 8.0
+PASS: device chain vs host chain, <D> at Gamma_p = 3 (1e6 draws each), |dev|/s.e. : 2.618681e-01 (tolerance 4.000e+00)
+PASS: device draws inside [D_min, D_max] at Gamma_p = 3 : 0.000000e+00 (tolerance 0.000e+00)
+PASS: device weighted chain: E_p[1/D] <D>_device = 1 at Gamma_p = 3, |dev|/s.e. : 8.997064e-01 (tolerance 4.000e+00)
+(diag) Gamma_p 3: device <D> 5.13897 +- 0.00157, host 5.13955, I/J 5.15861, min/max D 2.2746 / 13.89; weighted: efficiency 0.4014, overflow 0; 0.26 us per unweighted draw (OpenMP), rng per draw 8.0
+PASS: device chain vs host chain, <D> at Gamma_p = 10 (1e6 draws each), |dev|/s.e. : 3.271212e-01 (tolerance 4.000e+00)
+PASS: device draws inside [D_min, D_max] at Gamma_p = 10 : 0.000000e+00 (tolerance 0.000e+00)
+PASS: device weighted chain: E_p[1/D] <D>_device = 1 at Gamma_p = 10, |dev|/s.e. : 2.464000e-02 (tolerance 4.000e+00)
+(diag) Gamma_p 10: device <D> 11.19725 +- 0.01006, host 11.20191, I/J 11.18817, min/max D 2.0539 / 170.41; weighted: efficiency 0.0720, overflow 0; 0.26 us per unweighted draw (OpenMP), rng per draw 8.0
+PASS: device chain vs host chain, <D> at Gamma_p = 60 (1e6 draws each), |dev|/s.e. : 4.686836e-01 (tolerance 4.000e+00)
+PASS: device draws inside [D_min, D_max] at Gamma_p = 60 : 0.000000e+00 (tolerance 0.000e+00)
+PASS: device weighted chain: E_p[1/D] <D>_device = 1 at Gamma_p = 60, |dev|/s.e. : 2.231839e+00 (tolerance 4.000e+00)
+(diag) Gamma_p 60: device <D> 25.22974 +- 0.06423, host 25.27238, I/J 25.27395, min/max D 2.0491 / 3974.97; weighted: efficiency 0.0048, overflow 0; 0.26 us per unweighted draw (OpenMP), rng per draw 8.0
+---- A11: mu_d independence ----
+PASS: A11: device sampler at Gamma_p = 3, same seed, 1000 weighted draws bitwise identical for mu_d in {1, 25, 1836.15} (the sampler sees only Gamma_p) : 0.000000e+00 (tolerance 0.000e+00)
+PASS: A11 (kernel): e- lab spectra of the budget+restframe kernel at equal K for mu_d in {1, 25, 1836.15} agree (KS vs the 99% critical value 0.0129); value = max KS : 6.262525e-05 (tolerance 1.288e-02)
+(diag) A11 (kernel): 31936 / 31936 / 31936 pairs; stored K for the three mu_d: 3672.2999408049, 3672.3001745650, 3672.2999162017 (relative spread 7.04e-08); pairs with bitwise-identical e- energies across the three runs: 0 of 31936 (not expected to be all: Gamma_p differs at the real_t rounding of u)
+---- the ledger identity with sampled energies (budget and poisson, restframe) ----
+PASS: budget+restframe: ledger identity residual / E_drag : 0.000000e+00 (tolerance 1.000e-12)
+PASS: budget+restframe: array identity |residual| / B (B = 25.6616) : 7.047713e-05 (tolerance 3.000e+00)
+PASS: budget+restframe: E_round = array residual, |E_round - residual| / |E_round| (E_round = 0.00180856) : 0.000000e+00 (tolerance 1.000e-09)
+PASS: budget+restframe: pair payload slot 2 = the sampled eps (mono: eps0 exactly), max |eps_s - eps0| : 0.000000e+00 (tolerance 0.000e+00)
+PASS: budget+restframe: |P_absorbed| <= E_absorbed (the photon momenta are no longer collinear), ratio : 6.913943e-01 (tolerance 1.000e+00)
+PASS: budget+restframe: leptons carry transverse momentum (max |u_perp| of e-) : 4.348948e+00 (tolerance 0.000e+00)
+(diag) budget+restframe: E_drag 92183.749352, pairs 1408, E_round 1.8086e-03, B 2.5662e+01, E_stochastic 0.000000, sampler attempts 8671, overflow 0, n_rng 78039, |P_absorbed|/E_absorbed 0.6914, P_pairs x 85478.780 (P_drag x 92183.750)
+PASS: poisson+restframe: ledger identity residual / E_drag : 0.000000e+00 (tolerance 1.000e-12)
+PASS: poisson+restframe: array identity |residual| / B (B = 25.662) : 3.185117e-06 (tolerance 3.000e+00)
+PASS: poisson+restframe: E_round = array residual, |E_round - residual| / |E_round| (E_round = -8.17364e-05) : 0.000000e+00 (tolerance 1.000e-09)
+PASS: poisson+restframe: pair payload slot 2 = the sampled eps (mono: eps0 exactly), max |eps_s - eps0| : 0.000000e+00 (tolerance 0.000e+00)
+PASS: poisson+restframe: |P_absorbed| <= E_absorbed (the photon momenta are no longer collinear), ratio : 6.890624e-01 (tolerance 1.000e+00)
+PASS: poisson+restframe: leptons carry transverse momentum (max |u_perp| of e-) : 3.334259e+00 (tolerance 0.000e+00)
+(diag) poisson+restframe: E_drag 92183.749352, pairs 236, E_round -8.1736e-05, B 2.5662e+01, E_stochastic 1595.269587, sampler attempts 236, overflow 0, n_rng 14688, |P_absorbed|/E_absorbed 0.6891, P_pairs x 88039.371 (P_drag x 92183.750)
+---- the spectrum of created pairs vs the host chain's histogram (hist_mono05_G3) ----
+PASS: A12 spectrum: e- lab energy of the kernel's pairs (weights 1/D, 100000 pairs, N_eff 91593) vs hist_mono05_G3 weighted chain (N_eff 915777), binned two-sample KS vs the 99% critical value : 1.742947e-03 (tolerance 5.642e-03)
+PASS: A12 spectrum: e- lab cos theta (to the ion direction) vs hist_mono05_G3, binned KS vs the 99% critical value : 2.053369e-03 (tolerance 5.642e-03)
+(diag) spectrum: KS energy 0.00174, KS cos 0.00205, critical 0.00564; fixture version "68f5e9bb6a47a65b776239a643c23f1e744ccac6"
+bh_sampler summary: 29 passed, 0 failed
