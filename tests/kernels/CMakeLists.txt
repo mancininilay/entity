@@ -45,6 +45,9 @@ gen_test(custom_prtl_update)
 gen_test(injectors_payloads)
 # [fork:hadronic/P5] weighted reduced particle statistics against a direct double sum (T-P5)
 gen_test(reduced_stats_weights)
+# [fork:hadronic/F1] GlobalInjector_kernel writes the supplied input weights (Codex 2 audit 2026-10-29,
+# poisoned-destination reproducer: 1D/2D/3D, nonzero offset, filtered inputs, weighted and unit-weight)
+gen_test(injectors_global_weights)
 # Bethe-Heitler loss-only kernel (P2 step 2): one ctest entry per pre-registered
 # group so that each verdict is visible; the executable runs every group when
 # called without arguments
