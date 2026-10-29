@@ -352,6 +352,63 @@ int main(int argc, char** argv) {
                   replace_line(replace_line(VALID, "photon_field.type", "photon_field.type = \"powerlaw\""),
                                "photon_field.eps0", "photon_field.eps_min = 0.1\nphoton_field.eps_max = 2.0\nphoton_field.index = 2.0"),
                   "photon_field.eps_max");
+    // ---- weights flag rule (audit F3, 2026-10-29; spec III.7): check_weights_flag ----------
+    {
+      auto expect_flag = [&](const std::string& label, const std::string& text, bool use_weights,
+                             bool expect_refused, const std::string& key) {
+        try {
+          const auto s = user::bhproto::parse_setup(parse_toml(text));
+          user::bhproto::check_weights_flag(s, use_weights);
+          if (expect_refused) {
+            std::printf("FAIL: flag rule: %s: accepted (expected a refusal naming %s)\n", label.c_str(), key.c_str());
+            ++n_fail;
+          } else {
+            std::printf("PASS: flag rule: %s: accepted\n", label.c_str());
+            ++n_pass;
+          }
+        } catch (const std::invalid_argument& e) {
+          const std::string msg = e.what();
+          if (!expect_refused) {
+            std::printf("FAIL: flag rule: %s: refused (expected acceptance): %s\n", label.c_str(), msg.c_str());
+            ++n_fail;
+          } else if (msg.find("particles.use_weights") != std::string::npos && msg.find(key) != std::string::npos) {
+            std::printf("PASS: flag rule: %s: refused: %s\n", label.c_str(), msg.c_str());
+            ++n_pass;
+          } else {
+            std::printf("FAIL: flag rule: %s: refused but the message does not name particles.use_weights and %s: %s\n",
+                        label.c_str(), key.c_str(), msg.c_str());
+            ++n_fail;
+          }
+        }
+      };
+      const std::string poisson = drop_line(VALID, "gamma_p_typical") + std::string("source = \"poisson\"\n");
+      const std::string none    = drop_line(drop_line(VALID, "pair_species"), "gamma_p_typical") +
+                               std::string("source = \"none\"\n");
+      // refusals with the flag off
+      expect_flag("use_weights = false with source = budget", VALID, false, true, "setup.source = budget");
+      expect_flag("use_weights = false with source = poisson and pair_weight = 2.5",
+                  poisson + "pair_weight = 2.5\n", false, true, "setup.pair_weight = 2.5");
+      expect_flag("use_weights = false with source = poisson and pair_weight = 1e-20",
+                  poisson + "pair_weight = 1e-20\n", false, true, "setup.pair_weight");
+      expect_flag("use_weights = false with ions.weight = 2 (source = none)",
+                  replace_line(none, "ions.weight", "ions.weight = 2.0"), false, true, "setup.ions.weight = 2");
+      expect_flag("use_weights = false with ions.weight = 0.5 (poisson, pair_weight = 1)",
+                  replace_line(poisson, "ions.weight", "ions.weight = 0.5"), false, true, "setup.ions.weight = 0.5");
+      // accepted with the flag off: every stored weight is 1
+      expect_flag("use_weights = false with source = poisson and pair_weight = 1 (default)", poisson, false, false, "");
+      expect_flag("use_weights = false with source = poisson and pair_weight = 1 (explicit)",
+                  poisson + "pair_weight = 1.0\n", false, false, "");
+      expect_flag("use_weights = false with source = none", none, false, false, "");
+      expect_flag("use_weights = false with the stage disabled (ions.weight = 1)",
+                  "hadronic.enabled = false\nhadronic.species = [1]\nions.K = [1.0]\nions.per_K = 1\nions.direction = \"+x\"\n",
+                  false, false, "");
+      // nothing refused with the flag on
+      expect_flag("use_weights = true with source = budget", VALID, true, false, "");
+      expect_flag("use_weights = true with source = poisson and pair_weight = 2.5",
+                  poisson + "pair_weight = 2.5\n", true, false, "");
+      expect_flag("use_weights = true with ions.weight = 2", replace_line(VALID, "ions.weight", "ions.weight = 2.0"),
+                  true, false, "");
+    }
     // C-MPI-3 (round 3): the construction-time guard predicate on every combination of
     // (absorbing, MPI build, domain count, placement): refused only for absorbing boundaries
     // at the post-step placement in an MPI build, for any domain count

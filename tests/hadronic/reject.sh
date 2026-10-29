@@ -36,6 +36,7 @@ for pair in reject_tau0:tau0 reject_fmax:f_max reject_bool:hadronic.enabled \
 done
 # species-level and particles-level refusals (messages name the input key)
 for pair in "reject_payloads:n_payloads_real" "reject_weights:use_weights" "reject_gca:GCA" \
+            "reject_poisson_weights:use_weights" "reject_ions_weight_flag:use_weights" \
             "reject_pair_charge:charge" "reject_pair_mass:mass 1" "reject_pair_slots:n_payloads_real" \
             "reject_tlatency:t_latency" "reject_two_species:exactly one hadronic ion species"; do
   name="${pair%%:*}"; key="${pair##*:}"

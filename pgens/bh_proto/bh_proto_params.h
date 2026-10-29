@@ -38,7 +38,8 @@
  *   r_th_factor                 float > 0 (default 10)
  *   f_r                         float in (0, 1) (default 0.02)
  *   t_latency                   "auto" | float >= 0 (default auto; 0 = cap off)
- *   pair_weight                 float > 0 (default 1; poisson)
+ *   pair_weight                 float > 0 (default 1; poisson); with particles.use_weights = false
+ *                               only 1 is accepted (check_weights_flag, audit F3, 2026-10-29)
  *   max_events_per_step         int in [1, 1e6] (default 8)
  *   on_capacity / on_capacity_estimate / on_max_events   "error" | "warn" (default error)
  *   gamma_p_typical             float > 1 or 0 (default 0 = use the envelope)
@@ -51,7 +52,8 @@
  *   ions.K                      non-empty array of float > 0 (kinetic energies, m_e c^2), required
  *   ions.per_K                  int >= 1 with per_K * ions.K.size() <= INT_MAX, required
  *   ions.direction              "+x" | "isotropic", required
- *   ions.weight                 float > 0 (default 1)
+ *   ions.weight                 float > 0 (default 1); with particles.use_weights = false only 1 is
+ *                               accepted (check_weights_flag)
  *   fields.B, fields.E          arrays of three floats (default zero)
  *   ledger.every                int in [1, INT_MAX] (default 1)
  *   table_dump                  bool (default true): write the table file next to the run output
@@ -68,6 +70,15 @@
  *   background.temperature      float >= 0 (default 0)
  *   background.n_global         int in [0, INT_MAX] (default 0): particles per pair species
  *                               injected through arch::InjectGlobally (stock path, weight 1)
+ *
+ * Weights flag rule (fork rule of 2026-10-29 after Codex 2's weight audit, finding F3;
+ * spec III.7): every run with any weight != 1 sets `particles.use_weights = true`.
+ * `check_weights_flag(setup, use_weights)` refuses `particles.use_weights = false`
+ * with source = budget (variable pair weights), with pair_weight != 1 and
+ * source = poisson (fixed pair weight pair_weight x w_ion), and with ions.weight != 1
+ * (the ions are injected with that explicit weight). The generator calls it right
+ * after parse_setup; the parser suite tests it. The event mode (branch
+ * dev/hadronic-event) adds its own clause: pair_weight != 1 with mode = event.
  *
  * @namespaces:
  *   - user::bhproto::
@@ -827,6 +838,42 @@ namespace user::bhproto {
       fail("comm_headroom", "= " + fmt_double(s.comm_headroom) + " must be >= 0");
     }
     return s;
+  }
+
+  /**
+   * @brief Weights flag rule (audit F3, 2026-10-29; spec III.7): refuse
+   *        `particles.use_weights = false` whenever the generator would store a
+   *        weight != 1, i.e. with source = budget (variable pair weights), with
+   *        pair_weight != 1 and source = poisson (pairs of weight pair_weight x
+   *        w_ion), and with ions.weight != 1 (explicit ion weight). Host-only;
+   *        throws std::invalid_argument with a message naming
+   *        `particles.use_weights` and the offending setup key. Called by the
+   *        generator right after parse_setup (the flag lives in [particles],
+   *        outside the [setup] table the reader sees). With the flag on nothing
+   *        is refused here.
+   */
+  inline void check_weights_flag(const Setup& s, bool use_weights) {
+    if (use_weights) {
+      return;
+    }
+    const std::string rule =
+      " (rule 2026-10-29, audit F3: every run with any weight != 1 sets particles.use_weights = true)";
+    if (s.enabled && s.source == "budget") {
+      throw std::invalid_argument(
+        "bh_proto: particles.use_weights = false is refused with setup.source = budget "
+        "(the budget source creates pairs of variable weight)" + rule);
+    }
+    if (s.enabled && s.source == "poisson" && s.pair_weight != 1.0) {
+      throw std::invalid_argument(
+        "bh_proto: particles.use_weights = false is refused with setup.pair_weight = " +
+        detail::fmt_double(s.pair_weight) + " != 1 and source = poisson (the pairs would carry "
+        "weight pair_weight x w_ion while the flag-gated diagnostics count 1)" + rule);
+    }
+    if (s.ions_weight != 1.0) {
+      throw std::invalid_argument(
+        "bh_proto: particles.use_weights = false is refused with setup.ions.weight = " +
+        detail::fmt_double(s.ions_weight) + " != 1 (the ions are injected with this explicit weight)" + rule);
+    }
   }
 
 } // namespace user::bhproto

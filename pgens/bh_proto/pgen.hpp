@@ -546,10 +546,14 @@ namespace user {
       }
       start_step = params.template get<timestep_t>("checkpoint.start_step");
       use_weights = params.template get<bool>("particles.use_weights");
-      raise::ErrorIf(not use_weights,
-                     "bh_proto: particles.use_weights must be true (the ions "
-                     "are injected with explicit weights; required with source = budget)",
-                     HERE);
+      // weights flag rule (audit F3, 2026-10-29; spec III.7): the flag may be off
+      // only when every stored weight is 1 (not with the budget source, not with
+      // pair_weight != 1 in the poisson source, not with ions.weight != 1)
+      try {
+        bhproto::check_weights_flag(setup, use_weights);
+      } catch (const std::invalid_argument& e) {
+        raise::Error(e.what(), HERE);
+      }
       raise::ErrorIf(M::CoordType != Coord::Cartesian,
                      "bh_proto: Cartesian metric required",
                      HERE);
