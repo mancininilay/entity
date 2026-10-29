@@ -76,6 +76,10 @@
  *   test.kick                   float >= 0 (default 0): antisymmetric transverse kick of the
  *                               leptons (T13)
  *   test.gauss                  bool (default false): write the discrete Gauss residual (T13)
+ *   test.bypass_amax            bool (default false): skip the startup refusal pair_weight > a_max of the
+ *                               event mode (step 5, E8 (i) at the run level: the per-event bound and the
+ *                               on_bound policy are reachable only when that refusal is bypassed, because
+ *                               the refusal is exactly the bound's guarantee over the active band)
  *   background.ppc              float >= 0 (default 0): a neutral background of the two pair
  *                               species injected through arch::InjectNonUniform (stock path)
  *   background.temperature      float >= 0 (default 0)
@@ -161,6 +165,7 @@ namespace user::bhproto {
     double             test_kick { 0.0 };
     int                test_max_sampler_attempts { 100000 };
     bool               test_gauss { false };
+    bool               test_bypass_amax { false };
     double             background_ppc { 0.0 };
     double             background_temperature { 0.0 };
     int                background_n_global { 0 };
@@ -534,7 +539,8 @@ namespace user::bhproto {
       "c_layer",               "comm_headroom",
       "test.nan_payloads",     "test.kick",
       "test.max_sampler_attempts",
-      "test.gauss",            "background.ppc",
+      "test.gauss",            "test.bypass_amax",
+      "background.ppc",
       "background.temperature", "background.n_global"
     };
     {
@@ -593,6 +599,7 @@ namespace user::bhproto {
     }
     s.test_max_sampler_attempts = get_int_in(setup, "test.max_sampler_attempts", 1, 1000000000, false, 100000);
     s.test_gauss     = get_bool_or(setup, "test.gauss", false);
+    s.test_bypass_amax = get_bool_or(setup, "test.bypass_amax", false);
     s.background_ppc = get_number_or(setup, "background.ppc", 0.0);
     if (!(s.background_ppc >= 0.0)) {
       fail("background.ppc", "= " + fmt_double(s.background_ppc) + " must be >= 0");

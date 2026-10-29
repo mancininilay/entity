@@ -369,6 +369,7 @@ namespace user {
       bool                         ions_started { false };
       unsigned long long           n_capacity_warnings { 0 };
       unsigned long long           n_max_events_warnings { 0 };
+      unsigned long long           n_bound_warnings { 0 };      // event mode: on_bound = warn messages
       kernel::hadronic::dd         exported_host {};  // sum w r over dead ions, host, before each launch
       kernel::hadronic::dd         discarded_host {}; // sum w delta over dead ions, host, before each launch
       unsigned long long           n_dead_host { 0 }; // dead ions seen with a non-zero debt or pending request
@@ -483,7 +484,7 @@ namespace user {
     // ledger row (collective, consistent), rank 0 prints the gathered codes and
     // every rank aborts. The local branches never enter a collective.
     struct FailRecord {
-      long long code { 0 };    // 0 none, 1 on_capacity, 2 on_max_events
+      long long code { 0 };    // 0 none, 1 on_capacity, 2 on_max_events, 3 on_bound (event mode)
       long long step { -1 };
       long long species { 0 };
       long long count { 0 };   // n_dropped (1) or capped ion-steps (2) of the failing launch
@@ -993,12 +994,18 @@ namespace user {
                   band_top, n_path, a_max_band, gamma_bind, where_bind.c_str(),
                   a <= a_max_band ? "pair_weight admitted" : "pair_weight EXCEEDS a_max");
       std::fflush(stdout);
-      raise::ErrorIf(!(a <= a_max_band),
-                     fmt::format("bh_proto: setup.pair_weight = %.10g exceeds a_max = f_max K / D_max,unweighted = "
-                                 "%.6g at Gamma_p = %.10g (%s) on the active band: an event with a D > f_max K "
-                                 "is possible there (contract section 3; lower pair_weight or raise f_max)",
-                                 a, a_max_band, gamma_bind, where_bind.c_str()),
-                     HERE);
+      if (setup.test_bypass_amax) {
+        std::printf("bh_proto: event mode: setup.test.bypass_amax = true: the refusal pair_weight > a_max is SKIPPED "
+                    "(test hook for the on_bound policy; never a production setting)\n");
+        std::fflush(stdout);
+      } else {
+        raise::ErrorIf(!(a <= a_max_band),
+                       fmt::format("bh_proto: setup.pair_weight = %.10g exceeds a_max = f_max K / D_max,unweighted = "
+                                   "%.6g at Gamma_p = %.10g (%s) on the active band: an event with a D > f_max K "
+                                   "is possible there (contract section 3; lower pair_weight or raise f_max)",
+                                   a, a_max_band, gamma_bind, where_bind.c_str()),
+                       HERE);
+      }
       // per ion species: the ulp-energy ratio and lambda_max over the table
       double lambda_max = 0.0, gamma_lambda = 0.0;
       for (const auto sp : ion_species) {
@@ -1426,12 +1433,6 @@ namespace user {
                                    n_nonzero, (unsigned)start_step),
                        HERE);
       }
-      // [stage 1 of step 5: the kernel's event branch is implemented in stage 2;
-      //  until then a run in the event mode stops here, after the startup report]
-      raise::ErrorIf(stage_active && setup.event_mode(),
-                     "bh_proto: mode = event: the kernel branch is not implemented yet (step 5 stage 2); "
-                     "the parser, the startup report and the refusals of stage 1 are in place",
-                     HERE);
       if (stage_active) {
         kernel::hadronic::HadronicParams prm;
         prm.tau0_over_skindepth0 = setup.tau0 / skindepth0;
@@ -1607,6 +1608,30 @@ namespace user {
                 H.n_max_events_warnings += 1;
               }
             }
+            // step 5: the per-event bound of the event mode (contract section 2 b):
+            // the kernel skipped and counted the events with a D > f_max K; error
+            // aborts at the common point, warn continues (the realised rate is
+            // biased by the skipped fraction, which n_bounded / n_events measures)
+            if (setup.event_mode() && L.n_bounded > 0) {
+              const auto msg = fmt::format(
+                "bh_proto: on_bound: %llu of %llu events had pair_weight D > f_max K at step %u (species %d) and "
+                "were skipped (no pair, no recoil) [setup.on_bound = %s, pair_weight = %.10g, f_max = %.10g]",
+                L.n_bounded, L.n_events, (unsigned)step, (int)sp.index(), setup.on_bound.c_str(),
+                setup.pair_weight, setup.f_max);
+              if (setup.on_bound == "error") {
+                std::printf("%s (error: the run aborts after every rank wrote its ledger row)\n", msg.c_str());
+                std::fflush(stdout);
+                if (fail_local.code == 0) {
+                  fail_local = FailRecord { 3, static_cast<long long>(step), static_cast<long long>(sp.index()),
+                                            static_cast<long long>(L.n_bounded) };
+                }
+              } else {
+                if (H.n_bound_warnings < 5) {
+                  std::printf("%s (warning, continuing)\n", msg.c_str());
+                }
+                H.n_bound_warnings += 1;
+              }
+            }
           } else {
             H.accumulate(L, step);
           }
@@ -1639,20 +1664,22 @@ namespace user {
                 const long long* rec = all.data() + 4 * r;
                 if (rec[0] != 0) {
                   std::printf("bh_proto: failure on rank %d: %s at step %lld (species %lld), count %lld\n", r,
-                              rec[0] == 1 ? "on_capacity (pair capacity exhausted; n_dropped)"
-                                          : "on_max_events (ion-steps exceeding max_events_per_step)",
+                              rec[0] == 1   ? "on_capacity (pair capacity exhausted; n_dropped)"
+                              : rec[0] == 2 ? "on_max_events (ion-steps exceeding max_events_per_step)"
+                                            : "on_bound (event mode: events with pair_weight D > f_max K; n_bounded)",
                               rec[1], rec[2], rec[3]);
                 }
               }
               std::fflush(stdout);
             }
             raise::Error(fmt::format("bh_proto: %s on %s at step %u: every rank wrote its ledger row; the run aborts "
-                                     "[setup.on_capacity = %s, setup.on_max_events = %s]",
+                                     "[setup.on_capacity = %s, setup.on_max_events = %s, setup.on_bound = %s]",
                                      fail_local.code == 1   ? "on_capacity: pair capacity exhausted"
                                      : fail_local.code == 2 ? "on_max_events: max_events_per_step exceeded"
+                                     : fail_local.code == 3 ? "on_bound: an event with pair_weight D > f_max K"
                                                             : "a failure on another rank",
                                      fail_local.code != 0 ? "this rank" : "another rank", (unsigned)step,
-                                     setup.on_capacity.c_str(), setup.on_max_events.c_str()),
+                                     setup.on_capacity.c_str(), setup.on_max_events.c_str(), setup.on_bound.c_str()),
                          HERE);
           }
         }

@@ -53,7 +53,8 @@
  *   ledger --file F [--tol T] [--expect_dropped 0|1] [--expect_npart N] [--min_spawned N] [--expect_rng N]
  *          [--min_sampler_overflow N]
  *          [--expect_events N] [--expect_capped_events N]
- *          [--expect_nopairs 1]
+ *          [--expect_nopairs 1] [--min_bounded N] [--expect_bounded 0] [--min_events N]
+ *          (step 5: n_bounded = events skipped by the per-event bound of the event mode)
  *         last row of a hadronic_ledger file: identity residual <= T (1e-12) x E_drag, optional counts
  *   abort  --log F --key K [--step_min A --step_max B]
  *         the log carries the K message "... at step N" (on_capacity abort), N in [A, B]
@@ -587,7 +588,7 @@ namespace {
   enum LedgerCol : int {
     L_STEP = 0, L_TIME = 1, L_EDRAG = 2, L_EPAIRS = 3, L_EABS = 4, L_EEXP = 5, L_EROUND = 6, L_ESTOCH = 7,
     L_ELOST = 8, L_PDISC = 9, L_DINIT = 10, L_DOUT = 20, L_POUT = 21, L_RES = 22, L_NEVENTS = 23, L_NSPAWNED = 24,
-    L_NDROPPED = 25, L_NCLOSING = 29, L_NCAPPED = 30, L_NCAPEV = 31, L_NRNG = 36, L_NK0 = 37, L_NCLOSE0 = 38,
+    L_NDROPPED = 25, L_NBOUNDED = 27, L_NCLOSING = 29, L_NCAPPED = 30, L_NCAPEV = 31, L_NRNG = 36, L_NK0 = 37, L_NCLOSE0 = 38,
     L_SUMWK = 39, L_B = 40, L_NPM = 41, L_NPP = 42, L_NSATT = 43, L_NSOVF = 44
   };
 
@@ -638,6 +639,18 @@ namespace {
               num(a, "min_sampler_overflow"));
       verdict(r.c[L_NSATT] >= r.c[L_NSOVF], "ledger: n_sampler_attempts >= n_sampler_overflow", r.c[L_NSATT],
               r.c[L_NSOVF]);
+    }
+    if (a.count("min_bounded")) {
+      verdict(r.c[L_NBOUNDED] >= num(a, "min_bounded"), "ledger: n_bounded >= " + a.at("min_bounded"), r.c[L_NBOUNDED],
+              num(a, "min_bounded"));
+    }
+    if (a.count("expect_bounded")) {
+      const double n = num(a, "expect_bounded");
+      verdict(r.c[L_NBOUNDED] == n, "ledger: n_bounded = " + a.at("expect_bounded"), r.c[L_NBOUNDED], n);
+    }
+    if (a.count("min_events")) {
+      verdict(r.c[L_NEVENTS] >= num(a, "min_events"), "ledger: n_events >= " + a.at("min_events"), r.c[L_NEVENTS],
+              num(a, "min_events"));
     }
     if (a.count("expect_nopairs") && num(a, "expect_nopairs") > 0.5) {
       verdict(r.c[L_NSPAWNED] == 0.0 && r.c[L_ELOST] == r.c[L_EDRAG], "ledger (none): no spawns and E_lost_nopairs = E_drag",

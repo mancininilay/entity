@@ -77,6 +77,11 @@ if("${pgen}" STREQUAL "bh_proto")
   add_test(NAME "HADRONIC::t14b_placement"
            COMMAND bash ${BH_SCRIPTS}/t14b_placement.sh ${BH_SINGLE_ENTITY} "${BH_SERIAL_ENTITY}" $<TARGET_FILE:bh_check>
                    ${BH_INPUTS} ${BH_WORK}/t14b)
+  # step 5 (event mode): E8 at the run level, the host-side policies on_bound, on_capacity, on_max_events
+  add_test(NAME "HADRONIC::event_e8"
+           COMMAND bash ${BH_SCRIPTS}/event_e8.sh ${BH_SINGLE_ENTITY} $<TARGET_FILE:bh_check>
+                   ${BH_INPUTS} ${BH_WORK}/event_e8)
+  set_tests_properties("HADRONIC::event_e8" PROPERTIES TIMEOUT 1800)
   set_tests_properties("HADRONIC::t5b_cross_build" "HADRONIC::t8_bit_identity" "HADRONIC::t10_poisson_determinism"
                        PROPERTIES SKIP_RETURN_CODE 77)
   set_tests_properties("HADRONIC::t12_capacity" "HADRONIC::t12b_estimate" "HADRONIC::t13_gauss"
