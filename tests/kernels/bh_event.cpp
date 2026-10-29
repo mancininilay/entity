@@ -678,16 +678,16 @@ namespace {
    *        data_sha256 is validated by the reader.
    */
   struct D2Table {
-    std::vector<double> y, lnD2, gamma, D2;
+    std::vector<double> y, lnD2, gamma, D2, lnD1; // lnD1: the fixture's Dmean (the Born chain's mean loss)
     double              gamma_th { 0.0 };
     std::string         sha;
 
-    double at(double G) const {
+    double interp(const std::vector<double>& lnv, double G) const {
       if (G <= gamma[0]) {
-        return D2[0];
+        return std::exp(lnv[0]);
       }
       if (G >= gamma.back()) {
-        return D2.back();
+        return std::exp(lnv.back());
       }
       const double yy = std::log10(G - gamma_th);
       std::size_t  lo = 0, hi = y.size() - 1;
@@ -700,7 +700,16 @@ namespace {
         }
       }
       const double t = (yy - y[lo]) / (y[hi] - y[lo]);
-      return std::exp(lnD2[lo] + t * (lnD2[hi] - lnD2[lo]));
+      return std::exp(lnv[lo] + t * (lnv[hi] - lnv[lo]));
+    }
+
+    double at(double G) const {
+      return interp(lnD2, G);
+    }
+
+    /// the fixture's <D> (Born chain) at Gamma
+    double dmean_at(double G) const {
+      return interp(lnD1, G);
     }
   };
 
@@ -713,8 +722,8 @@ namespace {
     const std::string path = std::string(BH_TEST_DATA_DIR) + "/bhref-0.2.0/moments_mono05.txt";
     const auto        f    = bh::read_fixture_file(path);
     d.sha                  = f.data_sha256;
-    std::size_t ig = 0, id2 = 0;
-    bool        fg = false, fd = false;
+    std::size_t ig = 0, id2 = 0, id1 = 0;
+    bool        fg = false, fd = false, f1 = false;
     for (std::size_t c = 0; c < f.columns.size(); ++c) {
       if (f.columns[c] == "gamma_p") {
         ig = c;
@@ -724,17 +733,22 @@ namespace {
         id2 = c;
         fd  = true;
       }
+      if (f.columns[c] == "Dmean") {
+        id1 = c;
+        f1  = true;
+      }
     }
-    if (!fg || !fd) {
-      throw std::runtime_error("moments_mono05.txt: columns gamma_p / D2mean not found");
+    if (!fg || !fd || !f1) {
+      throw std::runtime_error("moments_mono05.txt: columns gamma_p / Dmean / D2mean not found");
     }
     for (const auto& r : f.rows) {
-      const double G = r[ig], D2 = r[id2];
-      if (G > d.gamma_th && D2 > 0.0) {
+      const double G = r[ig], D2 = r[id2], D1 = r[id1];
+      if (G > d.gamma_th && D2 > 0.0 && D1 > 0.0) {
         d.gamma.push_back(G);
         d.D2.push_back(D2);
         d.y.push_back(std::log10(G - d.gamma_th));
         d.lnD2.push_back(std::log(D2));
+        d.lnD1.push_back(std::log(D1));
       }
     }
     if (d.gamma.size() < 2) {
@@ -853,6 +867,11 @@ namespace {
    */
   struct Reference {
     std::vector<double> K_plain, K_corr, var_pred, var_fb, jensen_rate; // at the series' times
+    // K_born [diagnostic]: the corrected ODE with the mean loss rate J(Gamma) <D>_fixture(Gamma) in place of the
+    // table's I = J <D>_fit: the restframe sampler loses energy at the Born chain's mean (bhref 0.2.0 Dmean),
+    // the step-1 loss table at the Chodorowski-fit mean (decision 2026-10-27 (a): the Born-q_k tables will
+    // remove the difference); empty when no alternative mean was given
+    std::vector<double> K_born;
     // var_pred: the registered E3 prediction int a R E[D^2] dt' along the corrected mean (no feedback);
     // var_fb [proposal, stage 3]: the same source term with the linear drift feedback,
     //   dV/dt = -2 c(t) V + a R E[D^2],  c = coeff dI/dK at <K>(t) (centred difference, h = 0.02 K):
@@ -861,10 +880,15 @@ namespace {
     // sigma_K / K as the contract's window argument assumed (fact, stage 3 development run)
   };
 
-  Reference reference(const Tables& T, const Series& S, const std::function<double(double)>& d2_of_gamma) {
+  Reference reference(const Tables& T, const Series& S, const std::function<double(double)>& d2_of_gamma,
+                      const std::function<double(double)>* dmean_alt = nullptr) {
     const double mu_r = MU_R;
     auto I_of_K       = [&](double K) {
       return bh::interpolate_loss_host(T.host, 1.0 + K / mu_r);
+    };
+    auto I_alt = [&](double K) {
+      const double G = 1.0 + K / mu_r;
+      return bh::interpolate_rate_host(T.host, G) * (*dmean_alt)(G);
     };
     auto J_of_K = [&](double K) {
       return bh::interpolate_rate_host(T.host, 1.0 + K / mu_r);
@@ -892,12 +916,15 @@ namespace {
     };
     Reference R;
     const double h = S.dt; // the RK4 step: the run's dt (the smooth ODE is resolved far below the tolerance)
-    double Kp = S.K0, Kc = S.K0, t = 0.0, vp = 0.0, vf = 0.0;
+    double Kp = S.K0, Kc = S.K0, Kb = S.K0, t = 0.0, vp = 0.0, vf = 0.0;
     auto fp = [&](double K) {
       return -S.coeff * I_of_K(K);
     };
     auto fc = [&](double K, double tt) {
       return -S.coeff * (I_of_K(K) + 0.5 * Ipp(K) * var_at(tt));
+    };
+    auto fb = [&](double K, double tt) {
+      return -S.coeff * (I_alt(K) + 0.5 * Ipp(K) * var_at(tt));
     };
     auto rk4_to = [&](double t_end) {
       while (t < t_end - 1e-12 * std::max(1.0, t_end)) {
@@ -923,6 +950,11 @@ namespace {
           const double ex = std::exp(-2.0 * c * hh);
           vf              = vf * ex + (std::abs(c) > 1e-300 ? g * (1.0 - ex) / (2.0 * c) : g * hh);
         }
+        if (dmean_alt != nullptr) {
+          const double k1 = fb(Kb, t), k2 = fb(Kb + 0.5 * hh * k1, t + 0.5 * hh), k3 = fb(Kb + 0.5 * hh * k2, t + 0.5 * hh),
+                       k4 = fb(Kb + hh * k3, t + hh);
+          Kb += hh / 6.0 * (k1 + 2.0 * k2 + 2.0 * k3 + k4);
+        }
         t += hh;
       }
     };
@@ -932,6 +964,9 @@ namespace {
       R.K_corr.push_back(Kc);
       R.var_pred.push_back(vp);
       R.var_fb.push_back(vf);
+      if (dmean_alt != nullptr) {
+        R.K_born.push_back(Kb);
+      }
       R.jensen_rate.push_back(-S.coeff * 0.5 * Ipp(Kc) * var_at(S.t[i]));
     }
     return R;
@@ -973,6 +1008,12 @@ namespace {
                   "(%.3f of 4 s.e.), sigma_K/K = %.4g\n",
                   tag.c_str(), f, dpl, dpl / se, R.K_corr[i] - R.K_plain[i], (R.K_corr[i] - R.K_plain[i]) / (4.0 * se),
                   std::sqrt(S.varK[i]) / S.meanK[i]);
+      if (!R.K_born.empty()) {
+        const double db = S.meanK[i] - R.K_born[i];
+        std::printf("(diag) %s: E2 at %.1f [diagnostic: ODE with the fixture's Born <D> in place of the table's I/J]: "
+                    "<K> - K_born = %.4g (%.3f s.e.); K_born - K_corr = %.4g (%.3e of the energy lost)\n",
+                    tag.c_str(), f, db, db / se, R.K_born[i] - R.K_corr[i], (R.K_born[i] - R.K_corr[i]) / (S.K0 - R.K_corr[i]));
+      }
     }
   }
 
@@ -1084,7 +1125,8 @@ namespace {
       print_series(tag, S);
       auto d2 = spectrum == DELTA ? std::function<double(double)>([&](double G) { return d2_delta(T, G); })
                                   : std::function<double(double)>([&](double G) { return D2.at(G); });
-      const auto R = reference(T, S, d2);
+      const std::function<double(double)> dmean_born = [&](double G) { return D2.dmean_at(G); };
+      const auto R = reference(T, S, d2, spectrum == RESTFRAME ? &dmean_born : nullptr);
       verdict_E2(tag, S, R);
       verdict_E3(tag, S, R);
       verdict(S.C.n_bounded == 0 && S.C.n_dropped == 0 && S.C.n_capped_events == 0,
@@ -1189,7 +1231,8 @@ namespace {
         print_series(tag, S);
         auto d2 = spectrum == DELTA ? std::function<double(double)>([&](double G) { return d2_delta(T, G); })
                                     : std::function<double(double)>([&](double G) { return D2.at(G); });
-        const auto R = reference(T, S, d2);
+        const std::function<double(double)> dmean_born = [&](double G) { return D2.dmean_at(G); };
+        const auto R = reference(T, S, d2, spectrum == RESTFRAME ? &dmean_born : nullptr);
         if (c.registered && spectrum == DELTA) {
           verdict_E2(tag, S, R);
           verdict_E3(tag, S, R);

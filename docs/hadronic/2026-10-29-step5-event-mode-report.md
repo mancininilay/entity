@@ -358,7 +358,74 @@ are given).
 Results at the registered N (filled in as the runs complete; the
 development runs at N = 2000 are in the branch's logs):
 
-(stage 3 table: pending the N = 1e5 runs)
+Stage 3 at the registered N = 1e5 (s.e. of <K> = sigma_K/sqrt(N) = 0.19 to
+0.31; E3 tolerance 4 sqrt(2/N) = 1.79 %); the double-build rows and E6, E7,
+Gamma_p0 = 3 follow as the runs complete:
+
+| test | build | registered tolerance | measured | verdict |
+| --- | --- | --- | --- | --- |
+| E2 Gamma_p0 = 6, delta, vs the corrected ODE at <K>/K0 = 0.9 / 0.7 / 0.5 (t = 1275 / 5700 / 19475; 6.47e7 events) | single | 4 s.e. | 0.88 / 2.26 / 1.28 s.e. (plain ODE: 1.1 / 3.9 / 6.3 s.e.; Jensen term 0.06 / 0.42 / 1.26 of 4 s.e.) | pass |
+| E2 Gamma_p0 = 6, restframe, vs the corrected ODE at 0.9 / 0.7 / 0.5 | single | 4 s.e. | 2.15 / 1.06 / **8.60** s.e. (<K> - K_corr = +1.78 at 0.5: 3.9e-4 of the energy lost) | pass / pass / **FAIL** (mechanism below) |
+| E2 Gamma_p0 = 6, delta, vs the continuous mode (eta_u = 1e-5) at 0.9 / 0.7 / 0.5 | single | 4 s.e. | 0.92 / 3.65 / **6.23** s.e. | pass / pass / **FAIL** (mechanism below) |
+| E3 Gamma_p0 = 6, delta [registered: no feedback] at sigma_K/K = 0.005 (Delta K/K = 0.029) / 0.01 (0.128) / last in window (0.500) | single | 1.79 % | 6.8 % / 32.1 % / 89.1 % | **FAIL** (mechanism in the stage-3 text) |
+| E3 Gamma_p0 = 6, delta [proposal: linear drift feedback], same points; max over the window with Delta K/K >= 1 % | single | 1.79 % | 0.85 % / 0.42 % / 0.17 %; max 1.27 % | pass |
+| E3 Gamma_p0 = 6, restframe [registered] at sigma_K/K = 0.005 (Delta K/K = 0.021) / 0.01 (0.088) / last (0.500), E[D^2] from the frozen `D2mean` | single | 1.79 % | 5.8 % / 22.7 % / 89.9 % | **FAIL** |
+| E3 Gamma_p0 = 6, restframe [proposal], same points; max over the window | single | 1.79 % | 0.17 % / 0.02 % / 0.72 %; max 0.88 % | pass |
+| E1-type counters in the cooling runs (n_bounded = n_dropped = n_capped_events = 0 at a = 1, f_max = 0.01, lambda = 0.05) | single | exact | 0 | pass |
+| E6 dt x {1, 2, 4, 8} (lambda 0.05, 0.1, 0.2, 0.4) at t_end = 2000, Gamma_p0 = 6, delta, 1.66e7 events each: <K> - <K>_1 at t_end | single | residuals of the linear fit <= 4 sqrt(2) s.e. | -0.32 / +0.14 / -0.06 (= -0.86 / 0.37 / -0.16 s.e.); fitted slope -0.011 per unit dt (0.37 s.e. per unit dt); max residual 0.84 s.e. | pass (no detectable dt dependence of <K> up to lambda = 0.4) |
+| E6 Var K - Var_1 at t_end | single | idem | -4.9 / -31 / +31 (= -0.11 / -0.71 / +0.71 s.e.); slope 4.1 per unit dt (44 s.e. per unit dt); max residual 0.85 s.e. | pass |
+| E6 dt x 1 passes E2 (0.46 s.e. at 0.9) and E3 [proposal] (0.53 / 0.05 / 0.13 %); n_capped_events = 0 | single | | | pass (E3 [registered] fails: 9.7 / 31.8 / 35.8 %) |
+| E7 a = 1 / 2 / 4 at f_max = 0.01, delta: E2 at 0.9 / 0.7 / 0.5 | single | 4 s.e. | a = 1: 1.09 / 0.11 / 1.47; a = 2: 0.72 / 1.03 / 0.10; a = 4: 0.29 / 0.08 / 0.63 s.e. | pass (the mean loss is a-independent) |
+| E7 a = 1 / 2 / 4, delta: E3 [registered] | single | 1.79 % | fails at every point with Delta K/K >= 1.5 % (3.8 % to 89 %); passes only at a = 4, sigma_K/K = 0.005 (Delta K/K = 0.8 %: 1.71 %) | **FAIL** (feedback mechanism) |
+| E7 a = 1 / 2 / 4, delta: E3 [proposal], max over the window | single | 1.79 % | 1.58 % / 1.23 % / 0.80 %; Var_meas/Var_fb at the end 1.001 / 1.007 / 1.004 (variance a R E[D^2] with the feedback: contract (iii)) | pass |
+| E7 restframe a = 1 / 2 / 4 at f_max = 0.01 (reported): bounded fraction; <K> - K_corr at 0.5 | single | reported | 0 / 4.5e-5 / 2.38e-2; +1.79 (8.7 s.e.; the fit-vs-Born offset) / +2.17 (7.4 s.e.) / +66.8 at 0.9 and +119 at 0.7 (0.8 % and 1.9 % of K: the skipped 2.4 % of the events bias the loss, as the bound was designed to show); Var_meas/Var_fb 1.011 / 1.010 / 1.011 | reported |
+| E7 diagnostic a = 10 / 30 at f_max = 0.1, delta: <K> - K_corr at 0.9 / 0.7 / 0.5 (s.e. 0.75 / 0.86 / 0.60 and 1.3 / 1.5 / 1.1) | single | labelled, not passed or failed | a = 10: 0.93 / 1.51 / 1.31 s.e.; a = 30: -0.56 / -0.40 / 1.65 s.e.; Var_meas/Var_fb 1.015 and 1.029 | reported: no bias of the mean loss resolved at a <= 30 with the delta spectrum (reading below the table) |
+| E7 diagnostic a = 10 / 30 at f_max = 0.1, restframe | single | labelled | a = 10: bounded 0, 0.49 / 2.09 / 3.69 s.e. (the fit-vs-Born offset); a = 30: bounded 3.8e-3 of the events, +18 to +29 (12 to 17 s.e., 0.2 to 0.45 % of K) | reported |
+| E2 Gamma_p0 = 3, delta, vs the corrected ODE at 0.9 / 0.7 (t = 1088 / 18963; the 0.7 target lies at Gamma_p = 2.4 where I is 1.2 % of I(3); 2.43e7 events, s.e. 0.092 / 0.060) | single | 4 s.e. | 1.19 / 1.01 s.e. | pass |
+| E2 Gamma_p0 = 3, restframe, at 0.9 / 0.7 | single | 4 s.e. | **9.83 / 11.81** s.e. (<K> - K_corr = +0.95 at 0.9, +0.71 at 0.7: 2.6e-3 and 6.4e-4 of the energy lost) | **FAIL** (the fit-vs-Born offset, largest near threshold where I_Born/I_fit - 1 reaches -0.49 %) |
+| E2 Gamma_p0 = 3, delta, vs the continuous mode at 0.9 / 0.7 | single | 4 s.e. | 3.70 / **13.72** s.e. | pass / **FAIL** (the continuous mode's Euler error over 38,000 steps with the steep near-threshold rate) |
+| E3 Gamma_p0 = 3, delta and restframe [registered] at sigma_K/K = 0.005 (Delta K/K = 0.02) and at the last record (0.31; sigma_K/K never reaches 0.01: the variance shrinks to 9 % of the no-feedback value) | single | 1.79 % | 13.7 % / 93.9 % (delta); 13.5 % / 94.1 % (restframe) | **FAIL** |
+| E3 Gamma_p0 = 3 [proposal] at the same points; max over the window | single | 1.79 % | delta 0.62 % / 0.96 %, max 1.75 %; restframe 0.24 % / **1.81 %**, max 1.89 % | delta pass; restframe **fails at the last record by 0.02 %** (the linearised feedback at the steep near-threshold rate: Var_fb = 328 vs 333 measured; reported) |
+
+**E7 diagnostic at a = 10 and 30 (reading).** With the delta spectrum no
+bias of the mean loss is resolved up to a = 30 at f_max = 0.1: the
+coarse-graining error of the mean is second order (the loss per event a <D>
+is removed exactly and the rate is re-evaluated at the new state before the
+next event; only the within-step frozen hazard remains, first order in
+lambda = R dt / a, which *decreases* with a). The variance scales as a R
+E[D^2] with the feedback (ratios 1.015 and 1.029 at a = 10 and 30). With
+the restframe spectrum the bound skips 0.38 % of the events at a = 30 and
+f_max = 0.1 and biases the mean by 0.2 to 0.45 % of K: the bias of E7 is the
+bound's, not the coarse-graining's. The contract's expected bias scaling
+(a <D>/K dlnI/dlnK) applies to a scheme that would draw all a events at
+the start-of-step state; the implemented per-event update removes it.
+
+**E2 restframe at <K>/K0 = 0.5 (fact, mechanism).** The restframe sampler
+loses energy at the Born chain's mean <D>_Born(Gamma) (bhref 0.2.0 `Dmean`),
+while the ODE reference uses the step-1 table I = J <D>_fit built on the
+Chodorowski q_k fit; the two differ by -0.49 % to +0.07 % over the mono
+baths (Claude 3's review, decision 2026-10-27 (a): the Born-q_k tables of
+the next step remove the difference). With N = 1e5 the s.e. at 0.5 is 0.21
+on a loss of 4591, i.e. 4 s.e. resolves 1.8e-4 of the energy lost, below
+the fit-vs-Born offset. The delta spectrum uses D = <D>_fit = I/J of the
+table and agrees with the same ODE at 1.3 s.e., which isolates the
+mechanism. The diagnostic reference with J <D>_Born in place of I (printed
+as "[diagnostic: ODE with the fixture's Born <D>]" in the double-build
+logs, added after the single run) quantifies it. Registered failure kept;
+expected to pass once the tables are Born-based (open question 10).
+
+**E2 vs the continuous mode at 0.5 (fact, mechanism).** The continuous mode
+applies the Euler step dK = coeff I(K_start) dt at dt = 0.5 (dK/K = 4.5e-5
+per step, no sub-cycling); its first-order error per step is (1/2)
+(dK_step)^2 (dlnI/dlnK)/K = 4e-5 in K-units, accumulated over 39,000 steps
+to about 1 to 2 K-units: measured <K>_continuous - K_plain = -2.37 (5.2e-4
+of K) at <K>/K0 = 0.5, while the event mode sits 1.3 s.e. (0.24) from the
+corrected ODE. The registered statement compares two discretisations at a
+resolution (4 s.e. = 0.76 in K) finer than the continuous mode's own
+discretisation error at this dt; it holds at 0.9 and 0.7 and fails at 0.5.
+Recommendation (open question 11): re-register the continuous comparison
+with the continuous mode run at dt/8 (its error falls to 0.3 K-units), or
+state it as agreement with the ODE reference separately for the two modes.
 
 | test | build | registered tolerance | measured | verdict |
 | --- | --- | --- | --- | --- |
@@ -443,6 +510,16 @@ the sampler counters remains deferred as before.
    (Gamma_p = 2 < 2.125): unreachable by physics, not a failure.
    Recommendation: replace it by 0.7 at Gamma_p0 = 3 (reached), or by a
    target in Gamma_p (e.g. Gamma_p = 2.4).
+10. **E2 restframe at <K>/K0 = 0.5 fails at 8.6 s.e.** by the fit-vs-Born
+    mean-loss offset (3.9e-4 of the energy lost; stage 3 mechanism), the
+    same registered discrepancy as A7 weighted and A12 (decision 2026-10-27
+    (a)). Recommendation: keep the failed row; rerun E2 restframe after the
+    Born-q_k loss tables land, when the sampler and the loss table share
+    their mean loss by construction.
+11. **E2 vs the continuous mode at <K>/K0 = 0.5 fails at 6.2 s.e.** by the
+    continuous mode's own Euler error at dt = 0.5 (stage 3 mechanism).
+    Recommendation: re-register with the continuous reference at dt/8, or
+    as separate agreements with the ODE.
 
 ## 4. Deferred (listed so that nothing is silently decided)
 
