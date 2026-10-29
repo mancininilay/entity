@@ -18,9 +18,9 @@ Nilay's decision. Code facts are quoted with file, line and commit.
 | --- | --- | --- |
 | 1 | parser and options: `mode` enum, the refusals of contract section 3, the startup report (lambda_max, a_max, the ulp-energy ratio), the capacity estimate with a instead of r_th; T23 additions | done, `9a44ecb8` |
 | 2 | kernel path: the event branch of `BetheHeitler_kernel` per contract section 2; E1, E5, E8 | done, `7be411a7`; one registered failure: E1 in the single build with the delta spectrum (section 2, stage 2) |
-| 3 | statistics: E2 (corrected ODE), E3 (`D2mean` fixture), E6, E7 | code done (this commit); the registered N = 1e5 runs in progress; E3 as registered fails beyond a 2 % energy loss (first-order drift feedback, section 2, stage 3) |
-| 4 | spectra and MPI: E4 (calibrated AD against the frozen histograms), the restart refusal at the run level, E9; full ctest single and double | E4 and the restart test done (double build; this commit); E9 deferred (no MPI toolchain on the Mac; job spec in section 4); full ctest pending |
-| 5 | report, checkpoint, changelog | pending |
+| 3 | statistics: E2 (corrected ODE), E3 (`D2mean` fixture), E6, E7 | done, registered N = 1e5 in both builds: E2 passes for delta, fails for restframe at the deepest targets (fit-vs-Born), E3 as registered fails beyond a 2 % energy loss (first-order drift feedback) while the corrected prediction passes, E6 and E7 pass |
+| 4 | spectra and MPI: E4 (calibrated AD against the frozen histograms), the restart refusal at the run level, E9; full ctest single and double | E4 passes 10 of 10 in both builds, the restart test passes, full ctest done in both builds (baselines and registered failures only); E9 deferred (no MPI toolchain on the Mac; job spec in section 2) |
+| 5 | report, checkpoint, changelog | done (`Resources/p2-hadronic/notes/2026-10-29-claude1-event-mode-report.md`) |
 
 ## 1. Environment (facts, measured on the Mac)
 
@@ -224,11 +224,18 @@ every spectrum).
 **Per-ion closure (my addition, not in the contract).** The closure per ion
 (its own loss against its own pairs) was first checked at the E1
 tolerance and measured 2.6e-5 (delta) and 4.3e-5 (restframe) in the single
-build at Gamma_p = 6 (one or a few events per ion: no averaging at all), so
-the criterion was then set from the mechanism, ulp-energy(K_init) / (2 a
-<D>(Gamma_init)) = 5.84e-5 at Gamma_p = 6, 1e-12 in double; it passes in
-every group (double: 1e-13). Recorded here as a criterion set after a first
-measurement.
+build at Gamma_p = 6 (one or a few events per ion: no averaging at all); the
+criterion was then set relative to a <D> from the mechanism (5.84e-5 at
+Gamma_p = 6), which a restframe ion at Gamma_p = 3 with one low-D event (D
+about 2 against <D> = 5.2) exceeded in the single ctest (4.2e-5 against its
+2.4e-5); the criterion is now the mechanism's bound in absolute terms,
+|residual| <= n_events(ion) x half ulp-energy(K_init) + 1e-12 x own loss
+(one rounding of the stored u per event, each at most half an ulp-energy).
+Measured maxima of |residual| / bound: 0.45 (delta, E1 and E8 iii), 0.98
+(restframe E1: an ion whose roundings all went the same way, the bound's
+worst case reached), 0.32 and 0.25 (E8 i, ii); double build 0.10 / 0.19
+(E1 delta / restframe), 0.10 / 0.10 / 0.016 (E8 i, ii, iii). Recorded here as a criterion set after measurements (three
+revisions).
 
 **Contract corrections found in stage 2 (facts by algebra, tested by E1).**
 (1) Section 2 e writes the ion term of E_round as w (a D_s - dK_applied);
@@ -386,6 +393,8 @@ Gamma_p0 = 3 follow as the runs complete:
 | E2 Gamma_p0 = 3, delta, vs the continuous mode at 0.9 / 0.7 | single | 4 s.e. | 3.70 / **13.72** s.e. | pass / **FAIL** (the continuous mode's Euler error over 38,000 steps with the steep near-threshold rate) |
 | E3 Gamma_p0 = 3, delta and restframe [registered] at sigma_K/K = 0.005 (Delta K/K = 0.02) and at the last record (0.31; sigma_K/K never reaches 0.01: the variance shrinks to 9 % of the no-feedback value) | single | 1.79 % | 13.7 % / 93.9 % (delta); 13.5 % / 94.1 % (restframe) | **FAIL** |
 | E3 Gamma_p0 = 3 [proposal] at the same points; max over the window | single | 1.79 % | delta 0.62 % / 0.96 %, max 1.75 %; restframe 0.24 % / **1.81 %**, max 1.89 % | delta pass; restframe **fails at the last record by 0.02 %** (the linearised feedback at the steep near-threshold rate: Var_fb = 328 vs 333 measured; reported) |
+| **Double build**, every stage-3 group at N = 1e5 (same seeds): E2 delta 0.89 / 2.28 / 1.30 s.e. (Gamma_p0 = 6), 1.19 / 1.02 (3); E2 restframe 2.11 / 1.09 / **8.93** (6), **9.90 / 11.43** (3); vs continuous 0.93 / 3.66 / **6.07** (6), 3.70 / **13.71** (3); E3 [registered] fails at every point as in single; E3 [proposal] passes at every point including the Gamma_p0 = 3 restframe last record (0.99 %; the single build's 1.81 % was the ratio's own noise at the 1 % level: Var 331 vs 333); E6 residuals 0.84 / 0.85 s.e.; E7 as in single | double | as above | | same verdicts as single, except the one E3 [proposal] marginal row, which passes |
+| **Born-mean diagnostic (double build)**: <K> - K_born, the corrected ODE with the mean loss J(Gamma) <D>_Born(Gamma) from the fixture's `Dmean` in place of the table's I | double | labelled diagnostic | restframe Gamma_p0 = 6 at 0.9 / 0.7 / 0.5: -2.73 / -2.53 / -1.06 s.e. (the fit table gave 2.1 / 1.1 / 8.9); Gamma_p0 = 3 at 0.9 / 0.7: **0.22 / 0.67 s.e.** (the fit table gave 9.9 / 11.4); K_born - K_fit = 2.5e-3 and 5.9e-4 of the energy lost at Gamma_p0 = 3, 1.9e-4 to 4.5e-4 at 6 | confirms the mechanism of the restframe E2 failures: the sampler follows the Born mean, the table the fit |
 
 **E7 diagnostic at a = 10 and 30 (reading).** With the delta spectrum no
 bias of the mean loss is resolved up to a = 30 at f_max = 0.1: the
@@ -409,9 +418,9 @@ the next step remove the difference). With N = 1e5 the s.e. at 0.5 is 0.21
 on a loss of 4591, i.e. 4 s.e. resolves 1.8e-4 of the energy lost, below
 the fit-vs-Born offset. The delta spectrum uses D = <D>_fit = I/J of the
 table and agrees with the same ODE at 1.3 s.e., which isolates the
-mechanism. The diagnostic reference with J <D>_Born in place of I (printed
-as "[diagnostic: ODE with the fixture's Born <D>]" in the double-build
-logs, added after the single run) quantifies it. Registered failure kept;
+mechanism. The diagnostic reference with J <D>_Born in place of I (the row "Born-mean
+diagnostic" in the table) closes the discrepancy: 0.22 and 0.67 s.e. at
+Gamma_p0 = 3 where the fit table gave 9.9 and 11.4 s.e. Registered failure kept;
 expected to pass once the tables are Born-based (open question 10).
 
 **E2 vs the continuous mode at 0.5 (fact, mechanism).** The continuous mode
@@ -435,8 +444,34 @@ state it as agreement with the ODE reference separately for the two modes.
 | E4 incidental: n_bounded at a = 1, f_max = 0.01 | double | | 0 at Gamma_p = 3; 1 in 1.0998e6 events at Gamma_p = 10 (a_max = 0.84 there: the D tail reaches f_max K = 165 about once per 1e6 events) | reported |
 | restart refusal (`event_restart.sh`, 5 runs) | double | per script | B refused naming 16 ions and start_step 81; A, C, D, D2 complete; D and D2 scans clean | pass |
 
-(E4, the restart test and the stage-3 groups in the single build: pending
-the full ctest of stage 4.)
+**Full ctest, single build** (`ctest -j 2` with 4 OpenMP threads, the four
+long statistics groups `bh_event_{e2e3, e2e3_g3, e6, e7}` excluded and run
+separately above): 116 entries, 107 passed, 6 failed, 3 skipped (the
+cross-build and Serial-build entries as before), 2070 s wall. The six
+failures: `GLOBAL::param_container` and `METRICS::sr-cart-sph` (the
+established baselines, as in step 4), `ARCHETYPES::bh_chain_a7w` (the
+registered weighted A7 failure, carried), `KERNELS::bh_sampler_a12` (the
+registered A12 mean-cost failure at the node Gamma_p = 76.53, 1.285 %
+against 1 %: the same node as the cloud failure of step 4; the native
+step-4 runs passed it, so this is the statistical fluctuation of a
+different thread count and seed assignment, not a change of the sampler,
+which step 5 does not touch), `KERNELS::bh_event_e1` and
+`KERNELS::bh_event_e8` (the registered E1 single-build delta failures of
+stage 2, 1.84e-5 and 1.12e-5 against 1e-5, plus, in that ctest run, the
+per-ion criterion's second revision; the rerun with the final criterion
+gives 20 passed / 2 failed and 35 / 2, the two being the delta closures).
+`KERNELS::bh_event_e4` passes in single (10 of 10, 6.7 s), `HADRONIC::event_e8`
+and `HADRONIC::event_restart` pass.
+
+**Full ctest, double build** (same command): 116 entries, 113 passed, 3
+failed, 3 skipped, 1745 s wall. The three failures are the baselines
+`GLOBAL::param_container`, `ARCHETYPES::bh_chain_a7w` (registered) and
+`KERNELS::bh_sampler_a12` at the same node Gamma_p = 76.53 with the same
+value 1.285 % (identical in both precisions: the value is fixed by the
+fixture test's seed, so it is the registered A12 failure row of step 4
+reproducing natively with this build's thread count, not a precision
+effect). Every `bh_event_*` entry passes in double (e1 22 / 0, e8 37 / 0,
+e4 5 / 0, e5 6 / 0), as do `HADRONIC::event_e8` and `HADRONIC::event_restart`.
 
 **E9 (MPI ledger over ranks): deferred.** No MPI toolchain on the Mac
 (`mpicxx`, `mpirun` absent). Rusty job specification, to run under Nilay's
@@ -532,4 +567,4 @@ the sampler counters remains deferred as before.
 
 ## 5. Branch head
 
-Stage 1: `9a44ecb8`. Stage 2: (hash filled in at the next commit)
+Stage 1: `9a44ecb8`. Stage 2: `7be411a7`. Stages 3 and 4 (code): `bac7cafe`, single-build statistics `a5db13f6`. Final (this commit): see the Resources note `2026-10-29-claude1-event-mode-report.md`, which records the head hash.

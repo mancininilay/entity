@@ -25,13 +25,15 @@
  *     both; |E_round| / E_drag <= 1e-5 (single), <= 1e-13 (double); the same
  *     closure per ion (every ion's own loss against its own pairs) is a
  *     stronger statement, not in the contract: its criterion is the
- *     mechanism's bound, |residual| / own loss <= ulp-energy(K_init) / (2 a
- *     <D>(Gamma_init)) + 1e-12 (the worst case of one float rounding of the
- *     stored u per event, every event rounding the same way; with the delta
- *     spectrum the subtracted recoil is the same at every event of an ion, so
- *     the rounding does not average: first measured 2.6e-5 in single at
- *     Gamma_p = 6 against 1e-5, then the criterion was set from the mechanism;
- *     recorded as such in the report), and 1e-12 in the double build
+ *     mechanism's bound in absolute terms, |residual| <= n_events(ion) x
+ *     ulp-energy(K_init) / 2 + 1e-12 x own loss (one rounding of the stored u
+ *     per event, each at most half an ulp-energy, the ulp-energy decreasing as
+ *     the ion cools; the pair-side rounding is 1e-7 relative and negligible).
+ *     History: first checked at the E1 relative tolerance (2.6e-5 measured in
+ *     single at Gamma_p = 6 against 1e-5), then set relative to a <D> (which a
+ *     restframe ion with one low-D event, D ~ 2 against <D> = 5, exceeded at
+ *     4.2e-5 against 2.4e-5 in the single ctest), then set to the absolute
+ *     form above; recorded as such in the report
  *   - E5: same seed, same inputs, mu_d = 1 and mu_d = mu_r, launched with a
  *     Serial execution policy (one RNG state consumed in particle order; the
  *     OpenMP pool assigns states by scheduling): identical event counts per
@@ -124,22 +126,17 @@ namespace {
   constexpr double TOL_E5_K     = SINGLE ? 1.0e-5 : 1.0e-12;
 
   /**
-   * @brief The per-ion closure bound from the mechanism: one float rounding of
-   *        the stored u per event, |dK_applied - a D| <= ulp(u) mu_d u / (2
-   *        gamma_d), relative to the smallest intended loss a <D>; 1e-12 in
-   *        the double build (the same expression there is ~1e-13 and the
-   *        registered double tolerance of E1 is kept)
+   * @brief Half the energy resolution of the stored momentum (real_t of the
+   *        build) at kinetic energy K: the bound of one rounding of u_new,
+   *        |dK_applied - a D| <= ulp(u) mu_d u / (2 gamma_d)
    */
-  double per_ion_tolerance(double K, double mu_d, double a, double Dmean) {
-    if (!SINGLE) {
-      return 1.0e-12;
-    }
-    const double u   = std::sqrt(K * (K + 2.0 * mu_d)) / mu_d;
-    const double gd  = std::sqrt(1.0 + u * u);
-    const float  uf  = static_cast<float>(u);
-    const double ulp = static_cast<double>(std::nextafter(uf, std::numeric_limits<float>::infinity())) -
-                       static_cast<double>(uf);
-    return 0.5 * ulp * mu_d * u / gd / (a * Dmean) + 1.0e-12;
+  double half_ulp_energy(double K, double mu_d) {
+    const double u  = std::sqrt(K * (K + 2.0 * mu_d)) / mu_d;
+    const double gd = std::sqrt(1.0 + u * u);
+    const real_t ur = static_cast<real_t>(u);
+    const double ulp = static_cast<double>(std::nextafter(ur, std::numeric_limits<real_t>::infinity())) -
+                       static_cast<double>(ur);
+    return 0.5 * ulp * mu_d * u / gd;
   }
 
   struct Tables {
@@ -463,13 +460,15 @@ namespace {
   /* ------------------------------------------------------------------------ */
   struct Closure {
     double lhs { 0.0 }, rhs { 0.0 }, residual { 0.0 };
-    double max_rel_per_ion { 0.0 }; // over ions with at least one pair
-    double tol_per_ion { 0.0 };     // the largest per-ion tolerance used (reported)
+    double max_rel_per_ion { 0.0 }; // over ions with at least one pair: |residual| / (n_events half-ulp-energy bound)
+    double tol_per_ion { 1.0 };     // the criterion is a ratio to the per-ion bound: 1
     int    n_ions_with_pairs { 0 };
     int    n_ions_bad { 0 };        // per-ion closure beyond the tolerance
   };
 
   Closure closure(const Ions& ions, const std::vector<double>& K_init, const Pairs& pairs, const Tables& T, double a) {
+    (void)T;
+    (void)a;
     Closure C;
     kh::dd  lhs, rhs;
     const auto          rows = pairs.rows();
@@ -496,14 +495,11 @@ namespace {
         kh::dd d;
         d.add_prod(w[p], K_init[p] - Kf[p]);
         d.sub(per_ion[p]);
-        const double own = std::abs(w[p] * (K_init[p] - Kf[p]));
-        const double rel = own > 0.0 ? std::abs(d.value()) / own : std::abs(d.value());
-        double       Dm = 0.0, e = 0.0;
-        bh::interpolate_outcome_host(T.host, 1.0 + K_init[p] / MU_R, Dm, e);
-        const double tol = per_ion_tolerance(K_init[p], ions.mu_d, a, Dm);
-        C.max_rel_per_ion = std::max(C.max_rel_per_ion, rel);
-        C.tol_per_ion     = std::max(C.tol_per_ion, tol);
-        if (rel > tol) {
+        const double own   = std::abs(w[p] * (K_init[p] - Kf[p]));
+        const double bound = static_cast<double>(cnt[p]) * w[p] * half_ulp_energy(K_init[p], ions.mu_d) + 1.0e-12 * own;
+        const double rel   = std::abs(d.value()) / bound;
+        C.max_rel_per_ion  = std::max(C.max_rel_per_ion, rel);
+        if (rel > 1.0) {
           C.n_ions_bad += 1;
         }
         C.n_ions_with_pairs += 1;
@@ -523,7 +519,8 @@ namespace {
             tag + ": E1 array closure |sum w dK - sum w_s (E- + E+ - eps)| / E_drag", E > 0.0 ? std::abs(A.residual) / E : -1.0,
             TOL_CLOSURE);
     verdict(A.n_ions_bad == 0, tag + ": per-ion closure (mechanism bound, not in the contract) on " +
-                                 std::to_string(A.n_ions_with_pairs) + " ions with pairs, max relative residual",
+                                 std::to_string(A.n_ions_with_pairs) + " ions with pairs, max |residual| / (n_events x half "
+                                 "ulp-energy)",
             A.max_rel_per_ion, A.tol_per_ion);
     verdict(std::abs(H.residual()) <= TOL_IDENTITY * E, tag + ": ledger identity residual / E_drag",
             E > 0.0 ? std::abs(H.residual()) / E : -1.0, TOL_IDENTITY);
