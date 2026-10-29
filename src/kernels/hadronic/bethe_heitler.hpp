@@ -110,6 +110,18 @@ namespace kernel::hadronic {
     Poisson = 2
   };
 
+  /**
+   * @brief The loss operator (spec III.5, step 5): the continuous drag of
+   *        II.2 steps 1 to 4, or the event (Monte Carlo) mode of the contract
+   *        2026-10-29: n ~ Poisson(R dt / a) interactions per step, each with
+   *        an unweighted outcome, one macro-pair of weight a w and the exact
+   *        recoil a D; stateless per ion (the three payload slots stay zero)
+   */
+  enum class LossMode : int {
+    Continuous = 0,
+    Event      = 1
+  };
+
   enum class PairSpectrum : int {
     Delta     = 0,
     Threshold = 1,
@@ -220,6 +232,8 @@ namespace kernel::hadronic {
     // "design off" (T5b only): the table dK is applied to u every step with no
     // pending accumulation (the remainder of each application is discarded)
     bool unsafe_application { false };
+    // ---- loss operator (step 5) ---------------------------------------------
+    int mode { static_cast<int>(LossMode::Continuous) };
     // ---- pair creation (step 3) ---------------------------------------------
     int    source { static_cast<int>(PairSource::None) };
     int    spectrum { static_cast<int>(PairSpectrum::Delta) };
