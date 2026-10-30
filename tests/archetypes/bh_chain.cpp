@@ -36,6 +36,7 @@
  * the weighted checks 7 000 000 + 10 b + j; A9 9 000 000 + 100 b + j.
  */
 
+#include "archetypes/hadronic/bh_born_qk.h"
 #include "archetypes/hadronic/bh_physics.h"
 #include "archetypes/hadronic/bh_restframe.h"
 #include "archetypes/hadronic/bh_sampler_host.h"
@@ -44,6 +45,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <exception>
 #include <memory>
 #include <string>
@@ -121,12 +123,22 @@ namespace {
     std::shared_ptr<rf::HostSampler>      sampler;
   };
 
+  // step 6 (contract 1.5): BH_QK_SOURCE=born runs the suite against the Born rate tables (ctest entries
+  // ARCHETYPES::bh_chain_*_born); A7 then uses the re-registered criterion (4 s.e., no floor) and the
+  // budget group's A5b becomes A5-numerical (1e-3 where I > 1e-3 of the peak)
+  bool born_mode() {
+    const char* e = std::getenv("BH_QK_SOURCE");
+    return e != nullptr && std::string(e) == "born";
+  }
+
   BathSetup make_setup(const rf::CanonicalBath& cb, const std::shared_ptr<const rf::RestFrameTables>& T,
                        const std::shared_ptr<const rf::SamplerCumulatives>& cum) {
     BathSetup S;
     S.cb         = cb;
     S.bath       = make_bath(cb.spec);
-    S.rates      = std::make_shared<BetheHeitlerRates>(S.bath);
+    Quadrature q;
+    q.qk_source  = born_mode() ? QkSource::Born : QkSource::Fit;
+    S.rates      = std::make_shared<BetheHeitlerRates>(S.bath, q);
     S.H          = build_tables(*S.rates, cb.mu_r);
     S.eps_tables = std::make_shared<rf::BathEpsTables>(rf::BathEpsTables::build(*S.bath, S.H, *cum));
     S.sampler    = std::make_shared<rf::HostSampler>(S.bath, S.H, T, cum, S.eps_tables);
@@ -196,7 +208,8 @@ namespace {
     const rf::SampledChainD SDr(cum, [&](double k) { return qk32(k); }, 24);
     diag("sampled-chain quadrature: tables' q_k on 16 and 32 sub-nodes per eps' interval, %.1f s", seconds_since(t_q));
     double      w_s = 0.0, w_conv = 0.0, w_cert = 0.0, w_qonly = 0.0, w_a5b = 0.0, w_tab_vs_exact = 0.0;
-    std::string n_s, n_a5b, n_qonly;
+    double      w_a5num = 0.0, g_a5num = 0.0;
+    std::string n_s, n_a5b, n_qonly, n_a5num;
     double      g_s = 0.0;
     std::size_t n_nodes = 0;
     for (const auto& S : setups) {
@@ -218,6 +231,7 @@ namespace {
         rt[i]               = I_tab / S.H.I[i] - 1.0;
       });
       double ws = 0.0, wc = 0.0, wb = 0.0, wa = 0.0, wt = 0.0, gs = 0.0, ga = 0.0;
+      double wa_core = 0.0, ga_core = 0.0; // A5-numerical: I_laws vs the table where I > 1e-3 of its peak
       for (std::size_t i = 0; i < ng; ++i) {
         w_cert = std::max(w_cert, std::abs(rs[i]) + std::abs(rc[i]));
         if (std::abs(rs[i]) > ws) {
@@ -227,6 +241,10 @@ namespace {
         if (std::abs(ra[i]) > wa) {
           wa = std::abs(ra[i]);
           ga = S.H.gamma[i];
+        }
+        if (S.H.I[i] > 1.0e-3 * S.H.I_peak && std::abs(ra[i]) > wa_core) {
+          wa_core = std::abs(ra[i]);
+          ga_core = S.H.gamma[i];
         }
         wc = std::max(wc, std::abs(rc[i]));
         wb = std::max(wb, std::abs(rb[i]));
@@ -251,6 +269,11 @@ namespace {
         w_a5b = wa;
         n_a5b = S.cb.name;
       }
+      if (wa_core > w_a5num) {
+        w_a5num = wa_core;
+        n_a5num = S.cb.name;
+        g_a5num = ga_core;
+      }
       w_conv         = std::max(w_conv, wc);
       w_tab_vs_exact = std::max(w_tab_vs_exact, wt);
     }
@@ -262,8 +285,16 @@ namespace {
               "under refinement| (q_k sub-nodes 16 -> 32, Gauss-Legendre orders 16 -> 24)",
               w_cert, 1.0e-3, "max (|dev| + |change|)");
     diag("budget: sampled-chain quadrature, max |rel. change| under refinement %.2e over all nodes", w_conv);
-    check_abs("A5b: direct-boost loss table I (laws' q_k) vs I_exact of step 1, every node of the five tables", w_a5b,
-              5.0e-3);
+    if (born_mode()) {
+      // contract 1.5 A5-numerical (T3b): the direct-boost chain's I (the laws' q_k) against the Born table
+      check_abs("A5-numerical: direct-boost I (laws' q_k) vs the Born table I, nodes with I > 1e-3 I_peak of the five "
+                "tables (worst " + n_a5num + " Gamma " + std::to_string(g_a5num) + ")",
+                w_a5num, 1.0e-3);
+      diag("A5-numerical: over all nodes (no mask) max %.3e (bath %s)", w_a5b, n_a5b.c_str());
+    } else {
+      check_abs("A5b: direct-boost loss table I (laws' q_k) vs I_exact of step 1, every node of the five tables", w_a5b,
+                5.0e-3);
+    }
     diag("budget: the q_k part alone (round 1's check: tables' q_k in the analytic chain vs the laws) max %.3e (bath "
          "%s); A5b worst bath %s; I_tables vs I_exact worst %.3e",
          w_qonly, n_qonly.c_str(), n_a5b.c_str(), w_tab_vs_exact);
@@ -390,7 +421,9 @@ namespace {
         const double rel  = std::abs(R[i].mean / S.H.Dmean[i] - 1.0);
         const double nse  = std::abs(R[i].mean - S.H.Dmean[i]) / R[i].se;
         const double nsc  = std::abs(R[i].mean - Dchain[i]) / R[i].se;
-        const bool   pass = rel <= 1.0e-2 || nse <= 4.0;
+        // the registered criterion: max(1%, 4 s.e.) against the fit tables (step 4); against the Born
+        // tables (contract 1.5, decision 2026-10-27 (4)): 4 s.e. with no floor
+        const bool   pass = born_mode() ? (nse <= 4.0) : (rel <= 1.0e-2 || nse <= 4.0);
         if (!pass) {
           ++n_fail_rel;
         }
@@ -419,11 +452,21 @@ namespace {
     }
     // the registered criterion: every node within max(1%, 4 s.e.) of I/J (round 2: the per-node count is the
     // verdict; round 1 printed it but the verdict line could not fail)
-    check_true("A7: |<D>_MC - I/J| <= max(1%, 4 s.e.) at every rate-table node of the five baths (N = 1e6)",
-               total_fail == 0, std::to_string(total_fail) + " of " + std::to_string(total_nodes) + " nodes fail");
-    check_abs("A7: max |<D>_MC/(I/J) - 1| over the " + std::to_string(total_nodes) + " nodes (bath " + wname +
-                ", Gamma " + std::to_string(wgamma) + ")",
-              worst_rel, 1.0e-2);
+    if (born_mode()) {
+      check_true("A7 [re-registered, contract 1.5]: |<D>_MC - I_Born/J| <= 4 s.e. at every rate-table node of the five "
+                 "baths (N = 1e6), no floor",
+                 total_fail == 0, std::to_string(total_fail) + " of " + std::to_string(total_nodes) + " nodes fail");
+      check_abs("A7 [re-registered]: max |<D>_MC - I_Born/J| / s.e. over the " + std::to_string(total_nodes) + " nodes",
+                worst_se_exact, 4.0, "max |dev| / s.e.");
+      diag("A7 [re-registered]: max |<D>_MC/(I_Born/J) - 1| over the nodes = %.3e (bath %s, Gamma %.5f)", worst_rel,
+           wname.c_str(), wgamma);
+    } else {
+      check_true("A7: |<D>_MC - I/J| <= max(1%, 4 s.e.) at every rate-table node of the five baths (N = 1e6)",
+                 total_fail == 0, std::to_string(total_fail) + " of " + std::to_string(total_nodes) + " nodes fail");
+      check_abs("A7: max |<D>_MC/(I/J) - 1| over the " + std::to_string(total_nodes) + " nodes (bath " + wname +
+                  ", Gamma " + std::to_string(wgamma) + ")",
+                worst_rel, 1.0e-2);
+    }
     impl_abs("A7: max |<D>_MC - <D>_sampled| / s.e. over all nodes (the quadrature of the density the chain samples, "
              "SampledChainD)",
              worst_se_chain, 5.0, "max |dev| / s.e.");
@@ -630,6 +673,8 @@ auto main(int argc, char* argv[]) -> int {
   };
   try {
     std::setvbuf(stdout, nullptr, _IOLBF, 0);
+    std::printf("bh_chain: rate tables with qk_source = %s%s\n", born_mode() ? "born-3D2000" : "chodorowski-3.7",
+                born_mode() ? " (BH_QK_SOURCE=born; contract 1.5 criteria)" : "");
     const auto t_start = std::chrono::steady_clock::now();
     auto       t0      = std::chrono::steady_clock::now();
     auto       T       = std::make_shared<const rf::RestFrameTables>(rf::RestFrameTables::build());

@@ -12,6 +12,7 @@
  * anchors are transcribed below with their source stated.
  */
 
+#include "archetypes/hadronic/bh_born_qk.h"
 #include "archetypes/hadronic/bh_physics.h"
 
 #include "archetypes/hadronic/bh_options.h"
@@ -22,6 +23,7 @@
 #include <cmath>
 #include <cstdarg>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -1764,6 +1766,18 @@ namespace {
 int main() {
   const auto t_start = std::chrono::steady_clock::now();
   Quadrature q; // registered defaults: h_log_delta = h_log_eps = 0.02, delta0 = 1e-8, GL-16
+  // step 6 (contract 1.5): BH_QK_SOURCE=born in the environment re-runs the whole suite on the Born
+  // tables (ctest entry ARCHETYPES::bh_physics_born); the fit-based anchors (items 2, 5) then read as the
+  // fit budget of the Born tables
+  if (const char* e = std::getenv("BH_QK_SOURCE")) {
+    if (std::string(e) == "born") {
+      q.qk_source = QkSource::Born;
+    } else if (std::string(e) != "fit") {
+      std::printf("[FAIL] BH_QK_SOURCE = '%s' is neither born nor fit\n", e);
+      return 1;
+    }
+  }
+  std::printf("qk_source = %s\n", qk_source_name(q.qk_source));
   std::printf("Bethe-Heitler startup tables: acceptance tests (contract 1.3 "
               "section 5, items 1-6; exchange format of contract 1.4)\n");
   std::printf("quadrature: h_log_delta = %g, h_log_eps = %g, delta0 = %g, GL "

@@ -24,8 +24,8 @@ file layout and the numbers to compare against).
 
 | stage | content | status |
 | --- | --- | --- |
-| 1 | the q_k^Born provider, the `qk_source` switch (parser, options, startup report, exchange-file key), A10b, A10c, A3, the fit-path regression, the startup cost | done (this commit) |
-| 2 | cumulatives and tables from q_k^Born; item 8 against the five candidate tables; J and eps_mean equality; threshold exponent and UR anchors re-run; A5-numerical and A5-fit-budget | pending |
+| 1 | the q_k^Born provider, the `qk_source` switch (parser, options, startup report, exchange-file key), A10b, A10c, A3, the fit-path regression, the startup cost | done, `93a4c685` |
+| 2 | cumulatives and tables from q_k^Born; item 8 against the five candidate tables; J and eps_mean equality; threshold exponent and UR anchors re-run; A5-numerical and A5-fit-budget | done (this commit), all pass |
 | 3 | consumers: every step-2 to step-4 ctest entry with `qk_source = born`, single and double; A12 against the Born chain; A7 at 4 s.e. with no floor against I_Born/J | pending |
 | 4 | report, checkpoint, changelog, fork-changes | pending |
 
@@ -119,6 +119,38 @@ holds a function-pointer slot `born_qk_hook()`, `bh_born_qk.h` fills it at
 static initialisation (`born::registered`), and `born_q_k_delta` throws a
 `logic_error` naming the header if a program asks for Born cumulatives
 without any unit including it (never a silent fallback to the fit).
+
+### Stage 2 (cumulatives and tables)
+
+No new physics code: the cumulatives of stage 1 already build phi and psi
+from the chosen q_k on the existing grid in ln(k - 2) (Gauss-Legendre per
+cell), and the start below delta0 = 1e-8 is the leading threshold law
+(pi/12) delta^4 for phi, common to both sources since q_k(2) = 2; its
+next-order error, O(delta0) relative on a part that is (delta0/delta)^4 of
+any cumulative, is below 1e-17 at the table's lower edge (eps'_hi - 2 ~
+5e-3 there): quadrature, no re-derived series. Tests: `bh_fixtures.cpp` now
+compares both references (0.1.0 with the fit path, the 0.3.0 candidate with
+the Born path) and adds the contract-1.5 statements; `bh_physics.cpp` and
+`bh_chain.cpp` take `BH_QK_SOURCE=born` from the environment (ctest entries
+`ARCHETYPES::bh_physics_born`, `bh_chain_{budget, a7w, a7}_born`); in Born
+mode the budget group's A5b is replaced by A5-numerical and A7 by the
+re-registered 4-s.e.-no-floor criterion.
+
+| test | registered tolerance | measured | verdict |
+| --- | --- | --- | --- |
+| item 8, fit path vs bhref 0.1.0 (regression; five files, 35 checks) | 1e-6 core, 1e-3 tail | max |dI/I| 4.3e-12, |dJ/J| 4.1e-12 (unchanged from step 1) | pass |
+| item 8, Born path vs the 0.3.0 candidate, node placement (five files) | 1e-9 in y | 4.6e-12 to 2.3e-11 (the lower edge recomputed on I_Born moves the nodes, as in the candidate) | pass |
+| item 8, Born: |dJ/J| core / tail (mono05, mono03, powerlaw, blackbody, mono05_mu100) | 1e-6 / 1e-3 | 8.2e-13, 8.6e-13, 7.0e-13, 8.6e-13, 5.1e-12 (core); tail of the same order | pass |
+| item 8, Born: |dI/I| core / tail | 1e-6 / 1e-3 | 2.41e-10, 2.47e-10, 1.96e-10, 1.87e-10, 2.05e-10 (core); tail of the same order | pass (the 2e-10 floor is the candidate's interpolant, 6.5e-12 on q_k, integrated) |
+| J and eps_mean of the Born path = fit path at every reference node (five files) | 1e-12 | exactly 0 (same Phi) | pass |
+| A5-fit-budget [labelled anchor]: |I_Born/I_fit - 1| where I > 1e-3 I_peak | 1 % | 0.486 % (mono05, Gamma_p 45.5), 0.486 % (mono03, 75.4), 0.202 % (powerlaw, 30.6), 0.192 % (blackbody, 24.2), 0.401 % (mono05_mu100, 2.80); the candidate's own numbers are 0.4862, 0.4862, 0.2020, 0.1919, 0.4012 % | pass (two implementations agree on the fit budget to four digits) |
+| step-1 suite on the Born tables (`bh_physics_born`): threshold exponents mono J/I, powerlaw J/I | 0.02 | -8.0e-5 / -6.0e-5, -9.4e-5 / -7.1e-5, -6.1e-5 / -4.6e-5 | pass (the candidate: 9.4e-5, 6.1e-5) |
+| same: item 2 phi vs the Chodorowski fits (now a fit budget) | 1 % | 0.31 % | pass |
+| same: item 5 I vs eq. 3.11 with the phi fits at Gamma = 450/eps_cut (four baths) | 1 % | 7.4e-4, 7.4e-4, -2.4e-3, -2.2e-3 | pass |
+| same: CRPropa CMB anchor | 3 % | 0.18 % (the candidate 0.014 %: the C++ anchor rows are the 6-row fixture, the candidate's a finer one) | pass |
+| same: every other item (55 contract, 126 implementation checks) | as registered | all pass, 14.6 s | pass |
+| A5-numerical (`bh_chain_budget_born`): direct-boost I (laws' q_k) vs the Born table where I > 1e-3 I_peak, 2169 nodes | 1e-3 | 3.65e-5 (worst mono05, Gamma_p 91.1; the candidate's 2.85e-4 includes its photon-sampling chain) | pass |
+| budget group on Born tables: sampled-chain <D> vs the laws, with the convergence estimate | 1e-3 | 9.68e-4 (unchanged from step 4: the chain's own budget) | pass |
 
 ## 3. Open questions for Nilay
 

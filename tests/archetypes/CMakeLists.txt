@@ -65,6 +65,17 @@ endforeach()
 set_tests_properties("ARCHETYPES::bh_chain_a7" PROPERTIES TIMEOUT 7200)
 set_tests_properties("ARCHETYPES::bh_chain_a7w" PROPERTIES TIMEOUT 3600)
 set_tests_properties("ARCHETYPES::bh_chain_a9" PROPERTIES TIMEOUT 3600)
+# [fork:hadronic/P2 step 6] the same against the Born rate tables (contract 1.5: A5-numerical in the budget
+# group, A7 at 4 s.e. with no floor); the step-1 suite on the Born tables likewise
+foreach(grp budget a7w a7)
+  add_test(NAME "ARCHETYPES::bh_chain_${grp}_born" COMMAND test-archetypes-bh_chain.xc ${grp})
+  set_tests_properties("ARCHETYPES::bh_chain_${grp}_born" PROPERTIES ENVIRONMENT "BH_QK_SOURCE=born")
+endforeach()
+set_tests_properties("ARCHETYPES::bh_chain_a7_born" PROPERTIES TIMEOUT 7200)
+set_tests_properties("ARCHETYPES::bh_chain_a7w_born" PROPERTIES TIMEOUT 3600)
+set_tests_properties("ARCHETYPES::bh_chain_budget_born" PROPERTIES TIMEOUT 3600)
+add_test(NAME "ARCHETYPES::bh_physics_born" COMMAND test-archetypes-bh_physics.xc)
+set_tests_properties("ARCHETYPES::bh_physics_born" PROPERTIES ENVIRONMENT "BH_QK_SOURCE=born" TIMEOUT 1800)
 # [fork:hadronic/P2 step 4] the UR lab electron spectrum anchor (A8)
 gen_test(bh_ka2008)
 target_compile_definitions(
