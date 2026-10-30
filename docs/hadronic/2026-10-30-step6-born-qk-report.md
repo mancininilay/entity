@@ -193,10 +193,15 @@ double with 5 threads alongside):
 | run-level entries (`HADRONIC::*`, 16 entries, the generator with its default `qk_source = born` and `bh_check` references at `--qk_source born`): reject, T7a, T7b, T12, T12b, T13, T10 determinism, T-exp, r2 tiny, T14b, sampler overflow, parser | as registered | all pass (3 cross-build / Serial entries skipped as before) in both builds | pass |
 | `bh_born_qk`: A3 registered limit (stage 1) [history: re-registered 2026-10-30, §7 F1] | 1e-10 | 2.5e-10 | **FAIL (history)** (the Born slope 1/4, stage 1) |
 
-The continuous-mode cooling curves on the Born tables differ from the fit
-ones by at most the fit budget of I, 0.49 % at the worst node (contract 1.5:
-"change by <= 0.5 %"): fact from the A5-fit-budget row of stage 2, the T5
-tolerance (1e-3 against the RK4 of the same table) untouched.
+The continuous-mode cooling change fit -> Born (contract 1.5: "change by
+<= 0.5 %") is measured on trajectories (round 2, Codex 1 F6; the
+instantaneous rate budget of 0.49 % at the worst node is a budget, not the
+proof): the same kernel, dt and steps on both tables, mu_d = mu_r, Gamma_p =
+6 and 3 groups to t = 12262 (201 records): max |K_Born(t)/K_fit(t) - 1| =
+**6.36e-4** (6) and **4.06e-4** (3) in the single build (`bh_loss_t5_born`,
+F6 rows; the double build in section 7); Codex 1's independent run at
+fdbef82f: 0.0637 % / 0.0405 % (single), 0.0695 % / 0.0413 % (double), 342
+records. The T5 tolerance (1e-3 against the RK4 of the same table) untouched.
 
 ## 3. Open questions for Nilay
 

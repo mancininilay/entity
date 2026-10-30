@@ -100,17 +100,22 @@ namespace {
     bh::HadronicTables                     dev;
   };
 
-  Tables make_tables(double mu_r = MU_R, double eps0 = EPS0) {
+  // step 6: BH_QK_SOURCE=born runs the group on the Born tables
+  bool born_mode() {
+    const char* e = std::getenv("BH_QK_SOURCE");
+    return e != nullptr && std::string(e) == "born";
+  }
+
+  // qk_force: -1 the environment's selector (the group's tables), 0 the fit tables, 1 the Born tables
+  Tables make_tables(double mu_r = MU_R, double eps0 = EPS0, int qk_force = -1) {
     Tables T;
     bh::BathSpec spec;
     spec.type = "mono";
     spec.eps0 = eps0;
     T.bath    = bh::make_bath(spec);
     bh::Quadrature q;
-    if (const char* e = std::getenv("BH_QK_SOURCE")) { // step 6: BH_QK_SOURCE=born runs the group on the Born tables
-      if (std::string(e) == "born") {
-        q.qk_source = bh::QkSource::Born;
-      }
+    if (qk_force == 1 || (qk_force < 0 && born_mode())) {
+      q.qk_source = bh::QkSource::Born;
     }
     T.rates   = std::make_unique<bh::BetheHeitlerRates>(T.bath, q);
     T.host    = bh::build_tables(*T.rates, mu_r);
@@ -694,6 +699,44 @@ namespace {
     envelope_check("T5 base, Gamma_p = 3 group", R.K3, R.d3, mu_d, 1.0e-4, 100.0);
   }
 
+  /**
+   * @brief Step 6 round 2 (Codex 1 F6): the cooling change fit -> Born measured on trajectories, not
+   *        inferred from the instantaneous rate budget. In Born mode only: the T5 setup (mu_d = mu_r,
+   *        coeff = 1, dt from dK/K = 1e-4 per step at Gamma_p = 6, the Gamma_p = 6 group run to
+   *        Gamma_p = 3, ~200 records), the same kernel and the same dt on the group's Born tables and
+   *        on the fit tables built in this process; max over the records of |K_Born(t)/K_fit(t) - 1|
+   *        for the Gamma_p = 6 and the Gamma_p = 3 groups against the contract's "the continuous-mode
+   *        cooling changes by <= 0.5 %" (table contract 1.5 section 3). Codex 1's independent run:
+   *        0.0637 % / 0.0405 % (single), 0.0695 % / 0.0413 % (double), 342 records to t = 12254.
+   */
+  void test_cooling_change_fit_vs_born(const Tables& T) {
+    if (!born_mode()) {
+      return;
+    }
+    std::printf("---- step 6 (F6): continuous-mode cooling change fit -> Born on trajectories (mu_d = mu_r) ----\n");
+    const double mu_d  = MU_R;
+    const double coeff = 1.0;
+    const auto   S     = t5_setup(T, mu_d, coeff);
+    if (S.n_steps == 0) {
+      verdict(false, "F6: the Gamma_p = 6 ions never reached Gamma_p = 3 on the Born tables", 0.0, 0.0);
+      return;
+    }
+    const int  every = std::max(1, S.n_steps / 200);
+    const auto Tfit  = make_tables(MU_R, EPS0, 0);
+    const auto Rb    = run_curve(T, mu_d, coeff, S.dt, S.n_steps, every);
+    const auto Rf    = run_curve(Tfit, mu_d, coeff, S.dt, S.n_steps, every);
+    const double c6 = max_rel(Rb.K6, Rf.K6), c3 = max_rel(Rb.K3, Rf.K3);
+    verdict(c6 <= 5.0e-3, "F6 [contract 1.5 section 3]: max over the records of |K_Born(t)/K_fit(t) - 1|, Gamma_p = 6 group", c6,
+            5.0e-3);
+    verdict(c3 <= 5.0e-3, "F6 [contract 1.5 section 3]: max over the records of |K_Born(t)/K_fit(t) - 1|, Gamma_p = 3 group", c3,
+            5.0e-3);
+    diag("F6: " + std::to_string(Rb.times.size()) + " records to t = " + std::to_string(Rb.times.back()) + " (dt " +
+         std::to_string(S.dt) + ", " + std::to_string(S.n_steps) + " steps); end values K_Born / K_fit: " +
+         std::to_string(Rb.K6.back()) + " / " + std::to_string(Rf.K6.back()) + " (6), " + std::to_string(Rb.K3.back()) +
+         " / " + std::to_string(Rf.K3.back()) + " (3); the instantaneous rate budget at the worst node (A5-fit-budget) is "
+         "0.49 % and is not the proof of this row");
+  }
+
   /* the dt-convergence part of T5 (its own ctest entry, `t5fine`, since the
    * three resolutions with eta_u scaled are the long part of the group) */
   void test_dt_convergence_T5fine(const Tables& T) {
@@ -1200,6 +1243,7 @@ auto main(int argc, char* argv[]) -> int {
     }
     if (want("t5")) {
       test_cooling_T5(T);
+      test_cooling_change_fit_vs_born(T); // step 6 round 2 (F6), Born mode only
     }
     if (want("t5fine")) {
       test_dt_convergence_T5fine(T);
