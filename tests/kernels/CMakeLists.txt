@@ -94,6 +94,19 @@ endforeach()
 set_tests_properties("KERNELS::bh_event_e5" PROPERTIES ENVIRONMENT "OMP_NUM_THREADS=1")
 set_tests_properties("KERNELS::bh_event_e1" "KERNELS::bh_event_e5" "KERNELS::bh_event_e8" PROPERTIES TIMEOUT 3600)
 # stage 3 statistics (N = 1e5 ions each; BH_EVENT_N in the environment reduces N for a development loop)
+# P2 step 7: the kernel-level scaling harness (M6 stride; M3 variants in stage 2); BH_PERF_N sets the ion count
+add_executable(test-kernels-bh_perf.xc bh_perf.cpp)
+add_dependencies(test-kernels-bh_perf.xc ntt_kernels ntt_metrics ntt_framework)
+target_link_libraries(test-kernels-bh_perf.xc PRIVATE ntt_kernels ntt_metrics ntt_framework)
+target_compile_definitions(test-kernels-bh_perf.xc PRIVATE BH_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data/hadronic"
+                                                            BH_PERF_VARIANT=1) # the M3 variants compile in this target only
+target_include_directories(test-kernels-bh_perf.xc PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME "KERNELS::bh_perf_stride" COMMAND test-kernels-bh_perf.xc stride)
+add_test(NAME "KERNELS::bh_perf_variants" COMMAND test-kernels-bh_perf.xc variants)
+set_tests_properties("KERNELS::bh_perf_stride" "KERNELS::bh_perf_variants" PROPERTIES TIMEOUT 3600 ENVIRONMENT "BH_PERF_N=65536")
+# the production build does not compile the variants in; the generated kernel copy is current
+add_test(NAME "KERNELS::bh_perf_isolation"
+         COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/perf/check_perf_isolation.sh ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR})
 set_tests_properties("KERNELS::bh_event_e2e3" "KERNELS::bh_event_e2e3_g3" "KERNELS::bh_event_e6" "KERNELS::bh_event_e7"
                      "KERNELS::bh_event_e4" PROPERTIES TIMEOUT 7200)
 # [fork:hadronic/P2 step 6 integration] E10 (event contract revision 1.1): E2 restframe on the Born loss tables
