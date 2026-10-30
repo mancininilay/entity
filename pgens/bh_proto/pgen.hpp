@@ -916,8 +916,11 @@ namespace user {
      *   the per-event rounding residual must be a small fraction of the
      *   removed energy.
      *   Information only: the per-step mean loss over the bound, max over the
-     *   table of coeff I dt / (f_max K) (the per-step condition of spec III.5
-     *   is enforced by the kernel).
+     *   table of coeff I dt / (f_max K). The per-step condition of spec III.5
+     *   is enforced by the kernel at the current state of every ion on every
+     *   step (revision 1.1, F2: error flags, warn sub-cycles the hazard); the
+     *   startup numbers above are admission estimates on the declared band,
+     *   not an enforcement.
      */
     void event_mode_report() {
       namespace ev = arch::bh::event;
@@ -1485,6 +1488,7 @@ namespace user {
         prm.max_sampler_attempts = setup.test_max_sampler_attempts;
         prm.mode = setup.event_mode() ? static_cast<int>(kernel::hadronic::LossMode::Event)
                                       : static_cast<int>(kernel::hadronic::LossMode::Continuous);
+        prm.bound_error = setup.on_bound == "error"; // revision 1.1 (F2): the current-state condition's policy
 
         for (auto& sp : domain.species) {
           if (ion_mass.count(sp.index()) == 0 || sp.npart() == 0) {
@@ -1629,16 +1633,33 @@ namespace user {
                 H.n_max_events_warnings += 1;
               }
             }
-            // step 5: the per-event bound of the event mode (contract section 2 b):
-            // the kernel skipped and counted the events with a D > f_max K; error
-            // aborts at the common point, warn continues (the realised rate is
+            // step 5: the per-event bound of the event mode (contract section 2 b) and,
+            // since revision 1.1 (F2), the current-state condition R <D> dt <= f_max K:
+            // the kernel skipped and counted the events with a D > f_max K, flagged
+            // (error) or sub-cycled (warn) the ion-steps violating the condition, and
+            // counted in n_bounded the steps it could not sub-cycle within max_substeps;
+            // error aborts at the common point, warn continues (the realised rate is
             // biased by the skipped fraction, which n_bounded / n_events measures)
+            if (setup.event_mode() && L.n_bound_steps > 0 && L.n_bounded == 0) {
+              // warn, sub-cycled within max_substeps: information, not a failure
+              if (H.n_bound_warnings < 5) {
+                std::printf("bh_proto: on_bound: the current-state condition R <D> dt > f_max K held on %llu ion-steps "
+                            "at step %u (species %d): hazard sub-cycled (n_substeps %llu this step, max_substeps = %d) "
+                            "[setup.on_bound = %s] (information, continuing)\n",
+                            L.n_bound_steps, (unsigned)step, (int)sp.index(), L.n_substeps, setup.max_substeps,
+                            setup.on_bound.c_str());
+                std::fflush(stdout);
+              }
+              H.n_bound_warnings += 1;
+            }
             if (setup.event_mode() && L.n_bounded > 0) {
               const auto msg = fmt::format(
-                "bh_proto: on_bound: %llu of %llu events had pair_weight D > f_max K at step %u (species %d) and "
-                "were skipped (no pair, no recoil) [setup.on_bound = %s, pair_weight = %.10g, f_max = %.10g]",
-                L.n_bounded, L.n_events, (unsigned)step, (int)sp.index(), setup.on_bound.c_str(),
-                setup.pair_weight, setup.f_max);
+                "bh_proto: on_bound: n_bounded = %llu at step %u (species %d): events with pair_weight D > f_max K "
+                "skipped (no pair, no recoil) or ion-steps on which R <D> dt > f_max K at the current state (%llu such "
+                "ion-steps this step: flagged under error, beyond max_substeps = %d under warn) out of %llu drawn events "
+                "[setup.on_bound = %s, pair_weight = %.10g, f_max = %.10g]",
+                L.n_bounded, (unsigned)step, (int)sp.index(), L.n_bound_steps, setup.max_substeps, L.n_events,
+                setup.on_bound.c_str(), setup.pair_weight, setup.f_max);
               if (setup.on_bound == "error") {
                 std::printf("%s (error: the run aborts after every rank wrote its ledger row)\n", msg.c_str());
                 std::fflush(stdout);
@@ -1687,7 +1708,7 @@ namespace user {
                   std::printf("bh_proto: failure on rank %d: %s at step %lld (species %lld), count %lld\n", r,
                               rec[0] == 1   ? "on_capacity (pair capacity exhausted; n_dropped)"
                               : rec[0] == 2 ? "on_max_events (ion-steps exceeding max_events_per_step)"
-                                            : "on_bound (event mode: events with pair_weight D > f_max K; n_bounded)",
+                                            : "on_bound (event mode: events with pair_weight D > f_max K, or ion-steps with R <D> dt > f_max K at the current state; n_bounded)",
                               rec[1], rec[2], rec[3]);
                 }
               }
@@ -1697,7 +1718,7 @@ namespace user {
                                      "[setup.on_capacity = %s, setup.on_max_events = %s, setup.on_bound = %s]",
                                      fail_local.code == 1   ? "on_capacity: pair capacity exhausted"
                                      : fail_local.code == 2 ? "on_max_events: max_events_per_step exceeded"
-                                     : fail_local.code == 3 ? "on_bound: an event with pair_weight D > f_max K"
+                                     : fail_local.code == 3 ? "on_bound: an event with pair_weight D > f_max K or an ion-step with R <D> dt > f_max K at the current state"
                                                             : "a failure on another rank",
                                      fail_local.code != 0 ? "this rank" : "another rank", (unsigned)step,
                                      setup.on_capacity.c_str(), setup.on_max_events.c_str(), setup.on_bound.c_str()),
@@ -1870,6 +1891,7 @@ namespace user {
         G.C.sum_wK = buf[2 * NDD + 9];
         unsigned long long* cnt[] = { &G.C.n_events,        &G.C.n_spawned,       &G.C.n_dropped,
                                       &G.C.n_substeps,      &G.C.n_bounded,       &G.C.n_capped_loss,
+                                      &G.C.n_bound_steps, // revision 1.1 (F2)
                                       &G.C.n_closing,       &G.C.n_closing_at_rest, &G.C.n_capped,
                                       &G.C.n_capped_events, &G.C.n_above_table,   &G.C.n_latency,
                                       &G.C.n_resolution,    &G.C.n_processed,     &G.C.n_alive,

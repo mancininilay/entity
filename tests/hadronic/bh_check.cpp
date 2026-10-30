@@ -588,7 +588,7 @@ namespace {
   enum LedgerCol : int {
     L_STEP = 0, L_TIME = 1, L_EDRAG = 2, L_EPAIRS = 3, L_EABS = 4, L_EEXP = 5, L_EROUND = 6, L_ESTOCH = 7,
     L_ELOST = 8, L_PDISC = 9, L_DINIT = 10, L_DOUT = 20, L_POUT = 21, L_RES = 22, L_NEVENTS = 23, L_NSPAWNED = 24,
-    L_NDROPPED = 25, L_NBOUNDED = 27, L_NCLOSING = 29, L_NCAPPED = 30, L_NCAPEV = 31, L_NRNG = 36, L_NK0 = 37, L_NCLOSE0 = 38,
+    L_NDROPPED = 25, L_NSUBSTEPS = 26, L_NBOUNDED = 27, L_NCLOSING = 29, L_NCAPPED = 30, L_NCAPEV = 31, L_NRNG = 36, L_NK0 = 37, L_NCLOSE0 = 38,
     L_SUMWK = 39, L_B = 40, L_NPM = 41, L_NPP = 42, L_NSATT = 43, L_NSOVF = 44
   };
 
@@ -639,6 +639,10 @@ namespace {
               num(a, "min_sampler_overflow"));
       verdict(r.c[L_NSATT] >= r.c[L_NSOVF], "ledger: n_sampler_attempts >= n_sampler_overflow", r.c[L_NSATT],
               r.c[L_NSOVF]);
+    }
+    if (a.count("min_substeps")) {
+      verdict(r.c[L_NSUBSTEPS] >= num(a, "min_substeps"), "ledger: n_substeps >= " + a.at("min_substeps"), r.c[L_NSUBSTEPS],
+              num(a, "min_substeps"));
     }
     if (a.count("min_bounded")) {
       verdict(r.c[L_NBOUNDED] >= num(a, "min_bounded"), "ledger: n_bounded >= " + a.at("min_bounded"), r.c[L_NBOUNDED],

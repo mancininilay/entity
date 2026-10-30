@@ -778,7 +778,8 @@ namespace {
    *        double from the stored u). The pairs are recycled per launch.
    */
   Series cooling_run(Tables& T, int mode, int spectrum, double a, double f_max, double coeff, double dt, double Gp0,
-                     npart_t N, double stop_frac, int n_max, int out_every, std::uint64_t seed, double eta_u = 1.0e-4) {
+                     npart_t N, double stop_frac, int n_max, int out_every, std::uint64_t seed, double eta_u = 1.0e-4,
+                     int max_events = 8) {
     if (spectrum == RESTFRAME) {
       ensure_sampler(T);
     }
@@ -800,7 +801,7 @@ namespace {
       S.K0 = m / static_cast<double>(N);
     }
     Pairs pairs(static_cast<npart_t>(std::max<std::size_t>(200000, static_cast<std::size_t>(N) * 10)));
-    auto  prm = params(coeff, spectrum, a, f_max);
+    auto  prm = params(coeff, spectrum, a, f_max, max_events);
     prm.dt    = dt;
     prm.mode  = mode;
     if (mode == static_cast<int>(kh::LossMode::Continuous)) {
@@ -1469,6 +1470,102 @@ namespace {
     check_E1("E8 (i)", H, A, ions);
   }
 
+  /**
+   * @brief E8 (v), revision 1.1 (F2): the current-state condition R <D> dt <= f_max K.
+   *        (a) warn: the sub-cycled hazard (m = 3 chunks at ratio 2.6) against a run at
+   *        dt / 3 whose steps are the same frozen-hazard chunks (f_max raised so that
+   *        no condition binds there): same physical time, <K> and Var K within 4 s.e.
+   *        (the two runs follow the same law; only the seeds differ); n_substeps = 3 N
+   *        per launch, n_bounded = 0, E1 holds. (b) error: every ion-step flagged
+   *        (n_bounded = n_bound_steps = N), no pair, stored u bitwise unchanged.
+   *        (c) max_substeps = 2 below the needed 3: two chunks run, the step counted
+   *        in n_bounded, pairs created, E1 holds.
+   */
+  void test_E8_current_state(Tables& T, npart_t N) {
+    const double Gp0 = 6.0, K0 = K_of_gamma(Gp0), f_lo = 2.0e-3, ratio = 2.6;
+    // coeff such that R <D> dt / (f_lo K) = ratio at Gamma_p0 (R <D> = coeff I)
+    const double coeff = ratio * f_lo * K0 / (bh::interpolate_loss_host(T.host, Gp0) * DT);
+    double D6, e6;
+    bh::interpolate_outcome_host(T.host, Gp0, D6, e6);
+    const double lambda = coeff * bh::interpolate_rate_host(T.host, Gp0) * DT;
+    std::printf("\n=== E8 (v) current-state condition (revision 1.1, F2): Gamma_p0 = 6, delta, a = 1, f_max = %g, "
+                "R <D> dt / (f_max K) = %.3f (m = 3), lambda = %.3f per step, <D>/K = %.3e, N = %u ===\n",
+                f_lo, ratio, lambda, D6 / K0, (unsigned)N);
+    diag(fmt("E8 (v): the per-event bound a D <= f_max K holds at f_max = %g (D/K = %.3e): no event is skipped", f_lo, D6 / K0));
+    // (a) the sub-cycled run at dt against the run at dt / 3
+    const int n_launch = 20; // about 13 % cooling
+    const auto Sa = cooling_run(T, EVENT, DELTA, 1.0, f_lo, coeff, DT, Gp0, N, 0.0, n_launch, n_launch, 31u, 1.0e-4, 1000);
+    const auto Sb = cooling_run(T, EVENT, DELTA, 1.0, 0.01, coeff, DT / 3.0, Gp0, N, 0.0, 3 * n_launch, 3 * n_launch, 32u, 1.0e-4, 1000);
+    print_series("E8 (v) sub-cycled at dt", Sa);
+    print_series("E8 (v) reference at dt / 3", Sb);
+    verdict(Sa.C.n_substeps == 3ULL * static_cast<unsigned long long>(N) * n_launch,
+            "E8 (v)(a): n_substeps = 3 N per launch (every ion-step sub-cycled in 3 chunks)", static_cast<double>(Sa.C.n_substeps),
+            3.0 * static_cast<double>(N) * n_launch);
+    verdict(Sa.C.n_bound_steps == static_cast<unsigned long long>(N) * n_launch, "E8 (v)(a): n_bound_steps = N per launch",
+            static_cast<double>(Sa.C.n_bound_steps), static_cast<double>(N) * n_launch);
+    verdict(Sa.C.n_bounded == 0 && Sb.C.n_bounded == 0 && Sb.C.n_substeps == 0 && Sb.C.n_bound_steps == 0,
+            "E8 (v)(a): n_bounded = 0 in both runs; the dt / 3 run is not sub-cycled", static_cast<double>(Sa.C.n_bounded + Sb.C.n_bounded),
+            0.0);
+    verdict(Sa.C.n_capped_events == 0 && Sb.C.n_capped_events == 0, "E8 (v)(a): no capped event count (cap 1000)",
+            static_cast<double>(Sa.C.n_capped_events + Sb.C.n_capped_events), 0.0);
+    verdict(std::abs(Sa.t.back() - Sb.t.back()) < 1.0e-9 * Sa.t.back(), "E8 (v)(a): the two runs end at the same physical time",
+            Sa.t.back(), Sb.t.back());
+    {
+      const double se_m = std::sqrt((Sa.varK.back() + Sb.varK.back()) / static_cast<double>(N));
+      const double se_v = std::sqrt(Sa.varK.back() * Sa.varK.back() + Sb.varK.back() * Sb.varK.back()) * std::sqrt(2.0 / static_cast<double>(N));
+      verdict(std::abs(Sa.meanK.back() - Sb.meanK.back()) <= 4.0 * se_m,
+              fmt("E8 (v)(a): <K> sub-cycled vs dt / 3 at t = %g, |diff| / s.e. (same law, different seeds)", Sa.t.back()),
+              std::abs(Sa.meanK.back() - Sb.meanK.back()) / se_m, 4.0);
+      verdict(std::abs(Sa.varK.back() - Sb.varK.back()) <= 4.0 * se_v, "E8 (v)(a): Var K sub-cycled vs dt / 3, |diff| / s.e.",
+              std::abs(Sa.varK.back() - Sb.varK.back()) / se_v, 4.0);
+      diag(fmt("E8 (v)(a): <K>/K0 = %.6f (sub-cycled) vs %.6f (dt / 3); Var K = %.6g vs %.6g; events %llu vs %llu",
+               Sa.meanK.back() / Sa.K0, Sb.meanK.back() / Sb.K0, Sa.varK.back(), Sb.varK.back(), Sa.C.n_events, Sb.C.n_events));
+    }
+    // (b) error policy and (c) max_substeps below the need, on 400 ions, with the array closure
+    for (const int kase : { 1, 2 }) {
+      const npart_t       Ns = 400;
+      Ions                ions(Ns, 1.0);
+      std::vector<double> K0v(Ns, K0);
+      ions.set_all(K0v);
+      const auto K_init = ions.K();
+      Pairs      pairs(200000);
+      HostLedger H;
+      auto       prm = params(coeff, DELTA, 1.0, f_lo, 1000);
+      if (kase == 1) {
+        prm.bound_error = true;
+      } else {
+        prm.max_substeps = 2;
+      }
+      random_number_pool_t pool(4343u + kase);
+      const int            nl = 5;
+      for (int n = 0; n < nl; ++n) {
+        H.add(launch(ions, pairs, T, prm, pool, static_cast<double>(n + 1) * DT));
+      }
+      const auto Kf = ions.K();
+      int        n_changed = 0;
+      for (npart_t p = 0; p < Ns; ++p) {
+        n_changed += Kf[p] != K_init[p];
+      }
+      if (kase == 1) {
+        verdict(H.C.n_bounded == static_cast<unsigned long long>(Ns) * nl && H.C.n_bound_steps == H.C.n_bounded,
+                "E8 (v)(b) error: every ion-step flagged, n_bounded = n_bound_steps = N per launch", static_cast<double>(H.C.n_bounded),
+                static_cast<double>(Ns) * nl);
+        verdict(H.C.n_spawned == 0 && H.C.n_events == 0 && H.C.n_rng == 0 && n_changed == 0 && H.C.n_substeps == 0,
+                "E8 (v)(b) error: no event drawn, no pair, no RNG use, stored u bitwise unchanged (ions changed)",
+                static_cast<double>(n_changed), 0.0);
+      } else {
+        verdict(H.C.n_bounded == static_cast<unsigned long long>(Ns) * nl && H.C.n_bound_steps == H.C.n_bounded &&
+                  H.C.n_substeps == 2ULL * static_cast<unsigned long long>(Ns) * nl,
+                "E8 (v)(c) max_substeps = 2 < 3: every ion-step counted in n_bounded, 2 chunks run (n_substeps = 2 N per launch)",
+                static_cast<double>(H.C.n_substeps), 2.0 * static_cast<double>(Ns) * nl);
+        verdict(H.C.n_spawned > 0 && n_changed == static_cast<int>(Ns), "E8 (v)(c): pairs created and every ion recoiled (ions changed)",
+                static_cast<double>(n_changed), static_cast<double>(Ns));
+        const auto A = closure(ions, K_init, pairs, T, prm.pair_weight);
+        check_E1("E8 (v)(c)", H, A, ions);
+      }
+    }
+  }
+
   void test_E8_capacity(Tables& T) {
     std::printf("\n=== E8 (ii) capacity: pair capacity 300 for about 2000 events due, delta, 200 ions at Gamma_p = 6, "
                 "lambda = 0.1, 100 launches ===\n");
@@ -1559,11 +1656,6 @@ auto main(int argc, char* argv[]) -> int {
       test_E5(T, DELTA);
       test_E5(T, RESTFRAME);
     }
-    if (want("e8")) {
-      test_E8_bound(T);
-      test_E8_capacity(T);
-      test_E8_cap(T);
-    }
     // stage 3: N from the environment for the development loop (BH_EVENT_N, default the registered 1e5)
     npart_t N_stat = 100000;
     if (const char* env = std::getenv("BH_EVENT_N")) {
@@ -1571,6 +1663,12 @@ auto main(int argc, char* argv[]) -> int {
       if (v > 0 && v <= 10000000L) {
         N_stat = static_cast<npart_t>(v);
       }
+    }
+    if (want("e8")) {
+      test_E8_bound(T);
+      test_E8_capacity(T);
+      test_E8_cap(T);
+      test_E8_current_state(T, N_stat); // revision 1.1 (F2)
     }
     if (want("e2e3")) {
       const auto D2 = load_d2(T);
