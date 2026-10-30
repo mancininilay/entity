@@ -1593,10 +1593,14 @@ namespace user {
               const auto msg = fmt::format(
                 "bh_proto: on_capacity: pair capacity exhausted at step %u (species %d): "
                 "capacity = %u, tickets = %u, inserted = %u, n_dropped = %llu this step; e- npart %u / "
-                "maxnpart %u, e+ npart %u / maxnpart %u; the debt is kept [setup.on_capacity = %s]",
+                "maxnpart %u, e+ npart %u / maxnpart %u; %s [setup.on_capacity = %s]",
                 (unsigned)step, (int)sp.index(), (unsigned)targets.capacity, (unsigned)tickets,
                 (unsigned)n_injected, L.n_dropped, (unsigned)spm.npart(), (unsigned)spm.maxnpart(),
-                (unsigned)spp.npart(), (unsigned)spp.maxnpart(), setup.on_capacity.c_str());
+                (unsigned)spp.npart(), (unsigned)spp.maxnpart(),
+                setup.event_mode() ? "no debt in the event mode: the ion keeps its energy and the interactions drawn "
+                                     "for the failing ion-steps after the failure are not executed (n_unexecuted)"
+                                   : "the debt is kept",
+                setup.on_capacity.c_str());
               if (setup.on_capacity == "error") {
                 // C-MPI-2: no collective and no abort here (rank-local path); the
                 // failure is recorded and acted upon at the end of the stage
@@ -1640,7 +1644,7 @@ namespace user {
             // counted in n_bounded the steps it could not sub-cycle within max_substeps;
             // error aborts at the common point, warn continues (the realised rate is
             // biased by the skipped fraction, which n_bounded / n_events measures)
-            if (setup.event_mode() && L.n_bound_steps > 0 && L.n_bounded == 0) {
+            if (setup.event_mode() && L.n_bound_steps > 0 && L.n_bound_flagged == 0) {
               // warn, sub-cycled within max_substeps: information, not a failure
               if (H.n_bound_warnings < 5) {
                 std::printf("bh_proto: on_bound: the current-state condition R <D> dt > f_max K held on %llu ion-steps "
@@ -1652,20 +1656,20 @@ namespace user {
               }
               H.n_bound_warnings += 1;
             }
-            if (setup.event_mode() && L.n_bounded > 0) {
+            if (setup.event_mode() && (L.n_bounded > 0 || L.n_bound_flagged > 0)) {
               const auto msg = fmt::format(
-                "bh_proto: on_bound: n_bounded = %llu at step %u (species %d): events with pair_weight D > f_max K "
-                "skipped (no pair, no recoil) or ion-steps on which R <D> dt > f_max K at the current state (%llu such "
-                "ion-steps this step: flagged under error, beyond max_substeps = %d under warn) out of %llu drawn events "
-                "[setup.on_bound = %s, pair_weight = %.10g, f_max = %.10g]",
-                L.n_bounded, (unsigned)step, (int)sp.index(), L.n_bound_steps, setup.max_substeps, L.n_events,
-                setup.on_bound.c_str(), setup.pair_weight, setup.f_max);
+                "bh_proto: on_bound: at step %u (species %d): %llu events with pair_weight D > f_max K skipped (no pair, "
+                "no recoil; n_bounded) out of %llu drawn, and %llu ion-steps on which R <D> dt > f_max K at the current "
+                "state flagged (error) or beyond max_substeps = %d (warn) (n_bound_flagged; %llu such ion-steps in all "
+                "this step) [setup.on_bound = %s, pair_weight = %.10g, f_max = %.10g]",
+                (unsigned)step, (int)sp.index(), L.n_bounded, L.n_events, L.n_bound_flagged, setup.max_substeps,
+                L.n_bound_steps, setup.on_bound.c_str(), setup.pair_weight, setup.f_max);
               if (setup.on_bound == "error") {
                 std::printf("%s (error: the run aborts after every rank wrote its ledger row)\n", msg.c_str());
                 std::fflush(stdout);
                 if (fail_local.code == 0) {
                   fail_local = FailRecord { 3, static_cast<long long>(step), static_cast<long long>(sp.index()),
-                                            static_cast<long long>(L.n_bounded) };
+                                            static_cast<long long>(L.n_bounded + L.n_bound_flagged) };
                 }
               } else {
                 if (H.n_bound_warnings < 5) {
@@ -1891,7 +1895,8 @@ namespace user {
         G.C.sum_wK = buf[2 * NDD + 9];
         unsigned long long* cnt[] = { &G.C.n_events,        &G.C.n_spawned,       &G.C.n_dropped,
                                       &G.C.n_substeps,      &G.C.n_bounded,       &G.C.n_capped_loss,
-                                      &G.C.n_bound_steps, // revision 1.1 (F2)
+                                      &G.C.n_bound_steps,   &G.C.n_bound_flagged, // revision 1.1 (F2)
+                                      &G.C.n_attempted,     &G.C.n_unexecuted,    // revision 1.1 (F3)
                                       &G.C.n_closing,       &G.C.n_closing_at_rest, &G.C.n_capped,
                                       &G.C.n_capped_events, &G.C.n_above_table,   &G.C.n_latency,
                                       &G.C.n_resolution,    &G.C.n_processed,     &G.C.n_alive,

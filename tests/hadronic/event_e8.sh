@@ -9,7 +9,7 @@
 #         environment, and the log must carry the BH_TESTING banner and the SKIPPED line.
 #   (v)   revision 1.1 (F2): event_accel_error.toml / event_accel_warn.toml (Codex 1's production-accelerated
 #         probe, ions accelerated out of the declared band): error aborts at step 0 (the first) with the on_bound flag and
-#         n_bounded = 16, no event; warn completes sub-cycled (n_substeps >= 112), n_bounded = 0, identity exact.
+#         n_bound_flagged = 16 (ledger column added by F4), no event; warn completes sub-cycled (n_substeps >= 112), n_bounded = 0, identity exact.
 #   (ii)  on_capacity: event_capacity_error.toml aborts with the ledger row written (n_dropped > 0);
 #         event_capacity_warn.toml completes with n_dropped > 0, both pair species full (npart = 60), identity exact.
 #   (iii) on_max_events: event_maxevents_error.toml aborts at the first capped ion-step; event_maxevents_warn.toml
@@ -89,7 +89,7 @@ grep -h "on_bound" "$WD/event_bound_warn/run.log" | head -2 | cut -c1-300
 # (v) revision 1.1 (F2): the current-state condition on an admitted input whose ions leave the declared band
 #     (Codex 1's production-accelerated probe): error aborts with the flag at step 1, warn sub-cycles
 expect_abort event_accel_error "on_bound" 0 0
-"$CHECK" ledger --file "$WD/event_accel_error/hadronic_ledger_1.txt" --expect_bounded 16 --expect_events 0 || report_fail=1
+"$CHECK" ledger --file "$WD/event_accel_error/hadronic_ledger_1.txt" --expect_bounded 0 --expect_events 0 || report_fail=1
 grep -q "R <D> dt > f_max K" "$WD/event_accel_error/run.log" \
   && echo "PASS: event_accel_error: the failure message names the current-state condition" \
   || { echo "FAIL: event_accel_error: the failure message does not name the current-state condition"; report_fail=1; }

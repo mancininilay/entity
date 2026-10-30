@@ -536,9 +536,11 @@ namespace {
             tag + ": E_stochastic = E_lost_nopairs = E_exported = debt = pending = 0", 0.0, 0.0);
     verdict(ions.max_abs_payload() == 0.0, tag + ": the three hadronic payload slots read 0 on every ion (stateless)",
             ions.max_abs_payload(), 0.0);
-    verdict(H.C.n_events == H.C.n_spawned + H.C.n_dropped + H.C.n_bounded,
-            tag + ": n_events = n_spawned + n_dropped + n_bounded", static_cast<double>(H.C.n_events),
-            static_cast<double>(H.C.n_spawned + H.C.n_dropped + H.C.n_bounded));
+    verdict(H.C.n_events == H.C.n_spawned + H.C.n_dropped + H.C.n_bounded + H.C.n_unexecuted,
+            tag + ": n_events = n_spawned + n_dropped + n_bounded + n_unexecuted (revision 1.1)", static_cast<double>(H.C.n_events),
+            static_cast<double>(H.C.n_spawned + H.C.n_dropped + H.C.n_bounded + H.C.n_unexecuted));
+    verdict(H.C.n_attempted == H.C.n_spawned + H.C.n_dropped, tag + ": n_attempted = n_spawned + n_dropped",
+            static_cast<double>(H.C.n_attempted), static_cast<double>(H.C.n_spawned + H.C.n_dropped));
     verdict(H.C.P_drag[1] == 0.0 && H.C.P_drag[2] == 0.0, tag + ": P_drag transverse to +x is exactly 0 (recoil along u-hat)",
             std::abs(H.C.P_drag[1]) + std::abs(H.C.P_drag[2]), 0.0);
     diag(tag + fmt(": E_drag %.10g, E_pairs - E_absorbed %.10g, E_round %.6e, n_events %llu, n_spawned %llu, n_dropped %llu, "
@@ -1547,22 +1549,116 @@ namespace {
         n_changed += Kf[p] != K_init[p];
       }
       if (kase == 1) {
-        verdict(H.C.n_bounded == static_cast<unsigned long long>(Ns) * nl && H.C.n_bound_steps == H.C.n_bounded,
-                "E8 (v)(b) error: every ion-step flagged, n_bounded = n_bound_steps = N per launch", static_cast<double>(H.C.n_bounded),
-                static_cast<double>(Ns) * nl);
+        verdict(H.C.n_bound_flagged == static_cast<unsigned long long>(Ns) * nl && H.C.n_bound_steps == H.C.n_bound_flagged &&
+                  H.C.n_bounded == 0,
+                "E8 (v)(b) error: every ion-step flagged, n_bound_flagged = n_bound_steps = N per launch, n_bounded = 0",
+                static_cast<double>(H.C.n_bound_flagged), static_cast<double>(Ns) * nl);
         verdict(H.C.n_spawned == 0 && H.C.n_events == 0 && H.C.n_rng == 0 && n_changed == 0 && H.C.n_substeps == 0,
                 "E8 (v)(b) error: no event drawn, no pair, no RNG use, stored u bitwise unchanged (ions changed)",
                 static_cast<double>(n_changed), 0.0);
       } else {
-        verdict(H.C.n_bounded == static_cast<unsigned long long>(Ns) * nl && H.C.n_bound_steps == H.C.n_bounded &&
-                  H.C.n_substeps == 2ULL * static_cast<unsigned long long>(Ns) * nl,
-                "E8 (v)(c) max_substeps = 2 < 3: every ion-step counted in n_bounded, 2 chunks run (n_substeps = 2 N per launch)",
+        verdict(H.C.n_bound_flagged == static_cast<unsigned long long>(Ns) * nl && H.C.n_bound_steps == H.C.n_bound_flagged &&
+                  H.C.n_bounded == 0 && H.C.n_substeps == 2ULL * static_cast<unsigned long long>(Ns) * nl,
+                "E8 (v)(c) max_substeps = 2 < 3: every ion-step counted in n_bound_flagged, 2 chunks run (n_substeps = 2 N per launch)",
                 static_cast<double>(H.C.n_substeps), 2.0 * static_cast<double>(Ns) * nl);
         verdict(H.C.n_spawned > 0 && n_changed == static_cast<int>(Ns), "E8 (v)(c): pairs created and every ion recoiled (ions changed)",
                 static_cast<double>(n_changed), static_cast<double>(Ns));
         const auto A = closure(ions, K_init, pairs, T, prm.pair_weight);
         check_E1("E8 (v)(c)", H, A, ions);
       }
+    }
+  }
+
+  /**
+   * @brief E8 (vi), revision 1.1 (F3): counter semantics. (a) Codex 1's multi-event capacity
+   *        probe: 10000 ions at Gamma_p = 6, lambda = 4, pair capacity 0, one launch: n_events
+   *        is the drawn count (within 4 sigma of 4 N), n_dropped the ions with a non-zero draw
+   *        (within 4 sigma of N (1 - e^-4)), n_unexecuted the rest, n_attempted = n_dropped,
+   *        the identity exact, no recoil. (b) the lower-edge break: ions just above gamma_min
+   *        (Gamma_p = gamma_min + 0.003, two delta events take them below) at lambda = 4: the
+   *        interactions drawn beyond the edge are unexecuted, the identity exact, every ion
+   *        with at least two pairs ends below gamma_min.
+   */
+  void test_E8_counters(Tables& T) {
+    std::printf("\n=== E8 (vi) counters (revision 1.1, F3): drawn / attempted / unexecuted and the identity ===\n");
+    {
+      const npart_t       N = 10000;
+      Ions                ions(N, 1.0);
+      std::vector<double> K0(N, K_of_gamma(6.0));
+      ions.set_all(K0);
+      const auto K_init = ions.K();
+      Pairs      pairs(0);
+      HostLedger H;
+      auto       prm = params(coeff_for_lambda(T, 6.0, 4.0, 1.0), DELTA, 1.0, 0.01, 1000);
+      random_number_pool_t pool(9191u);
+      H.add(launch(ions, pairs, T, prm, pool, DT));
+      const double lam = 4.0, exp_ev = lam * N, sig_ev = std::sqrt(lam * N);
+      const double p_nz = 1.0 - std::exp(-lam), exp_nz = p_nz * N, sig_nz = std::sqrt(N * p_nz * (1.0 - p_nz));
+      verdict(std::abs(static_cast<double>(H.C.n_events) - exp_ev) <= 4.0 * sig_ev,
+              "E8 (vi)(a): n_events is the drawn count, |n_events - 4 N| / sigma", std::abs(static_cast<double>(H.C.n_events) - exp_ev) / sig_ev,
+              4.0);
+      verdict(std::abs(static_cast<double>(H.C.n_dropped) - exp_nz) <= 4.0 * sig_nz,
+              "E8 (vi)(a): n_dropped = ions with a non-zero draw, |n_dropped - N (1 - e^-4)| / sigma",
+              std::abs(static_cast<double>(H.C.n_dropped) - exp_nz) / sig_nz, 4.0);
+      verdict(H.C.n_spawned == 0 && H.C.n_attempted == H.C.n_dropped && H.C.n_unexecuted > 0 &&
+                H.C.n_events == H.C.n_dropped + H.C.n_unexecuted + H.C.n_bounded + H.C.n_spawned,
+              "E8 (vi)(a): no pair, n_attempted = n_dropped, n_unexecuted > 0, identity exact", static_cast<double>(H.C.n_events),
+              static_cast<double>(H.C.n_dropped + H.C.n_unexecuted));
+      const auto Kf   = ions.K();
+      int        n_ch = 0;
+      for (npart_t p = 0; p < N; ++p) {
+        n_ch += Kf[p] != K_init[p];
+      }
+      verdict(n_ch == 0 && H.C.E_drag.value() == 0.0, "E8 (vi)(a): no recoil without a pair (ions changed)", static_cast<double>(n_ch), 0.0);
+      diag(fmt("E8 (vi)(a): n_events %llu (expected %.0f +- %.0f), n_dropped %llu (expected %.1f +- %.1f), n_unexecuted %llu, n_attempted %llu",
+               H.C.n_events, exp_ev, sig_ev, H.C.n_dropped, exp_nz, sig_nz, H.C.n_unexecuted, H.C.n_attempted));
+    }
+    {
+      const npart_t       N   = 2000;
+      const double        Gp0 = T.host.gamma_min + 0.003;
+      Ions                ions(N, 1.0);
+      std::vector<double> K0(N, K_of_gamma(Gp0));
+      ions.set_all(K0);
+      double D0, e0;
+      bh::interpolate_outcome_host(T.host, Gp0, D0, e0);
+      Pairs      pairs(200000);
+      HostLedger H;
+      auto       prm = params(coeff_for_lambda(T, Gp0, 4.0, 1.0), DELTA, 1.0, 0.01, 1000);
+      random_number_pool_t pool(9292u);
+      H.add(launch(ions, pairs, T, prm, pool, DT));
+      diag(fmt("E8 (vi)(b): Gamma_p0 = gamma_min + 0.003 = %.6f, <D> = %.4f (Delta Gamma_p = %.5f per event), lambda = 4", Gp0, D0,
+               D0 / MU_R));
+      verdict(H.C.n_unexecuted > 0 && H.C.n_dropped == 0 && H.C.n_bounded == 0,
+              "E8 (vi)(b): interactions drawn beyond the lower edge are unexecuted (n_unexecuted > 0, no drop, no bound)",
+              static_cast<double>(H.C.n_unexecuted), 1.0);
+      verdict(H.C.n_events == H.C.n_spawned + H.C.n_dropped + H.C.n_bounded + H.C.n_unexecuted &&
+                H.C.n_attempted == H.C.n_spawned,
+              "E8 (vi)(b): identity exact and n_attempted = n_spawned", static_cast<double>(H.C.n_events),
+              static_cast<double>(H.C.n_spawned + H.C.n_unexecuted));
+      // every ion with at least two pairs ended below gamma_min, none with fewer did
+      std::vector<int> n_pairs_of(N, 0);
+      for (const auto& r : pairs.rows()) {
+        if (r.birth_m > 0.0 && r.i1m >= 0 && r.i1m < static_cast<int>(N)) {
+          n_pairs_of[r.i1m] += 1;
+        }
+      }
+      const auto Kf    = ions.K();
+      int        n_bad = 0, n_two = 0;
+      for (npart_t p = 0; p < N; ++p) {
+        const double G = 1.0 + Kf[p] / MU_R;
+        if (n_pairs_of[p] >= 2) {
+          ++n_two;
+          n_bad += !(G < T.host.gamma_min);
+        } else {
+          n_bad += G < T.host.gamma_min;
+        }
+      }
+      verdict(n_bad == 0 && n_two > 0, fmt("E8 (vi)(b): the %d ions with two pairs are below gamma_min, no other is (violations)", n_two),
+              static_cast<double>(n_bad), 0.0);
+      verdict(std::abs(H.residual()) <= TOL_IDENTITY * std::abs(H.C.E_drag.value()), "E8 (vi)(b): ledger identity residual / E_drag",
+              std::abs(H.residual()) / std::abs(H.C.E_drag.value()), TOL_IDENTITY);
+      diag(fmt("E8 (vi)(b): n_events %llu, n_spawned %llu, n_unexecuted %llu, ions with two pairs %d", H.C.n_events, H.C.n_spawned,
+               H.C.n_unexecuted, n_two));
     }
   }
 
@@ -1669,6 +1765,7 @@ auto main(int argc, char* argv[]) -> int {
       test_E8_capacity(T);
       test_E8_cap(T);
       test_E8_current_state(T, N_stat); // revision 1.1 (F2)
+      test_E8_counters(T);              // revision 1.1 (F3)
     }
     if (want("e2e3")) {
       const auto D2 = load_d2(T);

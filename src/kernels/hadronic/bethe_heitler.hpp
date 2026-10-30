@@ -328,15 +328,22 @@ namespace kernel::hadronic {
     // creations of w_pair E_pair 2^-23 plus sum over loss applications of w K 2^-22
     dd B_budget;
     // counters
-    unsigned long long n_events { 0 };        // spawn attempts (packets or poisson events); event mode: drawn interactions (spawned + dropped + bounded)
+    unsigned long long n_events { 0 };        // continuous: spawn attempts (packets or poisson events); event mode:
+                                              //   drawn interactions, the Poisson counts summed after the cap
+                                              //   (revision 1.1, F3): n_events = n_spawned + n_bounded + n_dropped + n_unexecuted
+    unsigned long long n_attempted { 0 };     // event mode: spawn attempts (= n_spawned + n_dropped); 0 in continuous mode
+    unsigned long long n_unexecuted { 0 };    // event mode: drawn interactions not attempted after a capacity failure or
+                                              //   the ion cooling below the lower edge within the step; 0 otherwise
     unsigned long long n_spawned { 0 };       // successful insertions (pairs)
     unsigned long long n_dropped { 0 };       // insertions refused for capacity
     unsigned long long n_substeps { 0 };
-    unsigned long long n_bounded { 0 };       // continuous: substep exhaustion; event: events skipped by a D > f_max K,
-                                              //   plus ion-steps flagged by the current-state condition (error) or
-                                              //   not sub-cycled within max_substeps (warn) (revision 1.1)
+    unsigned long long n_bounded { 0 };       // continuous: substep exhaustion; event: events skipped by a D > f_max K
     unsigned long long n_bound_steps { 0 };   // event: ion-steps on which R <D> dt > f_max K at the current state
                                               //   (both policies; sub-cycled under warn) (revision 1.1, F2)
+    unsigned long long n_bound_flagged { 0 }; // event: those ion-steps flagged under on_bound = error (no draw, the host
+                                              //   aborts) or run with max_substeps chunks under warn because m would
+                                              //   exceed it; the on_bound policy acts on n_bounded + n_bound_flagged
+                                              //   (kept apart from n_bounded so that the counter identity stays exact)
     unsigned long long n_capped_loss { 0 };   // steps on which the f_max K cap changed the applied loss
     unsigned long long n_closing { 0 };       // closing packets (below the table edge)
     unsigned long long n_closing_at_rest { 0 }; // closing packets of ions at u = 0 (emitted along +x)
@@ -376,11 +383,14 @@ namespace kernel::hadronic {
       sum_wK              += o.sum_wK;
       B_budget            += o.B_budget;
       n_events            += o.n_events;
+      n_attempted         += o.n_attempted;
+      n_unexecuted        += o.n_unexecuted;
       n_spawned           += o.n_spawned;
       n_dropped           += o.n_dropped;
       n_substeps          += o.n_substeps;
       n_bounded           += o.n_bounded;
       n_bound_steps       += o.n_bound_steps;
+      n_bound_flagged     += o.n_bound_flagged;
       n_capped_loss       += o.n_capped_loss;
       n_closing           += o.n_closing;
       n_closing_at_rest   += o.n_closing_at_rest;
@@ -771,7 +781,10 @@ namespace kernel::hadronic {
                                double        eps,
                                short         tag,
                                const double* kick_dir = nullptr) const -> bool {
-      L.n_events += 1;
+      if (prm.mode != static_cast<int>(LossMode::Event)) {
+        L.n_events += 1; // continuous modes: n_events counts spawn attempts; the event mode counts drawn
+                         // interactions in event_branch and the attempts in n_attempted (revision 1.1, F3)
+      }
       if (!pairs.valid) {
         L.n_dropped += 1;
         return false;
@@ -867,12 +880,15 @@ namespace kernel::hadronic {
       // Current-state enforcement (contract revision 1.1, Codex 1 F2): the per-step
       // expected-loss condition R <D> dt <= f_max K of spec III.5, with R <D> =
       // coeff g I at the ion's current Gamma_p. Violated: under on_bound = error
-      // the ion-step is flagged (n_bound_steps, n_bounded; the host aborts at the
-      // common point) and the ion is left untouched; under warn the hazard is
-      // sub-cycled in m = ceil(R <D> dt / (f_max K)) chunks of dt / m, each
+      // the ion-step is flagged (n_bound_steps, n_bound_flagged; the host aborts
+      // at the common point) and the ion is left untouched; under warn the hazard
+      // is sub-cycled in m = ceil(R <D> dt / (f_max K)) chunks of dt / m, each
       // drawing its own Poisson count with R re-evaluated at the state left by
       // the previous chunk (n_substeps += m); m above max_substeps runs
-      // max_substeps chunks and counts the step in n_bounded (the policy acts).
+      // max_substeps chunks and counts the step in n_bound_flagged (the policy
+      // acts on n_bounded + n_bound_flagged; revision 1.1 says "n_bounded", kept
+      // apart here so that n_events = n_spawned + n_bounded + n_dropped +
+      // n_unexecuted stays an exact identity over events).
       // The startup admission (a_max, lambda_max over the declared band) is an
       // estimate that refuses mis-sized inputs; this check is the enforcement.
       const double ratio = prm.tau0_over_skindepth0 * g_x * tables.I(Gp) * prm.dt / (prm.f_max * K);
@@ -880,14 +896,14 @@ namespace kernel::hadronic {
       if (!(ratio <= 1.0)) { // also a non-finite ratio
         L.n_bound_steps += 1;
         if (prm.bound_error) {
-          L.n_bounded += 1;
+          L.n_bound_flagged += 1;
           L.sum_wK += w * K;
           return;
         }
         const double m_req = math::ceil(ratio);
         if (!(m_req <= static_cast<double>(prm.max_substeps))) {
           m = prm.max_substeps;
-          L.n_bounded += 1;
+          L.n_bound_flagged += 1;
         } else {
           m = static_cast<int>(m_req);
         }
@@ -916,8 +932,10 @@ namespace kernel::hadronic {
           n = prm.max_events_per_step; // the draw exceeded the cap: clamped and counted (on_max_events)
           L.n_capped_events += 1;
         }
+        L.n_events += static_cast<unsigned long long>(n); // drawn interactions (revision 1.1, F3)
         for (int e = 0; e < n; ++e) {
           if (Gp_cur < tables.gamma_min) {
+            L.n_unexecuted += static_cast<unsigned long long>(n - e);
             stop = true;
             break; // cooled below the lower edge within the chunk: no further interaction
           }
@@ -937,17 +955,18 @@ namespace kernel::hadronic {
           }
           // b. the per-event bound: the event is skipped (no spawn, no recoil) and counted
           if (a * Ds > prm.f_max * K_cur) {
-            L.n_events  += 1;
             L.n_bounded += 1;
             continue;
           }
           // c. the pair, weight a w; the intended transfer w_pair D in dd
           dd intended;
           intended.add_prod(w_pair, Ds);
+          L.n_attempted += 1;
           const bool spawned = have_vec
                                  ? spawn_pair_vec(p, L, w_pair, intended, vm, vp, kph, Gp_cur, eps_s, tag)
                                  : spawn_pair(p, L, w_pair, intended, c1, c2, c3, Gp_cur, eps, g_m, g_p, tag);
           if (!spawned) {
+            L.n_unexecuted += static_cast<unsigned long long>(n - e - 1); // drawn, not attempted after the failure
             stop = true;
             break; // capacity: no recoil (n_dropped counted by the spawn)
           }
