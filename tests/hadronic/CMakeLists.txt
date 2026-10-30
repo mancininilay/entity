@@ -95,6 +95,14 @@ if("${pgen}" STREQUAL "bh_proto")
            COMMAND bash ${BH_SCRIPTS}/event_restart.sh ${BH_SINGLE_ENTITY} $<TARGET_FILE:bh_check>
                    ${BH_INPUTS} ${BH_WORK}/event_restart)
   set_tests_properties("HADRONIC::event_restart" PROPERTIES TIMEOUT 1800)
+  # step 7 (scaling harness, contract 2026-10-30): the Mac smoke of the perf driver at 2^16 ions, every mode and
+  # variant plus the M5 reference runs, one repeat, 20 warm-up and 100 measured steps (numbers labelled as a smoke)
+  add_test(NAME "HADRONIC::perf_smoke"
+           COMMAND ${CMAKE_COMMAND} -E env PERF_N=65536 PERF_REPEATS=1 PERF_WARMUP=20 PERF_MEASURED=100 PERF_DIAG=10
+                   PERF_M5=1 PERF_LABEL=ctest-smoke
+                   bash ${BH_SCRIPTS}/perf/perf_driver.sh ${BH_SINGLE_ENTITY} $<TARGET_FILE:bh_check>
+                   ${BH_SCRIPTS}/perf/inputs ${BH_WORK}/perf_smoke)
+  set_tests_properties("HADRONIC::perf_smoke" PROPERTIES TIMEOUT 3600)
   set_tests_properties("HADRONIC::t5b_cross_build" "HADRONIC::t8_bit_identity" "HADRONIC::t10_poisson_determinism"
                        PROPERTIES SKIP_RETURN_CODE 77)
   set_tests_properties("HADRONIC::t12_capacity" "HADRONIC::t12b_estimate" "HADRONIC::t13_gauss"

@@ -1,0 +1,5 @@
+  mode                = "continuous"
+  source              = "poisson"
+  spectrum            = "delta"
+  pair_weight         = 1.0
+  on_capacity_estimate = "warn"

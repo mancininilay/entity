@@ -1,0 +1,3 @@
+  mode                = "continuous"
+  source              = "none"
+  on_capacity_estimate = "warn"
