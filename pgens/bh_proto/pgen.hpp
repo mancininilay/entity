@@ -2017,7 +2017,13 @@ namespace user {
                "ions of w K in double from the stored u] | B_budget [cumulative single-precision "
                "rounding budget of the transfers] | npart_minus | npart_plus [snapshots] | "
                "n_sampler_attempts | n_sampler_overflow [1, cumulative: restframe trials of the chains and "
-               "packets whose rejection loop hit the bound; reduced over ranks; round 2]\n";
+               "packets whose rejection loop hit the bound; reduced over ranks; round 2; written as 0 in every "
+               "other mode] | n_bound_steps | n_bound_flagged | n_attempted | n_unexecuted [1, cumulative, event "
+               "mode (revision 1.1): ion-steps with R <D> dt > f_max K at the current state; those flagged under "
+               "on_bound = error or run with max_substeps chunks under warn; spawn attempts; drawn interactions "
+               "not attempted after a capacity failure or the lower edge; 0 in the continuous mode] | n_alive "
+               "[snapshot: alive and send-tagged ions after the step, reduced over ranks] | n_resolution [1, "
+               "cumulative]\n";
         H.file_started = true;
       }
       const auto& C = G.C;
@@ -2034,7 +2040,9 @@ namespace user {
           << C.n_capped_events << " " << C.n_above_table << " " << C.n_latency << " "
           << C.n_processed << " " << C.n_applied << " " << C.n_rng << " " << C.n_k0_trigger << " "
           << C.n_closing_at_rest << " " << swk << " " << C.B_budget.value() << " " << npm << " " << npp
-          << " " << C.n_sampler_attempts << " " << C.n_sampler_overflow << "\n";
+          << " " << C.n_sampler_attempts << " " << C.n_sampler_overflow << " " << C.n_bound_steps << " "
+          << C.n_bound_flagged << " " << C.n_attempted << " " << C.n_unexecuted << " " << C.n_alive << " "
+          << C.n_resolution << "\n";
     }
 
     npart_t pair_npart_minus { 0 }, pair_npart_plus { 0 };
@@ -2360,7 +2368,9 @@ namespace user {
                     "n_events %llu n_spawned %llu n_dropped %llu n_substeps %llu n_bounded %llu "
                     "n_capped_loss %llu n_closing %llu n_capped %llu n_capped_events %llu "
                     "n_above_table %llu n_latency %llu n_processed %llu n_applied %llu n_rng %llu "
-                    "n_k0_trigger %llu n_closing_at_rest %llu sum_wK %.17g B_budget %.17g npart_minus %u npart_plus %u "
+                    "n_k0_trigger %llu n_closing_at_rest %llu n_resolution %llu n_alive %llu n_bound_steps %llu "
+                    "n_bound_flagged %llu n_attempted %llu n_unexecuted %llu n_sampler_attempts %llu "
+                    "n_sampler_overflow %llu sum_wK %.17g B_budget %.17g npart_minus %u npart_plus %u "
                     "estimate_bare %.10g estimate_sized %.10g\n",
                     (int)sp.index(), C.E_drag.value(), C.E_pairs.value(), C.E_absorbed.value(),
                     C.E_exported.value(), C.E_round.value(), C.E_stochastic.value(), C.E_lost_nopairs.value(),
@@ -2370,14 +2380,15 @@ namespace user {
                     C.P_absorbed[1], C.P_absorbed[2], C.n_events, C.n_spawned, C.n_dropped,
                     C.n_substeps, C.n_bounded, C.n_capped_loss, C.n_closing, C.n_capped,
                     C.n_capped_events, C.n_above_table, C.n_latency, C.n_processed, C.n_applied,
-                    C.n_rng, C.n_k0_trigger, C.n_closing_at_rest, C.sum_wK, C.B_budget.value(), (unsigned)npm_g,
-                    (unsigned)npp_g, estimate_bare, estimate_sized);
-        if (setup.spectrum == "restframe") {
-          std::printf("bh_proto: restframe sampler species %d : n_sampler_attempts %llu n_sampler_overflow %llu "
-                      "attempts per pair %.3f\n",
-                      (int)sp.index(), C.n_sampler_attempts, C.n_sampler_overflow,
-                      C.n_spawned > 0 ? static_cast<double>(C.n_sampler_attempts) / C.n_spawned : 0.0);
-        }
+                    C.n_rng, C.n_k0_trigger, C.n_closing_at_rest, C.n_resolution, C.n_alive, C.n_bound_steps,
+                    C.n_bound_flagged, C.n_attempted, C.n_unexecuted, C.n_sampler_attempts, C.n_sampler_overflow,
+                    C.sum_wK, C.B_budget.value(), (unsigned)npm_g, (unsigned)npp_g, estimate_bare, estimate_sized);
+        // the sampler line in every mode (revision 1.1, F4: explicit zeros where the sampler is not used)
+        std::printf("bh_proto: restframe sampler species %d : n_sampler_attempts %llu n_sampler_overflow %llu "
+                    "attempts per pair %.3f (spectrum %s%s)\n",
+                    (int)sp.index(), C.n_sampler_attempts, C.n_sampler_overflow,
+                    C.n_spawned > 0 ? static_cast<double>(C.n_sampler_attempts) / C.n_spawned : 0.0,
+                    setup.spectrum.c_str(), setup.spectrum == "restframe" ? "" : ": sampler not used, counters 0");
         if (any_absorbing) {
           std::printf("bh_proto: exported species %d : E_exported_host %.17g E_exported %.17g difference %.6e "
                       "pending_discarded_host %.17g pending_discarded %.17g difference %.6e n_dead_with_payload %llu "

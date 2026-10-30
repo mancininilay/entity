@@ -55,6 +55,8 @@
  *          [--expect_events N] [--expect_capped_events N]
  *          [--expect_nopairs 1] [--min_bounded N] [--expect_bounded 0] [--min_events N]
  *          (step 5: n_bounded = events skipped by the per-event bound of the event mode)
+ *          [--min_substeps N] [--expect_identity 1] [--expect_bound_flagged N] [--min_bound_steps N]
+ *          [--min_unexecuted N] [--expect_alive N] (step 5 round 2, revision 1.1: the 51-column file)
  *         last row of a hadronic_ledger file: identity residual <= T (1e-12) x E_drag, optional counts
  *   abort  --log F --key K [--step_min A --step_max B]
  *         the log carries the K message "... at step N" (on_capacity abort), N in [A, B]
@@ -207,9 +209,11 @@ namespace {
       while (ss >> v) {
         r.cols.push_back(v);
       }
-      // step 2 wrote 15 columns; step 3 writes 43, step 4 round 2 45 (sum_wK is column 39, 0-based)
-      if (r.cols.size() != 15 && r.cols.size() != 43 && r.cols.size() != 45) {
-        throw std::runtime_error(path + ": expected 15, 43 or 45 columns, got " + std::to_string(r.cols.size()));
+      // step 2 wrote 15 columns; step 3 writes 43, step 4 round 2 45 (sum_wK is column 39, 0-based);
+      // step 5 round 2 (revision 1.1, F4) 51: n_bound_steps, n_bound_flagged, n_attempted, n_unexecuted,
+      // n_alive, n_resolution appended
+      if (r.cols.size() != 15 && r.cols.size() != 43 && r.cols.size() != 45 && r.cols.size() != 51) {
+        throw std::runtime_error(path + ": expected 15, 43, 45 or 51 columns, got " + std::to_string(r.cols.size()));
       }
       rows.push_back(r);
     }
@@ -550,7 +554,7 @@ namespace {
   }
 
   /* ---- step 3: ledger file (last row) ------------------------------------- */
-  constexpr std::size_t LEDGER_COLS = 45; // step-4 round-2 ledger file (n_sampler_attempts, n_sampler_overflow)
+  constexpr std::size_t LEDGER_COLS = 51; // step 5 round 2 ledger file (revision 1.1, F4: six counters appended to the 45)
 
   struct LedgerLast {
     std::vector<double> c;
@@ -589,7 +593,8 @@ namespace {
     L_STEP = 0, L_TIME = 1, L_EDRAG = 2, L_EPAIRS = 3, L_EABS = 4, L_EEXP = 5, L_EROUND = 6, L_ESTOCH = 7,
     L_ELOST = 8, L_PDISC = 9, L_DINIT = 10, L_DOUT = 20, L_POUT = 21, L_RES = 22, L_NEVENTS = 23, L_NSPAWNED = 24,
     L_NDROPPED = 25, L_NSUBSTEPS = 26, L_NBOUNDED = 27, L_NCLOSING = 29, L_NCAPPED = 30, L_NCAPEV = 31, L_NRNG = 36, L_NK0 = 37, L_NCLOSE0 = 38,
-    L_SUMWK = 39, L_B = 40, L_NPM = 41, L_NPP = 42, L_NSATT = 43, L_NSOVF = 44
+    L_SUMWK = 39, L_B = 40, L_NPM = 41, L_NPP = 42, L_NSATT = 43, L_NSOVF = 44,
+    L_NBSTEPS = 45, L_NBFLAG = 46, L_NATT = 47, L_NUNEX = 48, L_NALIVE = 49, L_NRESOL = 50
   };
 
   int cmd_ledger(const Args& a) {
@@ -599,11 +604,14 @@ namespace {
     std::printf("LEDGER_ROW step %.0f n_events %.0f n_spawned %.0f n_dropped %.0f n_closing %.0f n_capped %.0f "
                 "n_capped_events %.0f n_rng %.0f npart_minus %.0f npart_plus %.0f E_drag %.17g E_pairs %.17g "
                 "E_absorbed %.17g E_exported %.17g E_round %.17g E_stochastic %.17g E_lost_nopairs %.17g "
-                "debt_outstanding %.17g residual %.6e B %.17g n_sampler_attempts %.0f n_sampler_overflow %.0f\n",
+                "debt_outstanding %.17g residual %.6e B %.17g n_sampler_attempts %.0f n_sampler_overflow %.0f "
+                "n_substeps %.0f n_bounded %.0f n_bound_steps %.0f n_bound_flagged %.0f n_attempted %.0f n_unexecuted %.0f "
+                "n_alive %.0f n_resolution %.0f\n",
                 r.c[L_STEP], r.c[L_NEVENTS], r.c[L_NSPAWNED], r.c[L_NDROPPED], r.c[L_NCLOSING], r.c[L_NCAPPED],
                 r.c[L_NCAPEV], r.c[L_NRNG], r.c[L_NPM], r.c[L_NPP], r.c[L_EDRAG], r.c[L_EPAIRS], r.c[L_EABS],
                 r.c[L_EEXP], r.c[L_EROUND], r.c[L_ESTOCH], r.c[L_ELOST], r.c[L_DOUT], r.c[L_RES], r.c[L_B],
-                r.c[L_NSATT], r.c[L_NSOVF]);
+                r.c[L_NSATT], r.c[L_NSOVF], r.c[L_NSUBSTEPS], r.c[L_NBOUNDED], r.c[L_NBSTEPS], r.c[L_NBFLAG], r.c[L_NATT],
+                r.c[L_NUNEX], r.c[L_NALIVE], r.c[L_NRESOL]);
     verdict(std::abs(r.c[L_RES]) <= tol * E, "ledger identity residual / E_drag (last row)",
             E > 0.0 ? std::abs(r.c[L_RES]) / E : std::abs(r.c[L_RES]), tol);
     if (a.count("expect_dropped")) {
@@ -639,6 +647,30 @@ namespace {
               num(a, "min_sampler_overflow"));
       verdict(r.c[L_NSATT] >= r.c[L_NSOVF], "ledger: n_sampler_attempts >= n_sampler_overflow", r.c[L_NSATT],
               r.c[L_NSOVF]);
+    }
+    if (a.count("expect_identity") && num(a, "expect_identity") > 0.5) {
+      // revision 1.1 (F3): the event-mode counter identity over drawn interactions
+      verdict(r.c[L_NEVENTS] == r.c[L_NSPAWNED] + r.c[L_NBOUNDED] + r.c[L_NDROPPED] + r.c[L_NUNEX],
+              "ledger: n_events = n_spawned + n_bounded + n_dropped + n_unexecuted", r.c[L_NEVENTS],
+              r.c[L_NSPAWNED] + r.c[L_NBOUNDED] + r.c[L_NDROPPED] + r.c[L_NUNEX]);
+      verdict(r.c[L_NATT] == r.c[L_NSPAWNED] + r.c[L_NDROPPED], "ledger: n_attempted = n_spawned + n_dropped", r.c[L_NATT],
+              r.c[L_NSPAWNED] + r.c[L_NDROPPED]);
+    }
+    if (a.count("expect_bound_flagged")) {
+      const double n = num(a, "expect_bound_flagged");
+      verdict(r.c[L_NBFLAG] == n, "ledger: n_bound_flagged = " + a.at("expect_bound_flagged"), r.c[L_NBFLAG], n);
+    }
+    if (a.count("min_bound_steps")) {
+      verdict(r.c[L_NBSTEPS] >= num(a, "min_bound_steps"), "ledger: n_bound_steps >= " + a.at("min_bound_steps"), r.c[L_NBSTEPS],
+              num(a, "min_bound_steps"));
+    }
+    if (a.count("min_unexecuted")) {
+      verdict(r.c[L_NUNEX] >= num(a, "min_unexecuted"), "ledger: n_unexecuted >= " + a.at("min_unexecuted"), r.c[L_NUNEX],
+              num(a, "min_unexecuted"));
+    }
+    if (a.count("expect_alive")) {
+      const double n = num(a, "expect_alive");
+      verdict(r.c[L_NALIVE] == n, "ledger: n_alive (snapshot) = " + a.at("expect_alive"), r.c[L_NALIVE], n);
     }
     if (a.count("min_substeps")) {
       verdict(r.c[L_NSUBSTEPS] >= num(a, "min_substeps"), "ledger: n_substeps >= " + a.at("min_substeps"), r.c[L_NSUBSTEPS],
