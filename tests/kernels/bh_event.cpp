@@ -1329,8 +1329,10 @@ namespace {
       for (const int spectrum : { DELTA, RESTFRAME }) {
         const std::string name = spectrum == DELTA ? "delta" : "restframe";
         const std::string tag  = fmt("E7 a = %g f_max = %g %s%s", c.a, c.f_max, name.c_str(), c.registered ? "" : " [diagnostic, clipped law]");
-        const auto S = cooling_run(T, EVENT, spectrum, c.a, c.f_max, coeff, DT, Gp0, N, c.registered ? 0.4 : 0.5, 60000, 25,
-                                   9000u + (unsigned)(10 * c.a));
+        // the plain ODE reaches <K>/K0 = 0.4 (Gamma_p = 3) at t = 4.75e4, 95090 launches at dt = 0.5 (table integration):
+        // 100000 launches for the registered cases; the diagnostics stop at 0.5 (t = 1.95e4, 38899 launches)
+        const auto S = cooling_run(T, EVENT, spectrum, c.a, c.f_max, coeff, DT, Gp0, N, c.registered ? 0.4 : 0.5,
+                                   c.registered ? 100000 : 60000, 25, 9000u + (unsigned)(10 * c.a));
         print_series(tag, S);
         auto d2 = spectrum == DELTA ? std::function<double(double)>([&](double G) { return d2_delta(T, G); })
                                     : std::function<double(double)>([&](double G) { return D2.at(G); });
