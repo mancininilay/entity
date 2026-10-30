@@ -24,6 +24,10 @@
  *   photon_field.type           "mono" | "powerlaw" | "blackbody" | "table", required when enabled
  *   photon_field.eps0 / eps_min / eps_max / index / theta / file   as bh_tables_dump
  *   gamma_p_max                 float > 1 or the string "auto" (default auto)
+ *   qk_source                   "born" | "fit" (default born; step 6, table contract 1.5): the source of
+ *                               q_k in the loss tables, the Born machinery of the pair sampler or the
+ *                               Chodorowski eq. 3.7 fit of step 1; printed in the startup report and in
+ *                               the table file's header key `qk_source`
  *   eta_u                       float >= 0 (default 1e-4)
  *   pending_floor_ulp           float >= 0 (default 100)
  *   f_max                       float in (0, 1] (default 0.01; decision of 2026-10-25)
@@ -99,6 +103,7 @@ namespace user::bhproto {
     double             mu_r { 1836.15 };
     arch::bh::BathSpec bath;
     double             gamma_p_max { 0.0 }; // 0 = auto
+    std::string        qk_source { "born" };  // "born" | "fit" (step 6)
     double             eta_u { 1.0e-4 };
     double             pending_floor_ulp { 100.0 };
     double             f_max { 0.01 };
@@ -473,6 +478,7 @@ namespace user::bhproto {
       "photon_field.eps_min",  "photon_field.eps_max",
       "photon_field.index",    "photon_field.theta",
       "photon_field.file",     "gamma_p_max",
+      "qk_source",
       "eta_u",                 "pending_floor_ulp",
       "f_max",                 "max_substeps",
       "allow_unsafe_application",
@@ -669,6 +675,12 @@ namespace user::bhproto {
           }
         }
       }
+    }
+
+    // the q_k source of the loss tables (step 6)
+    s.qk_source = get_string_or(setup, "qk_source", "born");
+    if (s.qk_source != "born" && s.qk_source != "fit") {
+      fail("qk_source", "= '" + s.qk_source + "' must be \"born\" or \"fit\"");
     }
 
     // loss application

@@ -15,6 +15,7 @@
  * All table quantities are computed in double precision.
  */
 
+#include "archetypes/hadronic/bh_born_qk.h"
 #include "archetypes/hadronic/bh_options.h"
 #include "archetypes/hadronic/bh_physics.h"
 #include "archetypes/hadronic/bh_table_io.h"
@@ -36,7 +37,8 @@ namespace {
       "  mono:      --eps0 E                       (0 < E < 2)\n"
       "  powerlaw:  --eps_min A --eps_max B --index P\n"
       "  blackbody: --theta T --eps_min A --eps_max B\n"
-      "  table:     --file F [--eps_min A] [--eps_max B]\n");
+      "  table:     --file F [--eps_min A] [--eps_max B]\n"
+      "  --qk_source born | fit (default born): q_k from the Born machinery (contract 1.5) or the eq. 3.7 fit\n");
   }
 } // namespace
 
@@ -54,6 +56,14 @@ int main(int argc, char** argv) {
     arch::bh::Quadrature q;
     q.h_log_delta = opt.h;
     q.h_log_eps   = opt.h;
+    q.qk_source   = opt.qk_source;
+    if (q.qk_source == arch::bh::QkSource::Born) {
+      const auto& BT = arch::bh::born::table();
+      std::printf("bh_tables_dump: qk_source = born-3D2000: %zu q_k nodes built in %.3f s\n", BT.size(),
+                  BT.build_seconds());
+    } else {
+      std::printf("bh_tables_dump: qk_source = chodorowski-3.7\n");
+    }
 
     const auto                        bath = arch::bh::make_bath(opt.spec);
     const arch::bh::BetheHeitlerRates rates(bath, q);

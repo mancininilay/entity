@@ -147,6 +147,53 @@ namespace arch::bh {
   }
 
   /**
+   * @brief Source of q_k in the loss cumulatives (table contract revision 1.5,
+   *        2026-10-29): the Chodorowski eq. 3.7 fit of step 1 (`Fit`,
+   *        exchange-file value "chodorowski-3.7") or the Born machinery of the
+   *        pair sampler (`Born`, "born-3D2000", `bh_born_qk.h`). The library
+   *        default is `Fit` so that every existing table and test is
+   *        byte-identical in behaviour; the problem generator's input default is
+   *        `born` (contract section 3, a proposal pending Nilay's confirmation).
+   */
+  enum class QkSource : int {
+    Fit  = 0,
+    Born = 1
+  };
+
+  inline const char* qk_source_name(QkSource s) {
+    return s == QkSource::Born ? "born-3D2000" : "chodorowski-3.7";
+  }
+
+  /**
+   * @brief The Born provider hook: bh_born_qk.h (which depends on the Born
+   *        laws of bh_restframe.h, itself including this header) registers
+   *        its q_k^Born(2 + delta) here at static initialisation; a program
+   *        that builds Born cumulatives must include bh_born_qk.h in at least
+   *        one translation unit, otherwise the call below throws (never a
+   *        silent fallback to the fit)
+   */
+  using QkFunction = double (*)(double);
+
+  inline QkFunction& born_qk_hook() {
+    static QkFunction p = nullptr;
+    return p;
+  }
+
+  inline double born_q_k_delta(double delta) {
+    const QkFunction p = born_qk_hook();
+    if (p == nullptr) {
+      throw std::logic_error("born_q_k_delta: the Born q_k provider is not registered (include "
+                             "archetypes/hadronic/bh_born_qk.h in the program)");
+    }
+    return p(delta);
+  }
+
+  /// q_k from the chosen source
+  inline double q_k_delta_from(QkSource s, double delta) {
+    return s == QkSource::Born ? born_q_k_delta(delta) : q_k_delta(delta);
+  }
+
+  /**
    * @brief Strict decimal parsing: the whole token must be consumed, no
    *        leading whitespace, and the value must be finite
    */
@@ -216,6 +263,9 @@ namespace arch::bh {
     int    gl_order    = 16;
     // upper end of the kernel domain in k
     double k_max       = constants::K_MAX;
+    // the source of q_k in the cumulatives (contract 1.5); Fit keeps every
+    // existing result byte-identical, Born is the production proposal
+    QkSource qk_source = QkSource::Fit;
 
     Quadrature halved() const {
       Quadrature q   = *this;
@@ -240,7 +290,8 @@ namespace arch::bh {
       : m_delta0 { q.delta0 }
       , m_kmax { q.k_max }
       , m_h { q.h_log_delta }
-      , m_gl { q.gl_order } {
+      , m_gl { q.gl_order }
+      , m_qk_source { q.qk_source } {
       if (!(m_delta0 > 0.0) || m_delta0 >= 1.0) {
         throw std::invalid_argument("Cumulatives: delta0 must be in (0, 1)");
       }
@@ -344,8 +395,15 @@ namespace arch::bh {
       return m_t.size() - 1;
     }
 
+    QkSource qk_source() const {
+      return m_qk_source;
+    }
+
     /**
      * @brief Threshold laws: Phi -> (pi/24) d^4, phi -> (pi/12) d^4, psi -> (pi/24) d^4
+     *        (q_k(2) = 2 for both sources, so the leading law is the same; the
+     *        start of the grid delta0 = 1e-8 makes the next order, O(delta0) relative
+     *        on a part that is (delta0/delta)^4 of any cumulative, irrelevant)
      */
     static Values analytic(double delta) {
       const double d4 = delta * delta * delta * delta;
@@ -355,12 +413,13 @@ namespace arch::bh {
     }
 
   private:
-    // integrands in t = ln(delta), including the Jacobian dk = delta dt
-    static Values integrand(double t) {
+    // integrands in t = ln(delta), including the Jacobian dk = delta dt; q_k from
+    // the chosen source (the Fit branch is the step-1 code, unchanged)
+    Values integrand(double t) const {
       const double delta = std::exp(t);
       const double k     = 2.0 + delta;
       const double s     = sigma_tilde_delta(delta);
-      const double q     = q_k_delta(delta);
+      const double q     = m_qk_source == QkSource::Born ? born_q_k_delta(delta) : q_k_delta(delta);
       return Values { k * s * delta, k * s * q * delta, s * q * delta };
     }
 
@@ -385,6 +444,7 @@ namespace arch::bh {
     std::vector<double> m_t;
     std::vector<Values> m_cum;
     std::size_t         m_junction { 0 };
+    QkSource            m_qk_source { QkSource::Fit };
   };
 
   // ------------------------------------------------------------------------ //

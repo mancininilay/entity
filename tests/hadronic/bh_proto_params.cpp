@@ -250,6 +250,17 @@ int main(int argc, char** argv) {
       std::printf("%s: the largest admissible slot (65534) and ledger.every = INT_MAX are accepted\n", ok ? "PASS" : "FAIL");
       ok ? ++n_pass : ++n_fail;
     }
+    // step 6: the q_k source of the loss tables
+    {
+      const auto d  = user::bhproto::parse_setup(parse_toml(VALID));
+      const auto f  = user::bhproto::parse_setup(parse_toml(VALID + std::string("qk_source = \"fit\"\n")));
+      const auto b  = user::bhproto::parse_setup(parse_toml(VALID + std::string("qk_source = \"born\"\n")));
+      const bool ok = d.qk_source == "born" && f.qk_source == "fit" && b.qk_source == "born";
+      std::printf("%s: qk_source default born, \"fit\" and \"born\" read\n", ok ? "PASS" : "FAIL");
+      ok ? ++n_pass : ++n_fail;
+    }
+    expect_reject("qk_source unknown", VALID + std::string("qk_source = \"chodorowski\"\n"), "qk_source");
+    expect_reject("qk_source not a string", VALID + std::string("qk_source = 1\n"), "qk_source");
     expect_reject("unknown key", VALID + std::string("tau = 1.0\n"), "tau");
     expect_reject("unknown nested key", VALID + std::string("hadronic.enable = true\n"), "hadronic.enable");
     expect_reject("tau0 missing when enabled", drop_line(VALID, "tau0"), "tau0");

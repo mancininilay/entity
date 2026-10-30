@@ -58,6 +58,7 @@
 #include "utils/formatting.h"
 
 #include "archetypes/energy_dist.h"
+#include "archetypes/hadronic/bh_born_qk.h"
 #include "archetypes/hadronic/bh_interpolate.h"
 #include "archetypes/hadronic/bh_physics.h"
 #include "archetypes/hadronic/bh_sampler_device.h"
@@ -747,6 +748,20 @@ namespace user {
       if (setup.enabled) {
         try {
           bath = arch::bh::make_bath(setup.bath);
+          // step 6: the q_k source of the loss cumulatives (contract 1.5); the Born
+          // node table is built once per process on first use and its cost printed
+          quadrature.qk_source = setup.qk_source == "born" ? arch::bh::QkSource::Born : arch::bh::QkSource::Fit;
+          if (quadrature.qk_source == arch::bh::QkSource::Born) {
+            const auto& BT = arch::bh::born::table();
+            std::printf("bh_proto: qk_source = born: q_k from the Born machinery (3D-2000) on %zu nodes "
+                        "(%d per decade of eps' - 2 from %.1e to %.10g), cubic spline of ln q_k in ln(eps' - 2), "
+                        "threshold slope %.10g, built in %.3f s\n",
+                        BT.size(), arch::bh::born::NODES_PER_DECADE, arch::bh::born::DELTA_MIN,
+                        BT.nodes_k().back(), BT.threshold_slope(), BT.build_seconds());
+          } else {
+            std::printf("bh_proto: qk_source = fit: q_k from the Chodorowski et al. 1992 eq. 3.7 fit (step 1)\n");
+          }
+          std::fflush(stdout);
           raise::ErrorIf(setup.source == "budget" && !(bath->gamma_th() > 0.0),
                          "bh_proto: setup.photon_field.eps_max < 2 is required with source = "
                          "budget (the bath has no cutoff below the pair threshold; D > 0 on "
@@ -821,9 +836,10 @@ namespace user {
       const auto& T = tables_host;
       std::printf("bh_proto: table: %zu nodes (fine %zu, coarse %zu), gamma_th = %.12g, "
                   "gamma_min = %.12g, gamma_max = %.12g, y_min = %.10g, y_max = %.10g, "
-                  "eps'_max = %.6g, I_peak = %.10e at gamma = %.10g, mu_r = %.10g\n",
+                  "eps'_max = %.6g, I_peak = %.10e at gamma = %.10g, mu_r = %.10g, qk_source = %s\n",
                   T.size(), T.n_fine, T.n_coarse, T.gamma_th, T.gamma_min, T.gamma_max,
-                  T.y_min, T.y_max, T.eps_prime_max, T.I_peak, T.gamma_at_I_peak, T.mu_r);
+                  T.y_min, T.y_max, T.eps_prime_max, T.I_peak, T.gamma_at_I_peak, T.mu_r,
+                  arch::bh::qk_source_name(quadrature.qk_source));
       const arch::bh::BetheHeitlerRates rates(bath, quadrature);
       const double coeff = setup.tau0 / skindepth0;
       for (const auto sp : ion_species) {

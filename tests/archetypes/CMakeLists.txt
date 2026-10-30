@@ -36,12 +36,20 @@ gen_test(bh_fixtures)
 target_compile_definitions(
   test-archetypes-bh_fixtures.xc
   PRIVATE BH_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data/hadronic")
+find_package(Threads REQUIRED)
+# [fork:hadronic/P2 step 6] q_k from the Born machinery for the loss tables (A10b, A10c, A3, the
+# fit-path regression of the cumulatives), against the bhref 0.3.0 candidate fixtures
+gen_test(bh_born_qk)
+target_compile_definitions(
+  test-archetypes-bh_born_qk.xc
+  PRIVATE BH_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data/hadronic")
+target_link_libraries(test-archetypes-bh_born_qk.xc PRIVATE Threads::Threads)
+set_tests_properties("ARCHETYPES::bh_born_qk" PROPERTIES TIMEOUT 1800)
 # [fork:hadronic/P2 step 4] the rest-frame laws of the pair sampler (A1 to A5)
 gen_test(bh_restframe)
 target_compile_definitions(
   test-archetypes-bh_restframe.xc
   PRIVATE BH_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data/hadronic")
-find_package(Threads REQUIRED)
 target_link_libraries(test-archetypes-bh_restframe.xc PRIVATE Threads::Threads)
 # [fork:hadronic/P2 step 4] the CDF tables and the two sampling chains (accuracy
 # budget, A5b, A7, A9); Monte Carlo at every rate-table node: its own timeout

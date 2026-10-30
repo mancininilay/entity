@@ -29,6 +29,7 @@ namespace arch::bh {
     double      h { 0.02 };
     std::string status { "cpp_candidate" };
     std::string out;
+    QkSource    qk_source { QkSource::Born }; // --qk_source born | fit (default born, contract 1.5)
   };
 
   /**
@@ -38,7 +39,8 @@ namespace arch::bh {
   inline DumpOptions parse_dump_options(const std::vector<std::string>& tokens) {
     static const std::vector<std::string> known = {
       "type", "eps0", "eps_min",     "eps_max", "index",  "theta",
-      "file", "mu_r", "gamma_p_max", "h",       "status", "out"
+      "file", "mu_r", "gamma_p_max", "h",       "status", "out",
+      "qk_source"
     };
     std::map<std::string, std::string> args;
     for (std::size_t i = 0; i < tokens.size(); ++i) {
@@ -153,6 +155,16 @@ namespace arch::bh {
       o.h = num("h");
       if (!(o.h > 0.0)) {
         throw std::invalid_argument("option --h must be > 0");
+      }
+    }
+    if (has("qk_source")) {
+      const std::string s = args["qk_source"];
+      if (s == "born") {
+        o.qk_source = QkSource::Born;
+      } else if (s == "fit") {
+        o.qk_source = QkSource::Fit;
+      } else {
+        throw std::invalid_argument("option --qk_source must be born or fit, got '" + s + "'");
       }
     }
     return o;

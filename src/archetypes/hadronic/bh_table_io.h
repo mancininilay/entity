@@ -632,6 +632,9 @@ namespace arch::bh {
     line("producer", json_string(meta.producer));
     line("version", json_string(meta.version));
     line("status", json_string(meta.status));
+    // contract 1.5 (32nd key, placed after status as the reference does): the
+    // source of q_k in the loss cumulatives
+    line("qk_source", json_string(qk_source_name(q.qk_source)));
     line("physical_mass_ratio", num("physical_mass_ratio", T.mu_r));
     {
       std::string b = "{\"type\": " + json_string(bath.type());
@@ -727,6 +730,8 @@ namespace arch::bh {
     double      discarded_number_fraction { 0.0 };
     double      discarded_energy_fraction { 0.0 };
     std::vector<std::string> columns;
+    // contract 1.5: optional key; a file without it is read as the fit
+    std::string              qk_source { "chodorowski-3.7" };
     std::string              data_sha256; // from the header, verified
     // columns
     std::vector<double>      gamma, beta, y, J, I, Dmean, eps_mean;
@@ -924,6 +929,12 @@ namespace arch::bh {
       }
     }
     object("quadrature");
+    if (c.header.count("qk_source")) {
+      c.qk_source = str("qk_source");
+      if (c.qk_source != "chodorowski-3.7" && c.qk_source != "born-3D2000") {
+        fail("header key qk_source is " + c.qk_source + ", expected chodorowski-3.7 or born-3D2000");
+      }
+    }
     {
       const JsonValue& cols = parsed.at("columns");
       if (cols.type != JsonValue::Type::Array) {
