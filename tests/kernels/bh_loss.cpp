@@ -36,6 +36,7 @@
 
 #include "metrics/minkowski.h"
 
+#include "archetypes/hadronic/bh_born_qk.h"
 #include "archetypes/hadronic/bh_physics.h"
 #include "archetypes/hadronic/bh_tables_device.h"
 #include "framework/containers/particles.h"
@@ -47,6 +48,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <functional>
 #include <limits>
 #include <memory>
@@ -104,7 +106,13 @@ namespace {
     spec.type = "mono";
     spec.eps0 = eps0;
     T.bath    = bh::make_bath(spec);
-    T.rates   = std::make_unique<bh::BetheHeitlerRates>(T.bath);
+    bh::Quadrature q;
+    if (const char* e = std::getenv("BH_QK_SOURCE")) { // step 6: BH_QK_SOURCE=born runs the group on the Born tables
+      if (std::string(e) == "born") {
+        q.qk_source = bh::QkSource::Born;
+      }
+    }
+    T.rates   = std::make_unique<bh::BetheHeitlerRates>(T.bath, q);
     T.host    = bh::build_tables(*T.rates, mu_r);
     bh::validate_tables(T.host);
     T.dev = bh::mirror_tables_to_device(T.host);

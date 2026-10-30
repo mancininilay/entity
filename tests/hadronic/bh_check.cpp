@@ -75,6 +75,7 @@
  *          (default T = 1e-12); prints the largest relative difference
  */
 
+#include "archetypes/hadronic/bh_born_qk.h"
 #include "archetypes/hadronic/bh_physics.h"
 #include "archetypes/hadronic/bh_interpolate.h"
 
@@ -230,6 +231,22 @@ namespace {
     return out;
   }
 
+  /* ---- step 6: the q_k source of the reference rates (--qk_source born | fit, default born: the
+   *      problem generator's default; a run with setup.qk_source = "fit" passes --qk_source fit) ---- */
+  arch::bh::QkSource qk_source_arg(const Args& a) {
+    if (!a.count("qk_source")) {
+      return arch::bh::QkSource::Born;
+    }
+    const std::string s = a.at("qk_source");
+    if (s == "born") {
+      return arch::bh::QkSource::Born;
+    }
+    if (s == "fit") {
+      return arch::bh::QkSource::Fit;
+    }
+    throw std::invalid_argument("--qk_source must be born or fit, got '" + s + "'");
+  }
+
   /* ---- physics helpers -------------------------------------------------------- */
   struct Rates {
     std::shared_ptr<const arch::bh::PhotonBath> bath;
@@ -237,12 +254,14 @@ namespace {
     arch::bh::HadronicTablesHost                 T;
     double                                       mu_r;
 
-    Rates(double eps0, double mu_r_) : mu_r { mu_r_ } {
+    Rates(double eps0, double mu_r_, arch::bh::QkSource src = arch::bh::QkSource::Born) : mu_r { mu_r_ } {
       arch::bh::BathSpec s;
       s.type = "mono";
       s.eps0 = eps0;
       bath   = arch::bh::make_bath(s);
-      rates  = std::make_unique<arch::bh::BetheHeitlerRates>(bath);
+      arch::bh::Quadrature q;
+      q.qk_source = src; // step 6: the reference follows the run's qk_source (--qk_source born | fit, default born)
+      rates  = std::make_unique<arch::bh::BetheHeitlerRates>(bath, q);
       T      = arch::bh::build_tables(*rates, mu_r);
     }
 
@@ -305,7 +324,7 @@ namespace {
 
   /* ---- subcommands ------------------------------------------------------------- */
   int cmd_tau0(const Args& a) {
-    const Rates  R(num(a, "eps0"), num(a, "mu_r"));
+    const Rates  R(num(a, "eps0"), num(a, "mu_r"), qk_source_arg(a));
     const double mu_d = num(a, "mu_d"), G = num(a, "gamma_p"), dt = num(a, "dt");
     const double skin = num(a, "skindepth0"), ratio = num(a, "ratio");
     const double K    = R.mu_r * (G - 1.0);
@@ -395,7 +414,7 @@ namespace {
   }
 
   int cmd_t7b(const Args& a) {
-    const Rates  R(num(a, "eps0"), num(a, "mu_r"));
+    const Rates  R(num(a, "eps0"), num(a, "mu_r"), qk_source_arg(a));
     const double mu_d = num(a, "mu_d"), K0 = num(a, "K0"), E = num(a, "E"), w0 = num(a, "omegaB0");
     const double coeff = num(a, "tau0") / num(a, "skindepth0");
     const auto   blocks = read_ions(str(a, "ions"));

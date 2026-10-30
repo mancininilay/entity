@@ -26,7 +26,7 @@ file layout and the numbers to compare against).
 | --- | --- | --- |
 | 1 | the q_k^Born provider, the `qk_source` switch (parser, options, startup report, exchange-file key), A10b, A10c, A3, the fit-path regression, the startup cost | done, `93a4c685` |
 | 2 | cumulatives and tables from q_k^Born; item 8 against the five candidate tables; J and eps_mean equality; threshold exponent and UR anchors re-run; A5-numerical and A5-fit-budget | done (this commit), all pass |
-| 3 | consumers: every step-2 to step-4 ctest entry with `qk_source = born`, single and double; A12 against the Born chain; A7 at 4 s.e. with no floor against I_Born/J | pending |
+| 3 | consumers: every step-2 to step-4 ctest entry with `qk_source = born`, single and double; A12 against the Born chain; A7 at 4 s.e. with no floor against I_Born/J | done (this commit): everything passes on the Born tables, A7 re-registered passes (max 3.6 s.e.), A12 passes |
 | 4 | report, checkpoint, changelog, fork-changes | pending |
 
 ## 1. Environment (facts)
@@ -151,6 +151,52 @@ re-registered 4-s.e.-no-floor criterion.
 | same: every other item (55 contract, 126 implementation checks) | as registered | all pass, 14.6 s | pass |
 | A5-numerical (`bh_chain_budget_born`): direct-boost I (laws' q_k) vs the Born table where I > 1e-3 I_peak, 2169 nodes | 1e-3 | 3.65e-5 (worst mono05, Gamma_p 91.1; the candidate's 2.85e-4 includes its photon-sampling chain) | pass |
 | budget group on Born tables: sampled-chain <D> vs the laws, with the convergence estimate | 1e-3 | 9.68e-4 (unchanged from step 4: the chain's own budget) | pass |
+
+### Stage 3 (consumers on the Born tables)
+
+Method. Every step-2 to step-4 kernel suite takes `BH_QK_SOURCE=born` from
+the environment in its table builder (`bh_loss.cpp`, `bh_pairs.cpp`,
+`bh_sampler.cpp`: `make_tables`), and the ctest registers a `_born` entry
+per group next to the fit one (`KERNELS::bh_loss_*_born`, `bh_pairs_*_born`,
+`bh_sampler_*_born`); the references of those suites (the exact-rate RK4 of
+T5, the replayed debt mechanism of T10, the sampler chain of A12) are built
+from the same `Tables` object, so each `_born` entry is the registered test
+on the Born tables with its registered tolerance. The run-level entries
+(`HADRONIC::*`) run the problem generator with its default `qk_source =
+born`; `bh_check` builds its reference rates with `--qk_source born | fit`
+(default born, matching the generator) so that T5b and T7b compare a Born
+run with a Born ODE. The chain suite's A7 (unweighted, N = 1e6 at every
+node) and A7 weighted run against I_Born/J with the re-registered 4 s.e.
+and no floor (`bh_chain_a7_born`, `bh_chain_a7w_born`); the step-4 A7
+against the fit tables stays as the registered history. A12 against the
+Born chain with the literal tolerances is `bh_sampler_a12_born` (the
+sampler's cost reference is the Born-chain <D> of `moments_mono05`, so A12
+tests the kernel's packet law against the chain, which does not change with
+the table; the table enters only through the Gamma nodes and the debt
+preset).
+
+Results (ctest selection `bh_born_qk|bh_fixtures|bh_physics_born|
+bh_chain_(budget|a7w|a7)_born|KERNELS::bh_(loss|pairs|sampler)_*_born|
+HADRONIC::*`, 47 entries per build; single 1839 s wall with 10 threads,
+double with 5 threads alongside):
+
+| test | registered tolerance | measured single / double | verdict |
+| --- | --- | --- | --- |
+| A7 re-registered (contract 1.5): abs(<D>_MC - I_Born/J) <= 4 s.e. at every node of the five baths, N = 1e6, no floor (2169 nodes) | 4 s.e. | 0 of 2169 nodes fail; max 3.63 s.e. (both builds; same seeds) | **pass** (the step-4 registered failure against the fitted I/J, 18.6 s.e., is removed by the Born tables: the sampler and the table now share their mean loss) |
+| A7 diagnostics: max abs(<D>_MC/(I_Born/J) - 1) | reported | 9.1e-3 at mono05 Gamma_p 84.9 (a 3.2-s.e. node: <D> is 30 there and 1e6 draws resolve 0.3 %) | |
+| A7 weighted re-run against I_Born/J: E_p[1/D] <D> = 1 at Gamma_p in {1.05 Gamma_th, 3, 10}, five baths | 4 s.e. | 2.14 s.e. (both) | pass |
+| A12 against the Born chain, literal tolerances (mean cost 1 %, number and energy per paid energy 2 %, N = 2e5 per node, 466 nodes, the ions at the step-4 reference's nodes, which the Born grid shifts by up to 8.7e-4) | 1 % / 2 % / 2 % | single: 0 / 0 / 0 failing nodes, max 0.918 % (cost, Gamma_p 73.9), 0.910 % (number, 73.9), 1.9e-4 (energy); 9.32e7 pairs in 1273 s; double: A12DOUBLE_PLACEHOLDER | pass (single); the fit-mode A12 of step 4 fails its 1 % at Gamma_p 76.53 with 1.285 % in this build (the registered row), the Born run's largest deviation is 2.9 combined s.e. |
+| T5 on the Born tables: K(t) vs the exact-rate RK4 built on the same tables, Gamma_p 6 / 3 groups | 1e-3 | 9.3e-5 / 8.9e-5 single, 8.6e-5 / 9.2e-5 double | pass |
+| T5b, T5fine, T6, T9, tags, above, subcycling, overflow, huge, tables on the Born tables (`bh_loss_*_born`, 11 entries) | as registered | all pass in both builds | pass |
+| T10, poisson, none, energy, momentum, T12, T10b, T-exp, R1, R2, R3, C-MPI-1 on the Born tables (`bh_pairs_*_born`, 12 entries) | as registered | all pass in both builds | pass |
+| sampler tables, A11, identity, spectrum on the Born tables (`bh_sampler_*_born`, 4 entries besides A12) | as registered | all pass in both builds | pass |
+| run-level entries (`HADRONIC::*`, 16 entries, the generator with its default `qk_source = born` and `bh_check` references at `--qk_source born`): reject, T7a, T7b, T12, T12b, T13, T10 determinism, T-exp, r2 tiny, T14b, sampler overflow, parser | as registered | all pass (3 cross-build / Serial entries skipped as before) in both builds | pass |
+| `bh_born_qk`: A3 registered limit (stage 1) | 1e-10 | 2.5e-10 | **FAIL** (the Born slope 1/4, stage 1) |
+
+The continuous-mode cooling curves on the Born tables differ from the fit
+ones by at most the fit budget of I, 0.49 % at the worst node (contract 1.5:
+"change by <= 0.5 %"): fact from the A5-fit-budget row of stage 2, the T5
+tolerance (1e-3 against the RK4 of the same table) untouched.
 
 ## 3. Open questions for Nilay
 

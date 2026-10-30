@@ -65,6 +65,7 @@
 
 #include "archetypes/hadronic/bh_calibrated_test.h"
 #include "archetypes/hadronic/bh_interpolate.h"
+#include "archetypes/hadronic/bh_born_qk.h"
 #include "archetypes/hadronic/bh_physics.h"
 #include "archetypes/hadronic/bh_sampler_device.h"
 #include "archetypes/hadronic/bh_sampler_host.h"
@@ -80,6 +81,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <limits>
 #include <memory>
@@ -143,10 +145,22 @@ namespace {
     return spec;
   }
 
+  // step 6: BH_QK_SOURCE=born in the environment (the _born ctest entries)
+  bool born_mode() {
+    const char* e = std::getenv("BH_QK_SOURCE");
+    return e != nullptr && std::string(e) == "born";
+  }
+
   Tables make_tables(const bh::BathSpec& spec = mono05_spec()) {
     Tables T;
     T.bath    = bh::make_bath(spec);
-    T.rates   = std::make_unique<bh::BetheHeitlerRates>(T.bath);
+    bh::Quadrature q;
+    if (const char* e = std::getenv("BH_QK_SOURCE")) { // step 6: BH_QK_SOURCE=born runs the group on the Born tables
+      if (std::string(e) == "born") {
+        q.qk_source = bh::QkSource::Born;
+      }
+    }
+    T.rates   = std::make_unique<bh::BetheHeitlerRates>(T.bath, q);
     T.host    = bh::build_tables(*T.rates, MU_R);
     bh::validate_tables(T.host);
     T.dev        = bh::mirror_tables_to_device(T.host);
@@ -816,24 +830,41 @@ namespace {
     // N = 2e5 packets per node: 2 ions per node, 1000 packets per ion and launch, 100 launches
     const int   per_node = 2, launches = 100, pk = 1000;
     const auto  R        = read_ref_moments("mono05");
-    // deterministic columns: the reference's nodes must be this table's nodes (1e-12 relative)
+    // deterministic columns: the reference's nodes must be this table's nodes (1e-12 relative). Step 6: on
+    // the Born tables (BH_QK_SOURCE=born) the lower edge moves and the nodes shift by up to 1e-3 relative
+    // against the step-4 reference (bhref 0.2.0, fit-grid nodes); the ions are then placed at the
+    // reference's nodes (the kernel interpolates the Born table there), so that the comparison stays
+    // against the frozen Born-chain <D> of the reference, node by node
     double w_node = (R.gamma.size() == nn) ? 0.0 : 1.0;
     for (std::size_t i = 0; i < std::min(nn, R.gamma.size()); ++i) {
       w_node = std::max(w_node, std::abs(R.gamma[i] / T.host.gamma[i] - 1.0));
     }
-    verdict(w_node <= 1.0e-12,
-            "A12: the reference's moments_mono05 nodes = this rate table's Gamma_p nodes (" + std::to_string(nn) +
-              " nodes, deterministic, 1e-12 relative)",
-            w_node, 1.0e-12);
-    if (!(w_node <= 1.0e-12)) {
-      return;
+    std::vector<double> gnode(nn);
+    if (born_mode()) {
+      verdict(R.gamma.size() == nn, "A12 [Born tables]: the reference's moments_mono05 has this table's node count (" +
+                                       std::to_string(nn) + "); the ions sit at the reference's Gamma_p nodes",
+              static_cast<double>(R.gamma.size()), static_cast<double>(nn));
+      diag("A12 [Born tables]: max relative shift of the Born table's nodes against the reference's: " + fmt("%.3e", w_node));
+      if (R.gamma.size() != nn) {
+        return;
+      }
+      gnode = R.gamma;
+    } else {
+      verdict(w_node <= 1.0e-12,
+              "A12: the reference's moments_mono05 nodes = this rate table's Gamma_p nodes (" + std::to_string(nn) +
+                " nodes, deterministic, 1e-12 relative)",
+              w_node, 1.0e-12);
+      if (!(w_node <= 1.0e-12)) {
+        return;
+      }
+      gnode = T.host.gamma;
     }
     Ions        ions(nn * per_node, 1.0);
     Pairs       pairs(nn * per_node * pk + 64);
     std::vector<double> K(nn * per_node), debt(nn * per_node), k0(nn * per_node);
     for (std::size_t i = 0; i < nn; ++i) {
       for (int j = 0; j < per_node; ++j) {
-        K[i * per_node + j] = MU_R * (T.host.gamma[i] - 1.0);
+        K[i * per_node + j] = MU_R * (gnode[i] - 1.0);
       }
     }
     ions.set_all(K);
@@ -896,7 +927,7 @@ namespace {
       const double rel_e  = std::abs(en / en_ref - 1.0);
       // combined s.e. of cost/Dref (delta method: device sample and the reference's own s.e.)
       const double se_c   = std::sqrt((se_inv / minv) * (se_inv / minv) + (R.se[i] / Dref) * (R.se[i] / Dref));
-      const double Dsamp  = SD.Dmean_unweighted(*T.eps_tables, T.host.gamma[i], 16);
+      const double Dsamp  = SD.Dmean_unweighted(*T.eps_tables, gnode[i], 16);
       w_nse_ref           = std::max(w_nse_ref, std::abs(cost / Dref - 1.0) / se_c);
       exp_fail_cost += std::erfc(1.0e-2 / (se_c * std::sqrt(2.0)));
       exp_fail_num += std::erfc(2.0e-2 / (se_c * std::sqrt(2.0)));
@@ -904,7 +935,7 @@ namespace {
       w_ij                = std::max(w_ij, std::abs(cost / T.host.Dmean[i] - 1.0));
       maxse               = std::max(maxse, se_inv / minv);
       auto note = [&](std::string& s, double v) {
-        s += " Gamma_p " + fmt("%.5f", T.host.gamma[i]) + " (" + fmt("%+.3e", v) + ", " +
+        s += " Gamma_p " + fmt("%.5f", gnode[i]) + " (" + fmt("%+.3e", v) + ", " +
              fmt("%.1f", std::abs(cost / Dref - 1.0) / se_c) + " s.e.);";
       };
       if (!(rel <= 1.0e-2)) {
@@ -921,15 +952,15 @@ namespace {
       }
       if (rel > w_cost) {
         w_cost = rel;
-        g_cost = T.host.gamma[i];
+        g_cost = gnode[i];
       }
       if (rel_n > w_num) {
         w_num = rel_n;
-        g_num = T.host.gamma[i];
+        g_num = gnode[i];
       }
       if (rel_e > w_en) {
         w_en = rel_e;
-        g_en = T.host.gamma[i];
+        g_en = gnode[i];
       }
     }
     verdict(n_min >= 2.0e5, "A12: packets per node (N = 2e5 fixed), the smallest node count", n_min, 2.0e5);
@@ -968,7 +999,7 @@ namespace {
          fmt("%.2g", exp_fail_num) + " for the 2% pair number");
     for (const std::size_t i : { std::size_t(0), nn / 4, nn / 2, (3 * nn) / 4, nn - 1 }) {
       const double N = cnt[i], minv = sinv[i] / N;
-      diag("A12 node Gamma_p " + fmt("%.5f", T.host.gamma[i]) + ": cost " + fmt("%.5f", 1.0 / minv) + ", <D>_ref " +
+      diag("A12 node Gamma_p " + fmt("%.5f", gnode[i]) + ": cost " + fmt("%.5f", 1.0 / minv) + ", <D>_ref " +
            fmt("%.5f", R.D[i]) + " +- " + fmt("%.5f", R.se[i]) + ", I/J " + fmt("%.5f", T.host.Dmean[i]) +
            ", energy per paid energy " + fmt("%.5f", sE[i] / N) + " vs " + fmt("%.5f", 1.0 + EPS0 / R.D[i]) +
            ", pairs " + fmt("%.0f", N));
