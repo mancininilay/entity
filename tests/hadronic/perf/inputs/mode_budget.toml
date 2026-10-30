@@ -1,0 +1,5 @@
+  mode                = "continuous"
+  source              = "budget"
+  spectrum            = "delta"
+  on_capacity_estimate = "warn"
+  t_latency            = 0.0

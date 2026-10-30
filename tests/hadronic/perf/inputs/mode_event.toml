@@ -1,0 +1,5 @@
+  mode                = "event"
+  spectrum            = "delta"
+  pair_weight         = 1.0
+  f_max               = 0.01
+  on_capacity_estimate = "warn"

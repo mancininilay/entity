@@ -1,0 +1,99 @@
+# bh_proto perf input template (P2 step 7, scaling-harness contract 2026-10-30 §1): filled by perf_driver.sh.
+# Placeholders: @NAME@ @RUNTIME@ @NION@ @KION@ @GAMMA_TYP@ @MAXNPART_ION@ @MAXNPART_PAIR@ @DEPOSIT@ @DIAG@ @LEDGER_EVERY@
+# and the mode block @MODE_BLOCK@ (one of mode_*.toml). Mono bath eps0 = 0.5, mu_r = 1836.15, mu_d = 1, periodic 1D box
+# of 64 cells (dt = 0.5), fields zero (field solver off), deposit as @DEPOSIT@, production placement, no output.
+[simulation]
+  name    = "@NAME@"
+  engine  = "srpic"
+  runtime = @RUNTIME@
+  seed    = 20261030
+
+[grid]
+  resolution = [64]
+  extent     = [[0.0, 64.0]]
+  [grid.metric]
+    metric = "minkowski"
+  [grid.boundaries]
+    fields    = [["PERIODIC"]]
+    particles = [["PERIODIC"]]
+
+[scales]
+  larmor0    = 1.0
+  skindepth0 = 1.0
+
+[algorithms]
+  [algorithms.timestep]
+    CFL = 0.5
+  [algorithms.fieldsolver]
+    enable = false
+  [algorithms.deposit]
+    enable = @DEPOSIT@
+
+[particles]
+  ppc0        = 1.0
+  use_weights = true
+  [[particles.species]]
+    label                    = "ion"
+    mass                     = 1.0
+    charge                   = 1.0
+    maxnpart                 = @MAXNPART_ION@
+    pusher                   = "Boris"
+    n_payloads_real          = 3
+    deposit                  = @DEPOSIT@
+    clear_interval           = 0
+    spatial_sorting_interval = 0
+  [[particles.species]]
+    label                    = "e-"
+    mass                     = 1.0
+    charge                   = -1.0
+    maxnpart                 = @MAXNPART_PAIR@
+    pusher                   = "Boris"
+    n_payloads_real          = 3
+    deposit                  = @DEPOSIT@
+    clear_interval           = 0
+    spatial_sorting_interval = 0
+  [[particles.species]]
+    label                    = "e+"
+    mass                     = 1.0
+    charge                   = 1.0
+    maxnpart                 = @MAXNPART_PAIR@
+    pusher                   = "Boris"
+    n_payloads_real          = 3
+    deposit                  = @DEPOSIT@
+    clear_interval           = 0
+    spatial_sorting_interval = 0
+
+[setup]
+  hadronic.enabled    = @HADRONIC@
+  hadronic.placement  = "production"
+  hadronic.species    = [1]
+  tau0                = 0.2
+  physical_mass_ratio = 1836.15
+  photon_field.type   = "mono"
+  photon_field.eps0   = 0.5
+  pair_species        = [2, 3]
+  gamma_p_typical     = @GAMMA_TYP@
+  ions.K              = [@KION@]
+  ions.per_K          = @NION@
+  ions.direction      = "+x"
+  ledger.every        = @LEDGER_EVERY@
+@MODE_BLOCK@
+
+[output]
+  interval = 100000000
+  [output.fields]
+    enable = false
+  [output.particles]
+    enable = false
+  [output.spectra]
+    enable = false
+  [output.stats]
+    enable = false
+
+[checkpoint]
+  interval = 100000000
+
+[diagnostics]
+  interval        = @DIAG@
+  blocking_timers = true
+  colored_stdout  = false

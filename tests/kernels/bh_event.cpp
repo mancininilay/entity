@@ -1888,6 +1888,7 @@ namespace {
 
 } // namespace
 
+#ifndef BH_EVENT_NO_MAIN // the perf harness (tests/kernels/bh_perf.cpp) includes this file for its helpers
 auto main(int argc, char* argv[]) -> int {
   Kokkos::initialize(argc, argv);
   int rc = 0;
@@ -1977,3 +1978,4 @@ auto main(int argc, char* argv[]) -> int {
   Kokkos::finalize();
   return rc;
 }
+#endif // BH_EVENT_NO_MAIN
