@@ -20,9 +20,13 @@
  *   A5b     the direct-boost loss table I (laws' q_k) vs I_exact of step 1
  *           (eq. 3.7 q_k) <= 0.5% at every node (spec T3b)
  *   A7      <D>_MC = I/J at every rate-table node, N = 1e6 unweighted draws,
- *           |<D>_MC - I/J| <= max(1%, 4 s.e.); E_p[1/D] <D> = 1 within 4 s.e.
- *           for the weighted chain at Gamma_p in {1.05 Gamma_th, 3, 10} with
- *           <D> = I/J (as registered)
+ *           |<D>_MC - I/J| <= max(1%, 4 s.e.) (4 s.e., no floor, on the Born
+ *           tables: contract 1.5); the weighted chain: E_p[1/D] <D> = 1 within
+ *           4 s.e. at Gamma_p in {1.05 Gamma_th, 3, 10} (group `a7w`, a smoke
+ *           test of selected points) and at every rate-table node with
+ *           exactly N = 1e6 accepted draws per node (group `a7wall`, round 2
+ *           of step 6, Codex 1 F2: a resource limit aborts explicitly and
+ *           never reduces N; the long group, run separately)
  *   A9      D >= 2 - eps_max over 1e7 draws per bath, zero violations; 1/min D
  *
  * Implementation-chosen checks (prefix "(impl)"): <D>_MC against the sampled
@@ -33,7 +37,8 @@
  * cost per draw, table sizes.
  *
  * Seeds (convention): A7 node i of bath b uses SplitMix64(1000003 b + i);
- * the weighted checks 7 000 000 + 10 b + j; A9 9 000 000 + 100 b + j.
+ * the weighted smoke checks 7 000 000 + 10 b + j; the all-node weighted test
+ * 7 500 000 + 1000 b + i; A9 9 000 000 + 100 b + j.
  */
 
 #include "archetypes/hadronic/bh_born_qk.h"
@@ -512,7 +517,9 @@ namespace {
   void test_A7_weighted(const std::vector<BathSetup>& setups, const rf::SamplerCumulatives& cum,
                         const rf::QkFineGrid& qk_tab) {
     const rf::SampledChainD SD(cum, [&](double k) { return qk_tab(k); }, 8);
-    std::printf("\n== A7: the weighted chain, E_p[1/D] <D> = 1 at Gamma_p in {1.05 Gamma_th, 3, 10} ==\n");
+    std::printf("\n== A7 [smoke test, selected points]: the weighted chain, E_p[1/D] <D> = 1 at Gamma_p in {1.05 Gamma_th, 3, 10} "
+                "(the all-node weighted test is the a7wall group) ==\n");
+    bool all_exact_N = true;
     double worst_exact = 0.0, worst_chain = 0.0;
     for (std::size_t b = 0; b < setups.size(); ++b) {
       const auto&         S = setups[b];
@@ -559,15 +566,182 @@ namespace {
         const double ne = std::abs(pe - 1.0) / (r.se * r.Dexact), nc = std::abs(pc - 1.0) / (r.se * r.Dchain);
         worst_exact     = std::max(worst_exact, ne);
         worst_chain     = std::max(worst_chain, nc);
-        diag("A7 weighted %s Gamma %.5f: N_acc %zu, E_p[1/D] (I/J) = %.5f (%.1f s.e.), E_p[1/D] <D>_sampled = %.5f (%.1f "
+        all_exact_N     = all_exact_N && r.n_acc == 1000000;
+        diag("A7 weighted [smoke] %s Gamma %.5f: N_acc %zu, E_p[1/D] (I/J) = %.5f (%.1f s.e.), E_p[1/D] <D>_sampled = %.5f (%.1f "
              "s.e.), efficiency %.4f, 1/min D = %.4f",
              S.cb.name.c_str(), gammas[j], r.n_acc, pe, ne, pc, nc, r.eff, 1.0 / r.minD);
       }
     }
-    check_abs("A7: E_p[1/D] (I/J) = 1 within 4 s.e., weighted chain, Gamma_p in {1.05 Gamma_th, 3, 10}, five baths",
+    check_true("A7 [smoke test, selected points]: exactly N = 1e6 accepted weighted draws at every selected point (the "
+               "attempts cap never reduced N)",
+               all_exact_N, all_exact_N ? "N_acc = 1e6 at every point" : "a point stopped at the attempts cap with N_acc < 1e6");
+    check_abs("A7 [smoke test, selected points; the all-node weighted test is the a7wall group]: E_p[1/D] (I/J) = 1 within 4 "
+              "s.e., weighted chain, Gamma_p in {1.05 Gamma_th, 3, 10}, five baths",
               worst_exact, 4.0, "max |dev| / s.e.");
-    impl_abs("A7: E_p[1/D] <D>_sampled = 1 within 4 s.e. (<D> of the density the unweighted chain samples)", worst_chain, 4.0,
-             "max |dev| / s.e.");
+    impl_abs("A7 [smoke]: E_p[1/D] <D>_sampled = 1 within 4 s.e. (<D> of the density the unweighted chain samples)", worst_chain,
+             4.0, "max |dev| / s.e.");
+  }
+
+  /**
+   * @brief A7, the weighted chain at every rate-table node (round 2 of step 6, Codex 1 F2):
+   *        exactly N = 1e6 accepted weighted draws at each of the 2169 nodes of the five baths,
+   *        z = |mean(1/D) - 1/(I/J)| / s.e.(mean(1/D)) <= 4, no floor; in Born mode also against the
+   *        frozen bhref 0.3.0 tables' Dmean. The acceptance efficiency falls to ~2.5e-3 at the top
+   *        nodes (4.1e8 proposals for 1e6 accepted, Codex 1's campaign), so the whole group is
+   *        ~2e10 proposals: the long group, its own ctest entry. Resource limit: a node that reaches
+   *        `attempts_cap` proposals (4e9, ten times the expected maximum) ABORTS explicitly (the
+   *        node named, the exact-N assertion fails, the group fails); N is never reduced silently.
+   *        Seeds 7 500 000 + 1000 b + i (distinct from the smoke test's and from the unweighted A7's).
+   */
+  void test_A7_weighted_all(const std::vector<BathSetup>& setups) {
+    std::printf("\n== A7 [all nodes, weighted chain]: E_p[1/D] (I/J) = 1 within 4 s.e. at every rate-table node, exactly N = "
+                "1e6 accepted draws per node ==\n");
+    const std::size_t N_target = 1000000, attempts_cap = 4000000000ULL;
+    struct Res {
+      double      Einv { 0.0 }, se { 0.0 }, minD { 1.0e300 };
+      std::size_t n_acc { 0 }, att { 0 };
+      bool        aborted { false };
+    };
+    double      worst_exact = 0.0, worst_frozen = 0.0, worst_node_shift = 0.0;
+    std::size_t total_nodes = 0, total_fail = 0, total_fail_frozen = 0, total_att = 0, total_aborted = 0, max_att = 0;
+    std::string max_att_bath, worst_bath;
+    double      max_att_gamma = 0.0, worst_gamma = 0.0;
+    bool        frozen_ok = born_mode();
+    for (std::size_t b = 0; b < setups.size(); ++b) {
+      const auto&      S  = setups[b];
+      const auto       t0 = std::chrono::steady_clock::now();
+      std::vector<Res> res(S.H.size());
+      rf::parallel_for_index(S.H.size(), [&](std::size_t i) {
+        const double   g = S.H.gamma[i];
+        rf::SplitMix64 rng(7500000ULL + 1000ULL * b + i);
+        double         s1 = 0.0, s2 = 0.0;
+        Res&           r = res[i];
+        while (r.n_acc < N_target) {
+          if (r.att >= attempts_cap) {
+            r.aborted = true; // explicit abort: the resource limit, never a smaller N
+            break;
+          }
+          const auto e = S.sampler->draw(g, true, rng);
+          r.att += static_cast<std::size_t>(e.attempts);
+          const double y = 1.0 / e.D;
+          s1 += y;
+          s2 += y * y;
+          r.minD = std::min(r.minD, e.D);
+          ++r.n_acc;
+        }
+        if (r.n_acc > 0) {
+          r.Einv = s1 / static_cast<double>(r.n_acc);
+          r.se   = std::sqrt(std::max(0.0, s2 / static_cast<double>(r.n_acc) - r.Einv * r.Einv) /
+                           static_cast<double>(r.n_acc));
+        }
+      });
+      std::vector<double> Dfrozen;
+      if (born_mode()) {
+        const auto FT = read_table_file(std::string(BH_TEST_DATA_DIR) + "/bhref-0.3.0/" + S.cb.name + ".txt");
+        if (FT.gamma.size() != S.H.size() || FT.qk_source != "born-3D2000") {
+          frozen_ok = false;
+          diag("A7 all-node weighted %s: frozen 0.3.0 table has %zu nodes vs %zu here (qk_source %s): frozen comparison "
+               "skipped",
+               S.cb.name.c_str(), FT.gamma.size(), S.H.size(), FT.qk_source.c_str());
+        } else {
+          Dfrozen = FT.Dmean;
+          for (std::size_t i = 0; i < S.H.size(); ++i) {
+            worst_node_shift = std::max(worst_node_shift, std::abs(FT.gamma[i] / S.H.gamma[i] - 1.0));
+          }
+        }
+      }
+      double      wz = 0.0, wzf = 0.0, g_wz = 0.0, min_eff = 1.0, g_min_eff = 0.0;
+      std::size_t n_fail = 0, n_fail_frozen = 0, bath_att = 0, n_ab = 0;
+      for (std::size_t i = 0; i < S.H.size(); ++i) {
+        const Res& r = res[i];
+        bath_att += r.att;
+        if (r.att > max_att) {
+          max_att       = r.att;
+          max_att_bath  = S.cb.name;
+          max_att_gamma = S.H.gamma[i];
+        }
+        if (r.aborted) {
+          ++n_ab;
+          std::printf("[ABORT] A7 all-node weighted %s node %zu Gamma %.10g: the attempts cap %zu reached with N_acc = %zu < "
+                      "%zu; the node has no verdict and the exact-N assertion fails\n",
+                      S.cb.name.c_str(), i, S.H.gamma[i], attempts_cap, r.n_acc, N_target);
+          continue;
+        }
+        const double eff = static_cast<double>(r.n_acc) / static_cast<double>(r.att);
+        if (eff < min_eff) {
+          min_eff   = eff;
+          g_min_eff = S.H.gamma[i];
+        }
+        const double z = std::abs(r.Einv - 1.0 / S.H.Dmean[i]) / r.se;
+        if (!(z <= 4.0)) {
+          ++n_fail;
+          std::printf("[FAIL-NODE] A7 all-node weighted %s node %zu Gamma %.10g: z = %.3f (mean(1/D) %.8e, 1/(I/J) %.8e, s.e. "
+                      "%.2e)\n",
+                      S.cb.name.c_str(), i, S.H.gamma[i], z, r.Einv, 1.0 / S.H.Dmean[i], r.se);
+        }
+        if (z > wz) {
+          wz   = z;
+          g_wz = S.H.gamma[i];
+        }
+        if (!Dfrozen.empty()) {
+          const double zf = std::abs(r.Einv - 1.0 / Dfrozen[i]) / r.se;
+          if (!(zf <= 4.0)) {
+            ++n_fail_frozen;
+            std::printf("[FAIL-NODE] A7 all-node weighted %s node %zu Gamma %.10g vs the frozen Dmean: z = %.3f\n",
+                        S.cb.name.c_str(), i, S.H.gamma[i], zf);
+          }
+          wzf = std::max(wzf, zf);
+        }
+      }
+      if (wz > worst_exact) {
+        worst_exact = wz;
+        worst_bath  = S.cb.name;
+        worst_gamma = g_wz;
+      }
+      worst_frozen = std::max(worst_frozen, wzf);
+      total_nodes += S.H.size();
+      total_fail += n_fail;
+      total_fail_frozen += n_fail_frozen;
+      total_att += bath_att;
+      total_aborted += n_ab;
+      diag("A7 all-node weighted %s: %zu nodes x 1e6 accepted in %.0f s, %zu proposals (max %zu at one node, min efficiency "
+           "%.3e at Gamma %.5f); max z vs I/J %.3f at Gamma %.5f%s; nodes failing 4 s.e.: %zu; aborted at the cap: %zu; "
+           "first/mid/last node (Gamma, E_p[1/D] <D>): %.4f %.6f | %.4f %.6f | %.4f %.6f",
+           S.cb.name.c_str(), S.H.size(), seconds_since(t0), bath_att, max_att, min_eff, g_min_eff, wz, g_wz,
+           Dfrozen.empty() ? "" : (", vs the frozen Dmean " + std::to_string(wzf)).c_str(), n_fail, n_ab, S.H.gamma[0],
+           res[0].Einv * S.H.Dmean[0], S.H.gamma[S.H.size() / 2], res[S.H.size() / 2].Einv * S.H.Dmean[S.H.size() / 2],
+           S.H.gamma.back(), res.back().Einv * S.H.Dmean.back());
+    }
+    diag("A7 all-node weighted: %zu nodes, %zu proposals in total, the most at one node %zu (%s, Gamma %.5f)", total_nodes,
+         total_att, max_att, max_att_bath.c_str(), max_att_gamma);
+    check_true("A7 [all nodes, weighted]: exactly N = 1e6 accepted weighted draws at every one of the " +
+                 std::to_string(total_nodes) + " nodes (an explicit abort at the attempts cap fails this row; N is never reduced)",
+               total_aborted == 0, std::to_string(total_aborted) + " nodes aborted at the cap");
+    if (born_mode()) {
+      check_true("A7 [all nodes, weighted; re-registered, contract 1.5]: |mean(1/D) - 1/(I_Born/J)| <= 4 s.e. at every rate-table "
+                 "node of the five baths (N = 1e6 accepted), no floor",
+                 total_fail == 0 && total_aborted == 0,
+                 std::to_string(total_fail) + " of " + std::to_string(total_nodes) + " nodes fail");
+      check_abs("A7 [all nodes, weighted; re-registered]: max |mean(1/D) - 1/(I_Born/J)| / s.e. over the nodes (bath " +
+                  worst_bath + ", Gamma " + std::to_string(worst_gamma) + ")",
+                worst_exact, 4.0, "max |dev| / s.e.");
+      check_true("A7 [all nodes, weighted; frozen bhref 0.3.0 reference]: |mean(1/D) - 1/Dmean_frozen| <= 4 s.e. at every node "
+                 "of the five frozen tables (nodes identical to this table's, max relative shift " +
+                   std::to_string(worst_node_shift) + ")",
+                 frozen_ok && total_fail_frozen == 0 && total_aborted == 0,
+                 frozen_ok ? (std::to_string(total_fail_frozen) + " of " + std::to_string(total_nodes) + " nodes fail")
+                           : "frozen tables not comparable");
+      check_abs("A7 [all nodes, weighted; frozen bhref 0.3.0 reference]: max |mean(1/D) - 1/Dmean_frozen| / s.e. over the nodes",
+                worst_frozen, 4.0, "max |dev| / s.e.");
+    } else {
+      check_true("A7 [all nodes, weighted]: |mean(1/D) - 1/(I/J)| <= 4 s.e. at every rate-table node of the five baths (N = 1e6 "
+                 "accepted), the step-1 fit tables (the fit-vs-Born offset is expected to fail this at the deep nodes; history)",
+                 total_fail == 0 && total_aborted == 0,
+                 std::to_string(total_fail) + " of " + std::to_string(total_nodes) + " nodes fail");
+      check_abs("A7 [all nodes, weighted]: max |mean(1/D) - 1/(I/J)| / s.e. over the nodes (bath " + worst_bath + ", Gamma " +
+                  std::to_string(worst_gamma) + ")",
+                worst_exact, 4.0, "max |dev| / s.e.");
+    }
   }
 
   // ---------------------------------------------------------------------- //
@@ -691,7 +865,8 @@ namespace {
 
 auto main(int argc, char* argv[]) -> int {
   // optional group selection (ctest registers one entry per group): budget,
-  // kinematics, efficiency, a9, a7w (weighted chain), a7 (Monte Carlo at every node)
+  // kinematics, efficiency, a9, a7w (weighted chain, selected points: smoke test), a7wall (weighted chain at every
+  // node, exact N; the long group), a7 (unweighted Monte Carlo at every node)
   // a bath name among the arguments restricts the run to that bath
   std::vector<std::string> groups, bath_filter;
   for (int i = 1; i < argc; ++i) {
@@ -775,6 +950,9 @@ auto main(int argc, char* argv[]) -> int {
     }
     if (want("a7w")) {
       test_A7_weighted(setups, *cum, qk_tab);
+    }
+    if (want("a7wall")) {
+      test_A7_weighted_all(setups);
     }
     if (want("a7")) {
       test_A7(setups, *cum, qk_tab);

@@ -59,20 +59,24 @@ target_link_libraries(test-archetypes-bh_chain.xc PRIVATE ntt_archetypes ntt_glo
 target_compile_definitions(
   test-archetypes-bh_chain.xc
   PRIVATE BH_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data/hadronic")
-foreach(grp epsbias budget kinematics efficiency a9 a7w a7)
+foreach(grp epsbias budget kinematics efficiency a9 a7w a7wall a7)
   add_test(NAME "ARCHETYPES::bh_chain_${grp}" COMMAND test-archetypes-bh_chain.xc ${grp})
 endforeach()
 set_tests_properties("ARCHETYPES::bh_chain_a7" PROPERTIES TIMEOUT 7200)
 set_tests_properties("ARCHETYPES::bh_chain_a7w" PROPERTIES TIMEOUT 3600)
 set_tests_properties("ARCHETYPES::bh_chain_a9" PROPERTIES TIMEOUT 3600)
+# [fork:hadronic/P2 step 6 round 2, Codex 1 F2] the weighted chain at every node with exact N = 1e6: ~2e10
+# proposals, the long group (run separately, log kept)
+set_tests_properties("ARCHETYPES::bh_chain_a7wall" PROPERTIES TIMEOUT 86400)
 # [fork:hadronic/P2 step 6] the same against the Born rate tables (contract 1.5: A5-numerical in the budget
 # group, A7 at 4 s.e. with no floor); the step-1 suite on the Born tables likewise
-foreach(grp budget a7w a7)
+foreach(grp budget a7w a7wall a7)
   add_test(NAME "ARCHETYPES::bh_chain_${grp}_born" COMMAND test-archetypes-bh_chain.xc ${grp})
   set_tests_properties("ARCHETYPES::bh_chain_${grp}_born" PROPERTIES ENVIRONMENT "BH_QK_SOURCE=born")
 endforeach()
 set_tests_properties("ARCHETYPES::bh_chain_a7_born" PROPERTIES TIMEOUT 7200)
 set_tests_properties("ARCHETYPES::bh_chain_a7w_born" PROPERTIES TIMEOUT 3600)
+set_tests_properties("ARCHETYPES::bh_chain_a7wall_born" PROPERTIES TIMEOUT 86400)
 set_tests_properties("ARCHETYPES::bh_chain_budget_born" PROPERTIES TIMEOUT 3600)
 add_test(NAME "ARCHETYPES::bh_physics_born" COMMAND test-archetypes-bh_physics.xc)
 set_tests_properties("ARCHETYPES::bh_physics_born" PROPERTIES ENVIRONMENT "BH_QK_SOURCE=born" TIMEOUT 1800)
