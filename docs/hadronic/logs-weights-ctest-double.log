@@ -1,0 +1,290 @@
+Test project /Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/builds/weights-double
+        Start   1: GLOBAL::global
+        Start   2: GLOBAL::enums
+  1/111 Test   #1: GLOBAL::global ......................   Passed    0.19 sec
+        Start   3: GLOBAL::kokkos_aliases
+  2/111 Test   #2: GLOBAL::enums .......................   Passed    0.30 sec
+        Start   4: GLOBAL::directions
+  3/111 Test   #3: GLOBAL::kokkos_aliases ..............   Passed    0.24 sec
+        Start   5: GLOBAL::comparators
+  4/111 Test   #4: GLOBAL::directions ..................   Passed    0.25 sec
+        Start   6: GLOBAL::numeric
+  5/111 Test   #5: GLOBAL::comparators .................   Passed    0.24 sec
+        Start   7: GLOBAL::param_container
+  6/111 Test   #6: GLOBAL::numeric .....................   Passed    0.24 sec
+        Start   8: GLOBAL::sorting
+  7/111 Test   #7: GLOBAL::param_container .............***Failed    0.24 sec
+Bad any_cast for d /Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/dev-hadronic-weights/src/global/utils/param_container.h:172 @ stringize
+
+        Start   9: GLOBAL::tiling
+  8/111 Test   #8: GLOBAL::sorting .....................   Passed    0.27 sec
+        Start  10: GLOBAL::traits_archetypes
+  9/111 Test   #9: GLOBAL::tiling ......................   Passed    0.27 sec
+        Start  11: GLOBAL::traits_metric
+ 10/111 Test  #10: GLOBAL::traits_archetypes ...........   Passed    0.23 sec
+        Start  12: GLOBAL::traits_pgen
+ 11/111 Test  #11: GLOBAL::traits_metric ...............   Passed    0.22 sec
+        Start  13: GLOBAL::traits_policies
+ 12/111 Test  #12: GLOBAL::traits_pgen .................   Passed    0.23 sec
+        Start  14: METRICS::minkowski
+ 13/111 Test  #13: GLOBAL::traits_policies .............   Passed    0.23 sec
+        Start  15: METRICS::vec_trans
+ 14/111 Test  #14: METRICS::minkowski ..................   Passed    0.24 sec
+        Start  16: METRICS::coord_trans
+ 15/111 Test  #15: METRICS::vec_trans ..................   Passed    0.25 sec
+        Start  17: METRICS::sph-qsph
+ 16/111 Test  #16: METRICS::coord_trans ................   Passed    0.24 sec
+        Start  18: METRICS::ks-qks
+ 17/111 Test  #17: METRICS::sph-qsph ...................   Passed    0.25 sec
+        Start  19: METRICS::sr-cart-sph
+ 18/111 Test  #18: METRICS::ks-qks .....................   Passed    0.25 sec
+        Start  20: METRICS::ks-qks-4d
+ 19/111 Test  #19: METRICS::sr-cart-sph ................   Passed    0.25 sec
+        Start  21: KERNELS::faraday_mink
+ 20/111 Test  #20: METRICS::ks-qks-4d ..................   Passed    0.25 sec
+        Start  22: KERNELS::ampere_mink
+ 21/111 Test  #21: KERNELS::faraday_mink ...............   Passed    0.25 sec
+        Start  23: KERNELS::deposit
+ 22/111 Test  #22: KERNELS::ampere_mink ................   Passed    0.25 sec
+        Start  24: KERNELS::digital_filter
+ 23/111 Test  #23: KERNELS::deposit ....................   Passed    0.31 sec
+        Start  25: KERNELS::particle_moments
+ 24/111 Test  #24: KERNELS::digital_filter .............   Passed    0.30 sec
+        Start  26: KERNELS::fields_to_phys
+ 25/111 Test  #25: KERNELS::particle_moments ...........   Passed    0.24 sec
+        Start  27: KERNELS::prtls_to_phys
+ 26/111 Test  #26: KERNELS::fields_to_phys .............   Passed    0.25 sec
+        Start  28: KERNELS::gca_pusher
+ 27/111 Test  #27: KERNELS::prtls_to_phys ..............   Passed    0.24 sec
+        Start  29: KERNELS::prtl_bc
+ 28/111 Test  #28: KERNELS::gca_pusher .................   Passed    0.30 sec
+        Start  30: KERNELS::flds_bc
+ 29/111 Test  #29: KERNELS::prtl_bc ....................   Passed    0.26 sec
+        Start  31: KERNELS::pusher
+ 30/111 Test  #30: KERNELS::flds_bc ....................   Passed    0.20 sec
+        Start  32: KERNELS::ext_force
+ 31/111 Test  #32: KERNELS::ext_force ..................   Passed    0.27 sec
+        Start  33: KERNELS::reduced_stats
+ 32/111 Test  #31: KERNELS::pusher .....................   Passed    0.43 sec
+        Start  34: KERNELS::custom_emission
+ 33/111 Test  #33: KERNELS::reduced_stats ..............   Passed    0.17 sec
+        Start  35: KERNELS::custom_prtl_update
+ 34/111 Test  #34: KERNELS::custom_emission ............   Passed    0.24 sec
+        Start  36: KERNELS::injectors_payloads
+ 35/111 Test  #35: KERNELS::custom_prtl_update .........   Passed    0.24 sec
+        Start  37: KERNELS::reduced_stats_weights
+ 36/111 Test  #36: KERNELS::injectors_payloads .........   Passed    0.26 sec
+        Start  38: KERNELS::injectors_global_weights
+ 37/111 Test  #37: KERNELS::reduced_stats_weights ......   Passed    0.25 sec
+        Start  39: KERNELS::bh_loss_tables
+ 38/111 Test  #38: KERNELS::injectors_global_weights ...   Passed    0.26 sec
+        Start  40: KERNELS::bh_loss_overflow
+ 39/111 Test  #39: KERNELS::bh_loss_tables .............   Passed    0.26 sec
+        Start  41: KERNELS::bh_loss_huge
+ 40/111 Test  #40: KERNELS::bh_loss_overflow ...........   Passed    0.13 sec
+        Start  42: KERNELS::bh_loss_t9
+ 41/111 Test  #41: KERNELS::bh_loss_huge ...............   Passed    0.02 sec
+        Start  43: KERNELS::bh_loss_tags
+ 42/111 Test  #43: KERNELS::bh_loss_tags ...............   Passed    0.02 sec
+        Start  44: KERNELS::bh_loss_above
+ 43/111 Test  #42: KERNELS::bh_loss_t9 .................   Passed    0.04 sec
+        Start  45: KERNELS::bh_loss_subcycling
+ 44/111 Test  #44: KERNELS::bh_loss_above ..............   Passed    0.02 sec
+        Start  46: KERNELS::bh_loss_t6
+ 45/111 Test  #45: KERNELS::bh_loss_subcycling .........   Passed    0.10 sec
+        Start  47: KERNELS::bh_loss_t5
+ 46/111 Test  #46: KERNELS::bh_loss_t6 .................   Passed    2.82 sec
+        Start  48: KERNELS::bh_loss_t5fine
+ 47/111 Test  #47: KERNELS::bh_loss_t5 .................   Passed    4.11 sec
+        Start  49: KERNELS::bh_loss_t5b
+ 48/111 Test  #48: KERNELS::bh_loss_t5fine .............   Passed   23.41 sec
+        Start  50: KERNELS::bh_pairs_t10
+ 49/111 Test  #50: KERNELS::bh_pairs_t10 ...............   Passed    0.22 sec
+        Start  51: KERNELS::bh_pairs_poisson
+ 50/111 Test  #51: KERNELS::bh_pairs_poisson ...........   Passed    0.08 sec
+        Start  52: KERNELS::bh_pairs_none
+ 51/111 Test  #52: KERNELS::bh_pairs_none ..............   Passed    0.03 sec
+        Start  53: KERNELS::bh_pairs_energy
+ 52/111 Test  #53: KERNELS::bh_pairs_energy ............   Passed    0.12 sec
+        Start  54: KERNELS::bh_pairs_momentum
+ 53/111 Test  #54: KERNELS::bh_pairs_momentum ..........   Passed    0.15 sec
+        Start  55: KERNELS::bh_pairs_t12
+ 54/111 Test  #55: KERNELS::bh_pairs_t12 ...............   Passed    0.06 sec
+        Start  56: KERNELS::bh_pairs_t10b
+ 55/111 Test  #56: KERNELS::bh_pairs_t10b ..............   Passed    0.03 sec
+        Start  57: KERNELS::bh_pairs_texp
+ 56/111 Test  #57: KERNELS::bh_pairs_texp ..............   Passed    0.03 sec
+        Start  58: KERNELS::bh_pairs_r1
+ 57/111 Test  #58: KERNELS::bh_pairs_r1 ................   Passed    0.03 sec
+        Start  59: KERNELS::bh_pairs_r2
+ 58/111 Test  #59: KERNELS::bh_pairs_r2 ................   Passed    0.03 sec
+        Start  60: KERNELS::bh_pairs_r3
+ 59/111 Test  #60: KERNELS::bh_pairs_r3 ................   Passed    0.02 sec
+        Start  61: KERNELS::bh_pairs_cmpi1
+ 60/111 Test  #61: KERNELS::bh_pairs_cmpi1 .............   Passed    0.02 sec
+        Start  62: KERNELS::bh_sampler_tables
+ 61/111 Test  #49: KERNELS::bh_loss_t5b ................   Passed   65.55 sec
+        Start  63: KERNELS::bh_sampler_a11
+ 62/111 Test  #63: KERNELS::bh_sampler_a11 .............   Passed    6.32 sec
+        Start  64: KERNELS::bh_sampler_identity
+ 63/111 Test  #64: KERNELS::bh_sampler_identity ........   Passed    6.43 sec
+        Start  65: KERNELS::bh_sampler_a12
+ 64/111 Test  #62: KERNELS::bh_sampler_tables ..........   Passed   57.30 sec
+        Start  66: KERNELS::bh_sampler_spectrum
+ 65/111 Test  #66: KERNELS::bh_sampler_spectrum ........   Passed   18.43 sec
+        Start  67: KERNELS::bh_reduction_timing
+ 66/111 Test  #67: KERNELS::bh_reduction_timing ........   Passed    1.22 sec
+        Start  68: ARCHETYPES::energy_dist
+ 67/111 Test  #68: ARCHETYPES::energy_dist .............   Passed    0.15 sec
+        Start  69: ARCHETYPES::spatial_dist
+ 68/111 Test  #69: ARCHETYPES::spatial_dist ............   Passed    0.15 sec
+        Start  70: ARCHETYPES::field_setter
+ 69/111 Test  #70: ARCHETYPES::field_setter ............   Passed    0.14 sec
+        Start  71: ARCHETYPES::powerlaw
+ 70/111 Test  #71: ARCHETYPES::powerlaw ................   Passed    0.15 sec
+        Start  72: ARCHETYPES::pgen
+ 71/111 Test  #72: ARCHETYPES::pgen ....................   Passed    0.13 sec
+        Start  73: ARCHETYPES::bh_physics
+ 72/111 Test  #73: ARCHETYPES::bh_physics ..............   Passed    3.18 sec
+        Start  74: ARCHETYPES::bh_fixtures
+ 73/111 Test  #74: ARCHETYPES::bh_fixtures .............   Passed    0.87 sec
+        Start  75: ARCHETYPES::bh_restframe
+ 74/111 Test  #75: ARCHETYPES::bh_restframe ............   Passed    5.08 sec
+        Start  76: ARCHETYPES::bh_chain_epsbias
+ 75/111 Test  #76: ARCHETYPES::bh_chain_epsbias ........   Passed   28.10 sec
+        Start  77: ARCHETYPES::bh_chain_budget
+ 76/111 Test  #77: ARCHETYPES::bh_chain_budget .........   Passed   25.82 sec
+        Start  78: ARCHETYPES::bh_chain_kinematics
+ 77/111 Test  #78: ARCHETYPES::bh_chain_kinematics .....   Passed    6.40 sec
+        Start  79: ARCHETYPES::bh_chain_efficiency
+ 78/111 Test  #79: ARCHETYPES::bh_chain_efficiency .....   Passed   14.58 sec
+        Start  80: ARCHETYPES::bh_chain_a9
+ 79/111 Test  #80: ARCHETYPES::bh_chain_a9 .............   Passed   11.75 sec
+        Start  81: ARCHETYPES::bh_chain_a7w
+ 80/111 Test  #81: ARCHETYPES::bh_chain_a7w ............***Failed   76.05 sec
+[DIAG] tables: 113 eps' nodes (16 per decade), n_s = 256, n_tau = 256; 29041 + 7463537 entries (30.0 MB in single precision); built in 3.5 s
+[DIAG] cumulatives: 5067 nodes in t = ln(eps' - 2), h = 0.0050; Phi(1000) = 7.0107780549e+06 (step-1 Cumulatives: 7.0107780549e+06)
+[DIAG] q_k grids: laws at 449 nodes, tables at 897 fine nodes (8 per interval), 1.4 s
+[DIAG] bath mono05: 466 Gamma nodes in [2.130009, 91.810223], Gamma_th 2.125000; eps tables mono (none)
+[DIAG] bath mono03: 465 Gamma nodes in [3.416954, 153.014134], Gamma_th 3.408333; eps tables mono (none)
+[DIAG] bath powerlaw: 429 Gamma nodes in [1.047817, 30.610669], Gamma_th 1.041667; eps tables 2709 cells per node in ln eps
+[DIAG] bath blackbody: 406 Gamma nodes in [1.012206, 24.170216], Gamma_th 1.001316; eps tables 3827 cells per node in ln eps
+[DIAG] bath mono05_mu100: 403 Gamma nodes in [2.126533, 5.050000], Gamma_th 2.125000; eps tables mono (none)
+
+== A7: the weighted chain, E_p[1/D] <D> = 1 at Gamma_p in {1.05 Gamma_th, 3, 10} ==
+[DIAG] A7 weighted mono05 Gamma 2.23125: N_acc 1000000, E_p[1/D] (I/J) = 1.00166 (15.6 s.e.), E_p[1/D] <D>_sampled = 1.00009 (0.8 s.e.), efficiency 0.7345, 1/min D = 0.3486
+[DIAG] A7 weighted mono05 Gamma 3.00000: N_acc 1000000, E_p[1/D] (I/J) = 1.00398 (13.1 s.e.), E_p[1/D] <D>_sampled = 1.00005 (0.2 s.e.), efficiency 0.4010, 1/min D = 0.4382
+[DIAG] A7 weighted mono05 Gamma 10.00000: N_acc 1000000, E_p[1/D] (I/J) = 0.99899 (1.3 s.e.), E_p[1/D] <D>_sampled = 0.99936 (0.8 s.e.), efficiency 0.0721, 1/min D = 0.4888
+[DIAG] A7 weighted mono03: Gamma_p = 3 outside the table [3.41695, 153.014], skipped
+[DIAG] A7 weighted mono03 Gamma 3.57875: N_acc 1000000, E_p[1/D] (I/J) = 1.00138 (13.5 s.e.), E_p[1/D] <D>_sampled = 0.99991 (0.9 s.e.), efficiency 0.7425, 1/min D = 0.1998
+[DIAG] A7 weighted mono03 Gamma 10.00000: N_acc 1000000, E_p[1/D] (I/J) = 0.99925 (1.3 s.e.), E_p[1/D] <D>_sampled = 0.99975 (0.4 s.e.), efficiency 0.1473, 1/min D = 0.2827
+[DIAG] A7 weighted powerlaw Gamma 1.09375: N_acc 1000000, E_p[1/D] (I/J) = 1.00313 (18.6 s.e.), E_p[1/D] <D>_sampled = 1.00034 (2.0 s.e.), efficiency 0.6214, 1/min D = 1.9755
+[DIAG] A7 weighted powerlaw Gamma 3.00000: N_acc 1000000, E_p[1/D] (I/J) = 0.99944 (0.9 s.e.), E_p[1/D] <D>_sampled = 0.99944 (0.9 s.e.), efficiency 0.1391, 1/min D = 1.6471
+[DIAG] A7 weighted powerlaw Gamma 10.00000: N_acc 1000000, E_p[1/D] (I/J) = 0.99915 (0.9 s.e.), E_p[1/D] <D>_sampled = 0.99946 (0.5 s.e.), efficiency 0.0470, 1/min D = 1.6399
+[DIAG] A7 weighted blackbody Gamma 1.05138: N_acc 1000000, E_p[1/D] (I/J) = 1.00332 (12.8 s.e.), E_p[1/D] <D>_sampled = 0.99976 (0.9 s.e.), efficiency 0.5259, 1/min D = 7.7743
+[DIAG] A7 weighted blackbody Gamma 3.00000: N_acc 1000000, E_p[1/D] (I/J) = 1.00097 (1.9 s.e.), E_p[1/D] <D>_sampled = 0.99946 (1.1 s.e.), efficiency 0.2218, 1/min D = 1.7762
+[DIAG] A7 weighted blackbody Gamma 10.00000: N_acc 1000000, E_p[1/D] (I/J) = 1.00064 (0.8 s.e.), E_p[1/D] <D>_sampled = 1.00066 (0.8 s.e.), efficiency 0.0790, 1/min D = 1.5050
+[DIAG] A7 weighted mono05_mu100: Gamma_p = 10 outside the table [2.12653, 5.05], skipped
+[DIAG] A7 weighted mono05_mu100 Gamma 2.23125: N_acc 1000000, E_p[1/D] (I/J) = 1.00165 (15.5 s.e.), E_p[1/D] <D>_sampled = 1.00008 (0.7 s.e.), efficiency 0.7341, 1/min D = 0.3475
+[DIAG] A7 weighted mono05_mu100 Gamma 3.00000: N_acc 1000000, E_p[1/D] (I/J) = 1.00412 (13.5 s.e.), E_p[1/D] <D>_sampled = 1.00019 (0.6 s.e.), efficiency 0.4009, 1/min D = 0.4416
+[FAIL] A7: E_p[1/D] (I/J) = 1 within 4 s.e., weighted chain, Gamma_p in {1.05 Gamma_th, 3, 10}, five baths: max |dev| / s.e. = 1.857468e+01 (tol 4.000e+00)
+[PASS] (impl) A7: E_p[1/D] <D>_sampled = 1 within 4 s.e. (<D> of the density the unweighted chain samples): max |dev| / s.e. = 2.020733e+00 (tol 4.000e+00)
+
+bh_chain summary: contract items 0 passed, 1 failed; implementation-chosen checks 1 passed, 0 failed; 76 s
+
+        Start  82: ARCHETYPES::bh_chain_a7
+ 81/111 Test  #82: ARCHETYPES::bh_chain_a7 .............   Passed  220.43 sec
+        Start  83: ARCHETYPES::bh_ka2008
+ 82/111 Test  #83: ARCHETYPES::bh_ka2008 ...............   Passed  104.51 sec
+        Start  84: ARCHETYPES::bh_sampler_fixtures
+ 83/111 Test  #84: ARCHETYPES::bh_sampler_fixtures .....   Passed   15.35 sec
+        Start  85: FRAMEWORK::parameters
+ 84/111 Test  #85: FRAMEWORK::parameters ...............   Passed    0.17 sec
+        Start  86: FRAMEWORK::particles
+ 85/111 Test  #86: FRAMEWORK::particles ................   Passed    0.13 sec
+        Start  87: FRAMEWORK::particles_sort
+ 86/111 Test  #87: FRAMEWORK::particles_sort ...........   Passed    0.14 sec
+        Start  88: FRAMEWORK::fields
+ 87/111 Test  #88: FRAMEWORK::fields ...................   Passed    0.12 sec
+        Start  89: FRAMEWORK::grid_mesh
+ 88/111 Test  #89: FRAMEWORK::grid_mesh ................   Passed    0.14 sec
+        Start  90: FRAMEWORK::comm-nompi
+ 89/111 Test  #90: FRAMEWORK::comm-nompi ...............   Passed    0.15 sec
+        Start  91: FRAMEWORK::checkpoint-extents
+ 90/111 Test  #91: FRAMEWORK::checkpoint-extents .......   Passed    0.17 sec
+        Start  92: FRAMEWORK::checkpoint-data
+ 91/111 Test  #92: FRAMEWORK::checkpoint-data ..........   Passed    0.17 sec
+        Start  93: FRAMEWORK::spectra
+ 92/111 Test  #93: FRAMEWORK::spectra ..................   Passed    0.18 sec
+        Start  94: OUTPUT::stats
+ 93/111 Test  #94: OUTPUT::stats .......................   Passed    0.12 sec
+        Start  95: OUTPUT::scalar-lifetime
+ 94/111 Test  #95: OUTPUT::scalar-lifetime .............   Passed    0.14 sec
+        Start  96: OUTPUT::fields
+ 95/111 Test  #96: OUTPUT::fields ......................   Passed    0.12 sec
+        Start  97: OUTPUT::writer-nompi
+ 96/111 Test  #97: OUTPUT::writer-nompi ................   Passed    0.15 sec
+        Start  98: HADRONIC::bh_proto_params
+ 97/111 Test  #98: HADRONIC::bh_proto_params ...........   Passed    0.19 sec
+        Start  99: HADRONIC::reject
+ 98/111 Test  #99: HADRONIC::reject ....................   Passed    0.94 sec
+        Start 100: HADRONIC::t7a_fields_B
+ 99/111 Test #100: HADRONIC::t7a_fields_B ..............   Passed    1.44 sec
+        Start 101: HADRONIC::t7b_fields_E
+100/111 Test #101: HADRONIC::t7b_fields_E ..............   Passed   14.03 sec
+        Start 102: HADRONIC::t5b_cross_build
+101/111 Test #102: HADRONIC::t5b_cross_build ...........***Skipped   0.00 sec
+        Start 103: HADRONIC::t8_bit_identity
+102/111 Test #103: HADRONIC::t8_bit_identity ...........***Skipped   0.00 sec
+        Start 104: HADRONIC::t12_capacity
+103/111 Test #104: HADRONIC::t12_capacity ..............   Passed    0.47 sec
+        Start 105: HADRONIC::t12b_estimate
+104/111 Test #105: HADRONIC::t12b_estimate .............   Passed    0.68 sec
+        Start 106: HADRONIC::sampler_overflow
+105/111 Test #106: HADRONIC::sampler_overflow ..........   Passed    3.52 sec
+        Start 107: HADRONIC::t13_gauss
+106/111 Test #107: HADRONIC::t13_gauss .................   Passed    0.69 sec
+        Start 108: HADRONIC::t10_poisson_determinism
+107/111 Test #108: HADRONIC::t10_poisson_determinism ...***Skipped   0.01 sec
+        Start 109: HADRONIC::texp_exported_debt
+108/111 Test #109: HADRONIC::texp_exported_debt ........   Passed    0.10 sec
+        Start 110: HADRONIC::r2_tiny_pair_weight
+109/111 Test #110: HADRONIC::r2_tiny_pair_weight .......   Passed    0.30 sec
+        Start 111: HADRONIC::t14b_placement
+110/111 Test #111: HADRONIC::t14b_placement ............   Passed    0.25 sec
+111/111 Test  #65: KERNELS::bh_sampler_a12 .............***Failed  1453.39 sec
+bh_sampler: real_t = double, Kokkos default execution space = OpenMP
+(diag) sampler tables: 113 eps' nodes, 256 x 256 cells, 5067 cumulative nodes, 30.09 MB on the device (budget 64 MB), built in 7.3 s
+---- A12 (decision (b)): mean cost, pair number and energy per unit paid energy at every rate-table node, N = 2e5, literal tolerances, the reference's Born-chain <D> ----
+PASS: A12: the reference's moments_mono05 nodes = this rate table's Gamma_p nodes (466 nodes, deterministic, 1e-12 relative) : 5.065948e-13 (tolerance 1.000e-12)
+(diag) A12: 93200000 pairs at 466 nodes in 1445 s; sampler attempts 1726551713 (18.5 per pair), overflow 0; reference moments_mono05 version "0.2.0", data_sha256 69b87f32ad4c52d68224da7e23dc557008976f1c17fd33ef1f565cbd47858f1d
+PASS: A12: packets per node (N = 2e5 fixed), the smallest node count : 2.000000e+05 (tolerance 2.000e+05)
+FAIL: A12: mean cost per pair vs the reference's Born-chain <D> (moments_mono05 Dmean), |cost/<D>_ref - 1| <= 1% at every node (max 1.162e-02 at Gamma_p 73.9018): failing nodes : 1.000000e+00 (tolerance 0.000e+00)
+(diag) A12 cost: failing nodes: Gamma_p 73.90185 (+1.162e-02, 2.7 s.e.);
+PASS: A12: pairs per unit paid energy vs 1/<D>_ref, |<1/D> <D>_ref - 1| <= 2% at every node (max 1.149e-02 at Gamma_p 73.9018): failing nodes : 0.000000e+00 (tolerance 0.000e+00)
+PASS: A12: pair energy per unit paid energy vs 1 + eps0/<D>_ref, <= 2% at every node (max 2.174e-04 at Gamma_p 4.4779): failing nodes : 0.000000e+00 (tolerance 0.000e+00)
+PASS: A12: pair payload Gamma_p = the parent's Gamma_p : 0.000000e+00 (tolerance 1.000e-06)
+(diag) A12: relative s.e. of the cost up to 3.40e-03; max |cost/<D>_ref - 1| / combined s.e. 3.5; max |<1/D> - 1/<D>_sampled| / s.e. 3.0 (the host chain's sampled density, SampledChainD); diagnostic vs the step-1 I/J (eq. 3.7 fit, expected 0.1 to 0.5% off the Born law, decision (a)): max |cost/(I/J) - 1| 1.095e-02
+(diag) A12: nodes expected beyond the literal tolerance from the sampling noise alone (sum over the nodes of erfc(tol / (sqrt(2) combined relative s.e.))): 0.41 for the 1% cost, 0.0001 for the 2% pair number
+(diag) A12 node Gamma_p 2.13001: cost 3.75866, <D>_ref 3.75897 +- 0.00009, I/J 3.75941, energy per paid energy 1.13303 vs 1.13302, pairs 200000
+(diag) A12 node Gamma_p 2.13922: cost 3.77557, <D>_ref 3.77597 +- 0.00015, I/J 3.77665, energy per paid energy 1.13243 vs 1.13242, pairs 200000
+(diag) A12 node Gamma_p 2.16573: cost 3.82423, <D>_ref 3.82314 +- 0.00025, I/J 3.82589, energy per paid energy 1.13075 vs 1.13078, pairs 200000
+(diag) A12 node Gamma_p 3.54687: cost 5.86500, <D>_ref 5.85725 +- 0.00228, I/J 5.87831, energy per paid energy 1.08525 vs 1.08536, pairs 200000
+(diag) A12 node Gamma_p 91.81022: cost 29.48521, <D>_ref 29.69896 +- 0.09659, I/J 29.75960, energy per paid energy 1.01696 vs 1.01684, pairs 200000
+bh_sampler summary: 5 passed, 1 failed
+
+
+97% tests passed, 3 tests failed out of 111
+
+Total Test time (real) = 1540.96 sec
+
+The following tests did not run:
+	102 - HADRONIC::t5b_cross_build (Skipped)
+	103 - HADRONIC::t8_bit_identity (Skipped)
+	108 - HADRONIC::t10_poisson_determinism (Skipped)
+
+The following tests FAILED:
+	  7 - GLOBAL::param_container (Failed)
+	 65 - KERNELS::bh_sampler_a12 (Failed)
+	 81 - ARCHETYPES::bh_chain_a7w (Failed)
+Errors while running CTest

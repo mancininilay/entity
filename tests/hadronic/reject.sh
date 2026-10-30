@@ -38,6 +38,7 @@ done
 # species-level, particles-level and startup (table-based) refusals: messages name the key or the quantity
 # (step 5: the a_max, ulp-energy and lambda_max refusals of the event mode need the startup tables)
 for pair in "reject_payloads:n_payloads_real" "reject_weights:use_weights" "reject_gca:GCA" \
+            "reject_poisson_weights:use_weights" "reject_ions_weight_flag:use_weights" \
             "reject_pair_charge:charge" "reject_pair_mass:mass 1" "reject_pair_slots:n_payloads_real" \
             "reject_tlatency:t_latency" "reject_two_species:exactly one hadronic ion species" \
             "reject_event_amax:exceeds a_max" "reject_event_ulp:ulp-energy" "reject_event_lambda:lambda_max"; do
