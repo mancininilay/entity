@@ -40,6 +40,7 @@
 #include "archetypes/hadronic/bh_physics.h"
 #include "archetypes/hadronic/bh_restframe.h"
 #include "archetypes/hadronic/bh_sampler_host.h"
+#include "archetypes/hadronic/bh_table_io.h"
 
 #include <algorithm>
 #include <chrono>
@@ -406,6 +407,11 @@ namespace {
     std::string wname;
     double      wgamma = 0.0;
     std::size_t total_nodes = 0, total_fail = 0;
+    // Born mode (step 6, frozen fixtures of 2026-10-30): the same draws against the frozen bhref 0.3.0
+    // tables' Dmean column (= I_Born/J of the release) at the nodes, which coincide with this table's
+    double      worst_se_frozen = 0.0, worst_node_shift = 0.0;
+    std::size_t total_fail_frozen = 0;
+    bool        frozen_ok = true;
     for (std::size_t b = 0; b < setups.size(); ++b) {
       const auto&         S = setups[b];
       std::vector<NodeMC> R(S.H.size());
@@ -417,7 +423,28 @@ namespace {
       });
       double wr = 0.0, wse = 0.0, wsc = 0.0, g_wr = 0.0;
       int    n_fail_rel = 0;
+      std::vector<double> Dfrozen;
+      if (born_mode()) {
+        const auto FT = read_table_file(std::string(BH_TEST_DATA_DIR) + "/bhref-0.3.0/" + S.cb.name + ".txt");
+        if (FT.gamma.size() != S.H.size() || FT.qk_source != "born-3D2000") {
+          frozen_ok = false;
+          diag("A7 %s: frozen 0.3.0 table has %zu nodes vs %zu here (qk_source %s): frozen comparison skipped", S.cb.name.c_str(),
+               FT.gamma.size(), S.H.size(), FT.qk_source.c_str());
+        } else {
+          Dfrozen = FT.Dmean;
+          for (std::size_t i = 0; i < S.H.size(); ++i) {
+            worst_node_shift = std::max(worst_node_shift, std::abs(FT.gamma[i] / S.H.gamma[i] - 1.0));
+          }
+        }
+      }
       for (std::size_t i = 0; i < S.H.size(); ++i) {
+        if (!Dfrozen.empty()) {
+          const double nsf = std::abs(R[i].mean - Dfrozen[i]) / R[i].se;
+          worst_se_frozen  = std::max(worst_se_frozen, nsf);
+          if (!(nsf <= 4.0)) {
+            ++total_fail_frozen;
+          }
+        }
         const double rel  = std::abs(R[i].mean / S.H.Dmean[i] - 1.0);
         const double nse  = std::abs(R[i].mean - S.H.Dmean[i]) / R[i].se;
         const double nsc  = std::abs(R[i].mean - Dchain[i]) / R[i].se;
@@ -460,6 +487,13 @@ namespace {
                 worst_se_exact, 4.0, "max |dev| / s.e.");
       diag("A7 [re-registered]: max |<D>_MC/(I_Born/J) - 1| over the nodes = %.3e (bath %s, Gamma %.5f)", worst_rel,
            wname.c_str(), wgamma);
+      check_true("A7 [frozen bhref 0.3.0 reference]: |<D>_MC - Dmean_frozen| <= 4 s.e. at every node of the five frozen tables "
+                 "(nodes identical to this table's to 1e-9)",
+                 frozen_ok && worst_node_shift <= 1.0e-9 && total_fail_frozen == 0,
+                 std::to_string(total_fail_frozen) + " of " + std::to_string(total_nodes) + " nodes fail; max node shift " +
+                   std::to_string(worst_node_shift) + (frozen_ok ? "" : "; a frozen table did not match"));
+      check_abs("A7 [frozen bhref 0.3.0 reference]: max |<D>_MC - Dmean_frozen| / s.e. over the nodes", worst_se_frozen, 4.0,
+                "max |dev| / s.e.");
     } else {
       check_true("A7: |<D>_MC - I/J| <= max(1%, 4 s.e.) at every rate-table node of the five baths (N = 1e6)",
                  total_fail == 0, std::to_string(total_fail) + " of " + std::to_string(total_nodes) + " nodes fail");

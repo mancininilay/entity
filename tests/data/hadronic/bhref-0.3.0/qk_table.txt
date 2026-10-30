@@ -2,7 +2,7 @@
 # format_revision: 1
 # producer: "bhref"
 # version: "0.3.0"
-# status: "candidate:awaiting-Claude-3-review"
+# status: "frozen:0.3.0"
 # qk_source: "born-3D2000"
 # source: "frozen bhref 0.2.0 direct quadrature, unchanged"
 # quadrature: {"energy_order": 160, "angle_order": 160}

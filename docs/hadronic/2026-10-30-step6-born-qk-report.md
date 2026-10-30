@@ -217,7 +217,80 @@ tolerance (1e-3 against the RK4 of the same table) untouched.
 ## 4. Deferred / waiting for the freeze
 
 The replacement of `bhref-0.3.0-candidate/` by the frozen `bhref-0.3.0/`
-and the re-run of A10b, A10c, item 8 and the A5 anchors against it.
+and the re-run of A10b, A10c, item 8 and the A5 anchors against it: done,
+section 6.
+
+## 6. Frozen fixtures (2026-10-30 afternoon)
+
+bhref 0.3.0 frozen (Codex 1) and verified (Claude 3): frozen `SHA256SUMS`
+sha256 9b2d709765bfd795664ba78d79581b2a02b375e712d2a03c87f152518a2eb815, 2293
+entries, data bytes and every data_sha256 of the candidate unchanged, status
+lines `frozen:0.3.0`. Import: `tests/data/hadronic/bhref-0.3.0-candidate/`
+removed (git rm); `tests/data/hadronic/bhref-0.3.0/` = the 12 files of the
+release's `FIXTURES.sha256` (tables/{mono05,mono03,powerlaw,blackbody,
+mono05_mu100}.txt, fixtures/{qk_table,qk_midpoints,moments_<5 baths>}.txt),
+`SHA256SUMS` = that list without the directory prefixes (shasum -c 12/12),
+README with the manifest hash. `ls -lOR | grep dataless` under
+`Entity Local Experiments/bhref/v0.3.0/`: 0 placeholders at import time; the
+manifest hash recomputed on disk before copying.
+
+Code:
+- `tests/archetypes/bh_fixtures.cpp`: the Born reference is `bhref-0.3.0`,
+  status prefix `frozen:0.3.0`.
+- `tests/archetypes/bh_born_qk.cpp`: fixture path `bhref-0.3.0/`; wording
+  "candidate" -> "frozen release"; new check of the header keys by name: the
+  frozen `moments_mono05.txt` carries `qk_source` as its 9th header line
+  (contract 1.5.1 (ii): the "after status" rule is for the 32-key rate
+  tables) and `parse_fixture_file` returns it by name; the frozen `mono05.txt`
+  with its `qk_source` line moved to the end of the header parses through
+  `parse_table_file` to the same qk_source, status, data_sha256, nodes and I.
+  Both readers were already key maps; the check makes the fact a test.
+- `tests/kernels/bh_sampler.cpp` (A12): in Born mode (`BH_QK_SOURCE=born`) the
+  reference is the frozen `bhref-0.3.0/moments_mono05.txt`, column
+  `D_Born_table` (the release's full-chain quadrature at the Born-grid nodes;
+  s.e. 0), header qk_source checked; the ions at the reference's nodes (=
+  this table's nodes to 1.03e-11 relative, verdict at 1e-9). Fit mode keeps
+  the 0.2.0 `Dmean`/`Dmean_se` reference. Lower-edge node: see below.
+- `tests/archetypes/bh_chain.cpp` (A7): in Born mode the same N = 1e6 draws are
+  also compared with the frozen tables' `Dmean` column at every node (nodes
+  identical to this table's to 1e-9, checked), 4 s.e., no floor.
+
+Lower-edge finding (test mechanics, single build): the frozen reference's
+first node is the table's lower edge (gamma_min = 2.1300043576). An ion
+placed exactly there stores u as a float; the recomputed Gamma_p falls below
+gamma_min (relative error ~6e-8 in u, ~7e-8 in Gamma_p) and the kernel
+emits one closing packet per launch: 200 packets at that node instead of
+2e5 (the test's own N guard failed; the three physics comparisons passed at
+every one of the 466 nodes, the edge node included: cost 3.75982 vs the
+reference 3.75907). In the double build the same node gives 200000 packets.
+The step-6 run used the 0.2.0 fit-grid nodes, 8.7e-4 above the Born edge,
+and never met the edge. Change: in Born mode the lower-edge ions are placed
+at Gamma_node (1 + 1e-6), where <D> differs by 2e-7 relative from the node
+value compared (negligible against the 1 % tolerance); diag line printed.
+
+Measured (single | double):
+- A10b 3.810e-12 (direct), 3.810e-12 (interpolant) | same; A10c 5.181e-10 |
+  same; A3 as written 2.50e-10 vs 1e-10 (registered failure kept; the
+  slope-corrected proposal row 1.67e-7); header-key checks pass.
+- item 8 vs the frozen tables (bh_fixtures, 85/85 both builds): file sha256
+  and headers (status frozen:0.3.0, qk_source born-3D2000) verified; node
+  placement max |dy| 4.57e-12 (mono05); |dJ/J| <= 8.2e-13; |dI/I| core and
+  tail 2.41e-10 (mono05), 2.47e-10 (mono03), 1.96e-10 (powerlaw), 1.87e-10
+  (blackbody), 2.05e-10 (mono05_mu100); A5-fit-budget 0.4862, 0.4862, 0.2020,
+  0.1919, 0.4012 %; the fit path vs 0.1.0 unchanged (4.3e-12).
+- A7 (bh_chain_a7_born, 256 s): re-registered vs the C++ I_Born/J 0 of 2169
+  nodes fail, max 3.631 s.e.; vs the frozen Dmean 0 of 2169 fail, max 3.631
+  s.e., node shift 0 | identical in double.
+- A12 (bh_sampler_a12_born): single, exact nodes (before the nudge): 0 / 0 / 0
+  failing nodes, max 0.634 % cost and 0.630 % number at Gamma_p 82.01,
+  1.57e-4 energy, 200 packets at the edge node (guard FAIL), 1397 s; double,
+  exact nodes: same maxima, 200000 packets everywhere, all pass. After the
+  nudge: single 0 / 0 / 0 failing nodes, max 0.634 % cost, 0.630 % number
+  at Gamma_p 82.01, 1.57e-4 energy, 200000 packets at every node, 1048 s;
+  double identical, 987 s.
+
+Branch head after this section: the commit carrying it (hash recorded in the
+Resources note `notes/2026-10-30-claude1-born-qk-report.md` section 6).
 
 ## 5. Branch head
 

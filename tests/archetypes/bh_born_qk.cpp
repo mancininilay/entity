@@ -2,13 +2,13 @@
  * @file tests/archetypes/bh_born_qk.cpp
  * @brief Step 6 (table contract revision 1.5): the q_k^Born provider.
  *   A10b  the C++ direct quadrature at the 449 nodes of the contract grid
- *         against the bhref 0.3.0 candidate's `qk_machinery` column
- *         (tests/data/hadronic/bhref-0.3.0-candidate/qk_table.txt): <= 1e-8
+ *         against the frozen bhref 0.3.0 `qk_machinery` column
+ *         (tests/data/hadronic/bhref-0.3.0/qk_table.txt): <= 1e-8
  *         relative at every node; the table's own node values (the dense grid
  *         contains the contract grid) likewise.
  *   A10c  the interpolant against the direct quadrature at the 448 midpoints
- *         of the contract grid (the candidate's `qk_midpoints.txt` eps_prime
- *         column): <= 1e-8 relative; the difference to the candidate's
+ *         of the contract grid (the release's `qk_midpoints.txt` eps_prime
+ *         column): <= 1e-8 relative; the difference to the release's
  *         `q_direct` there is a diagnostic.
  *   A3    exact limits: q_k(2 + 1e-9) = 2 within 1e-10 as registered in the
  *         brief (the Born law has q_k(2 + delta) = 2 - delta/4 + O(delta^2):
@@ -19,6 +19,11 @@
  *         step-1 values (the Born switch did not touch that path): spot values
  *         of Phi, phi, psi at the default quadrature against the same
  *         computation with a standalone copy of the step-1 integrand, 1e-15.
+ *   Header keys by name (contract 1.5.1 (ii), freeze 2026-10-30): the five
+ *         frozen moments fixtures carry `qk_source` at header position 9, the
+ *         rate tables after `status`; both readers take keys by name, so the
+ *         position is immaterial: checked on the frozen files and on a rate
+ *         table whose `qk_source` line is moved to the end of the header.
  *   Startup cost of the Born table printed (seconds).
  * Host-only, no Kokkos.
  */
@@ -26,6 +31,10 @@
 #include "archetypes/hadronic/bh_born_qk.h"
 #include "archetypes/hadronic/bh_physics.h"
 #include "archetypes/hadronic/bh_sampler_io.h"
+#include "archetypes/hadronic/bh_table_io.h"
+
+#include <fstream>
+#include <sstream>
 
 #include <algorithm>
 #include <chrono>
@@ -57,7 +66,7 @@ namespace {
   }
 
   FixtureContents load(const std::string& name) {
-    return read_fixture_file(std::string(BH_TEST_DATA_DIR) + "/bhref-0.3.0-candidate/" + name);
+    return read_fixture_file(std::string(BH_TEST_DATA_DIR) + "/bhref-0.3.0/" + name);
   }
 
   std::size_t col(const FixtureContents& F, const std::string& name) {
@@ -83,7 +92,7 @@ int main() {
                 BT.size(), born::NODES_PER_DECADE, born::DELTA_MIN, BT.nodes_k().back(), BT.build_seconds(), wall,
                 BT.threshold_slope());
 
-    // ---- A10b: direct quadrature at the candidate's 449 nodes vs its qk_machinery
+    // ---- A10b: direct quadrature at the frozen release's 449 nodes vs its qk_machinery
     {
       const auto   F  = load("qk_table.txt");
       const auto   ik = col(F, "eps_prime"), iq = col(F, "qk_machinery"), i37 = col(F, "qk_eq3_7");
@@ -108,16 +117,16 @@ int main() {
           worst_tab   = et;
           k_worst_tab = ks[i];
         }
-        // the fit column of the candidate against the C++ fit (consistency of the anchor)
+        // the fit column of the release against the C++ fit (consistency of the anchor)
         worst_fit = std::max(worst_fit, std::abs(q_k(ks[i]) / F.rows[i][i37] - 1.0));
       }
-      verdict(worst <= 1.0e-8, "A10b: direct q_k^Born at the 449 contract nodes vs the candidate's qk_machinery, max relative",
+      verdict(worst <= 1.0e-8, "A10b: direct q_k^Born at the 449 contract nodes vs the frozen 0.3.0 qk_machinery, max relative",
               worst, 1.0e-8);
       diag("A10b: worst node eps' = %.10g; %zu direct evaluations in %.3f s (%.2f ms each, threads)", k_worst, ks.size(),
            t_direct, 1e3 * t_direct / ks.size());
-      verdict(worst_tab <= 1.0e-8, "A10b: the table's interpolant at the 449 contract nodes vs the candidate, max relative",
+      verdict(worst_tab <= 1.0e-8, "A10b: the table's interpolant at the 449 contract nodes vs the frozen 0.3.0 table, max relative",
               worst_tab, 1.0e-8);
-      diag("A10b: worst interpolant node eps' = %.10g; the candidate's eq. 3.7 column vs the C++ fit: max %.3e", k_worst_tab,
+      diag("A10b: worst interpolant node eps' = %.10g; the release's eq. 3.7 column vs the C++ fit: max %.3e", k_worst_tab,
            worst_fit);
     }
 
@@ -142,8 +151,63 @@ int main() {
       }
       verdict(worst <= 1.0e-8, "A10c: interpolant vs direct quadrature at the 448 contract midpoints, max relative", worst,
               1.0e-8);
-      diag("A10c: worst midpoint eps' = %.10g; C++ direct vs the candidate's q_direct at the midpoints: max %.3e (diagnostic)",
+      diag("A10c: worst midpoint eps' = %.10g; C++ direct vs the release's q_direct at the midpoints: max %.3e (diagnostic)",
            k_worst, worst_cand);
+    }
+
+    // ---- header keys by name, any position (contract 1.5.1 (ii); frozen fixtures of 2026-10-30)
+    {
+      const std::string dir = std::string(BH_TEST_DATA_DIR) + "/bhref-0.3.0/";
+      // the moments fixture: qk_source is the 9th header line of the file (fact of the release) and the
+      // reader returns it by name
+      std::ifstream in(dir + "moments_mono05.txt");
+      std::string   line, text;
+      int           pos_qk = 0, n = 0;
+      while (std::getline(in, line)) {
+        text += line + "\n";
+        if (!line.empty() && line[0] == '#') {
+          ++n;
+          if (line.rfind("# qk_source:", 0) == 0) {
+            pos_qk = n;
+          }
+        }
+      }
+      const auto M = load("moments_mono05.txt");
+      verdict(pos_qk == 9 && M.header.count("qk_source") == 1 && M.header.at("qk_source") == "\"born-3D2000\"",
+              "frozen moments_mono05: qk_source at header position 9 (found " + std::to_string(pos_qk) +
+                "), read by name as born-3D2000; status " + (M.header.count("status") ? M.header.at("status") : "?"),
+              static_cast<double>(pos_qk), 9.0);
+      // a rate table with its qk_source line moved to the end of the header parses to the same result
+      std::ifstream tin(dir + "mono05.txt");
+      std::string   ttext, qk_line, moved;
+      while (std::getline(tin, line)) {
+        ttext += line + "\n";
+      }
+      {
+        std::istringstream ls(ttext);
+        std::string        header_rest, data;
+        bool               in_header = true;
+        while (std::getline(ls, line)) {
+          if (in_header && !line.empty() && line[0] == '#') {
+            if (line.rfind("# qk_source:", 0) == 0) {
+              qk_line = line;
+            } else {
+              header_rest += line + "\n";
+            }
+          } else {
+            in_header = false;
+            data += line + "\n";
+          }
+        }
+        moved = header_rest + qk_line + "\n" + data;
+      }
+      const auto A = parse_table_file(ttext, "mono05 as frozen");
+      const auto B = parse_table_file(moved, "mono05 with qk_source last");
+      verdict(!qk_line.empty() && A.qk_source == "born-3D2000" && B.qk_source == "born-3D2000" && A.status == "frozen:0.3.0" &&
+                B.status == A.status && B.data_sha256 == A.data_sha256 && B.gamma == A.gamma && B.I == A.I,
+              "frozen mono05: qk_source after status and moved to the last header line read identically (born-3D2000, "
+              "frozen:0.3.0, same data)",
+              1.0, 1.0);
     }
 
     // ---- A3: the exact limits

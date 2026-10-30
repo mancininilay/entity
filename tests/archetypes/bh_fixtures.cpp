@@ -4,7 +4,7 @@
  *        the frozen Python reference tables (`bhref` 0.1.0, fixtures under
  *        tests/data/hadronic/bhref-0.1.0/, the fit path), and, since step 6
  *        (contract 1.5), the Born path (`qk_source = born`) against the bhref
- *        0.3.0 candidate tables (tests/data/hadronic/bhref-0.3.0-candidate/,
+ *        0.3.0 frozen tables (tests/data/hadronic/bhref-0.3.0/, frozen 2026-10-30,
  *        replaced by the frozen release at the freeze). For each of the five files: the
  *        file hash against SHA256SUMS and the header's data_sha256 (verified by
  *        the reader), the bath rebuilt from the header, `at_gamma` evaluated at
@@ -209,7 +209,7 @@ namespace {
 int main() {
   const std::vector<Reference> refs = {
     { "bhref-0.1.0", "frozen:0.1.0", "chodorowski-3.7", arch::bh::QkSource::Fit },
-    { "bhref-0.3.0-candidate", "candidate", "born-3D2000", arch::bh::QkSource::Born },
+    { "bhref-0.3.0", "frozen:0.3.0", "born-3D2000", arch::bh::QkSource::Born },
   };
   try {
     for (const auto& ref : refs) {

@@ -794,14 +794,18 @@ namespace {
     }
   }
 
-  // the reference's Born-chain moments of a bath (bhref 0.2.0 frozen fixtures): gamma_p -> (Dmean, Dmean_se)
+  // the reference's Born-chain moments of a bath: fit mode, bhref 0.2.0 frozen fixtures (gamma_p -> Dmean,
+  // Dmean_se, the MC Born chain at the fit-grid nodes); Born mode (step 6, frozen fixtures of 2026-10-30),
+  // bhref 0.3.0 moments_<bath>.txt: D_Born_table (the release's full-chain quadrature at the Born-grid nodes,
+  // no sampling error) with qk_source at header position 9 (read by name)
   struct RefMoments {
     std::vector<double> gamma, D, se;
-    std::string         version, sha;
+    std::string         version, sha, dir;
   };
 
   RefMoments read_ref_moments(const std::string& bath) {
-    const std::string         path = std::string(BH_TEST_DATA_DIR) + "/bhref-0.2.0/moments_" + bath + ".txt";
+    const std::string         rel  = born_mode() ? "/bhref-0.3.0/moments_" : "/bhref-0.2.0/moments_";
+    const std::string         path = std::string(BH_TEST_DATA_DIR) + rel + bath + ".txt";
     const bh::FixtureContents F    = bh::read_fixture_file(path);
     auto col = [&](const std::string& n) {
       for (std::size_t c = 0; c < F.columns.size(); ++c) {
@@ -811,12 +815,25 @@ namespace {
       }
       throw std::runtime_error(path + ": no column " + n);
     };
-    const std::size_t cg = col("gamma_p"), cd = col("Dmean"), cs = col("Dmean_se");
-    RefMoments        R;
-    for (const auto& r : F.rows) {
-      R.gamma.push_back(r[cg]);
-      R.D.push_back(r[cd]);
-      R.se.push_back(r[cs]);
+    RefMoments R;
+    R.dir = born_mode() ? "bhref-0.3.0" : "bhref-0.2.0";
+    if (born_mode()) {
+      if (!F.header.count("qk_source") || F.header.at("qk_source") != "\"born-3D2000\"") {
+        throw std::runtime_error(path + ": header qk_source is not born-3D2000");
+      }
+      const std::size_t cg = col("gamma_p"), cd = col("D_Born_table");
+      for (const auto& r : F.rows) {
+        R.gamma.push_back(r[cg]);
+        R.D.push_back(r[cd]);
+        R.se.push_back(0.0); // a quadrature, not a sample
+      }
+    } else {
+      const std::size_t cg = col("gamma_p"), cd = col("Dmean"), cs = col("Dmean_se");
+      for (const auto& r : F.rows) {
+        R.gamma.push_back(r[cg]);
+        R.D.push_back(r[cd]);
+        R.se.push_back(r[cs]);
+      }
     }
     R.version = F.header.count("version") ? F.header.at("version") : "?";
     R.sha     = F.data_sha256;
@@ -831,24 +848,32 @@ namespace {
     const int   per_node = 2, launches = 100, pk = 1000;
     const auto  R        = read_ref_moments("mono05");
     // deterministic columns: the reference's nodes must be this table's nodes (1e-12 relative). Step 6: on
-    // the Born tables (BH_QK_SOURCE=born) the lower edge moves and the nodes shift by up to 1e-3 relative
-    // against the step-4 reference (bhref 0.2.0, fit-grid nodes); the ions are then placed at the
-    // reference's nodes (the kernel interpolates the Born table there), so that the comparison stays
-    // against the frozen Born-chain <D> of the reference, node by node
+    // the Born tables (BH_QK_SOURCE=born) the reference is the frozen bhref 0.3.0 moments file (Born-grid
+    // nodes, D_Born_table); the ions are placed at the reference's nodes (identical to this table's to the
+    // item-8 placement tolerance 1e-9 in y; checked), the kernel interpolating the Born table there
     double w_node = (R.gamma.size() == nn) ? 0.0 : 1.0;
     for (std::size_t i = 0; i < std::min(nn, R.gamma.size()); ++i) {
       w_node = std::max(w_node, std::abs(R.gamma[i] / T.host.gamma[i] - 1.0));
     }
     std::vector<double> gnode(nn);
     if (born_mode()) {
-      verdict(R.gamma.size() == nn, "A12 [Born tables]: the reference's moments_mono05 has this table's node count (" +
+      verdict(R.gamma.size() == nn, "A12 [Born tables]: the frozen 0.3.0 moments_mono05 has this table's node count (" +
                                        std::to_string(nn) + "); the ions sit at the reference's Gamma_p nodes",
               static_cast<double>(R.gamma.size()), static_cast<double>(nn));
-      diag("A12 [Born tables]: max relative shift of the Born table's nodes against the reference's: " + fmt("%.3e", w_node));
+      verdict(w_node <= 1.0e-9, "A12 [Born tables]: the frozen 0.3.0 reference's nodes = this Born table's nodes (relative)", w_node,
+              1.0e-9);
       if (R.gamma.size() != nn) {
         return;
       }
       gnode = R.gamma;
+      // the first node is the table's lower edge: an ion placed exactly there with a float-stored momentum
+      // rounds across the edge (relative error ~6e-8 in u) and emits one closing packet per launch instead
+      // of 1000 (frozen-fixture run of 2026-10-30, single build: 200 packets at Gamma_p = 2.13000); the
+      // lower-edge ions sit 1e-6 relative above the node, where <D> differs by 2e-7 relative (negligible
+      // against the 1 % tolerance); the comparison stays against the reference's node value
+      gnode[0] = R.gamma[0] * (1.0 + 1.0e-6);
+      diag("A12 [Born tables]: lower-edge node Gamma_p = " + fmt("%.10f", R.gamma[0]) + ": ions placed at " + fmt("%.10f", gnode[0]) +
+           " (1e-6 relative above the edge; the reference's node value compared)");
     } else {
       verdict(w_node <= 1.0e-12,
               "A12: the reference's moments_mono05 nodes = this rate table's Gamma_p nodes (" + std::to_string(nn) +

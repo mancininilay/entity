@@ -2,7 +2,7 @@
 # format_revision: 1
 # producer: "bhref"
 # version: "0.3.0"
-# status: "candidate:awaiting-Claude-3-review"
+# status: "frozen:0.3.0"
 # qk_source: "born-3D2000"
 # physical_mass_ratio: 1836.15
 # photon_field: {"type": "powerlaw", "eps_min": 0.1, "eps_max": 1.5, "index": 2.0}
