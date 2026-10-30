@@ -27,7 +27,7 @@ file layout and the numbers to compare against).
 | 1 | the q_k^Born provider, the `qk_source` switch (parser, options, startup report, exchange-file key), A10b, A10c, A3, the fit-path regression, the startup cost | done, `93a4c685` |
 | 2 | cumulatives and tables from q_k^Born; item 8 against the five candidate tables; J and eps_mean equality; threshold exponent and UR anchors re-run; A5-numerical and A5-fit-budget | done (this commit), all pass |
 | 3 | consumers: every step-2 to step-4 ctest entry with `qk_source = born`, single and double; A12 against the Born chain; A7 at 4 s.e. with no floor against I_Born/J | done (this commit): everything passes on the Born tables, A7 re-registered passes (max 3.6 s.e.), A12 passes |
-| 4 | report, checkpoint, changelog, fork-changes | pending |
+| 4 | report, checkpoint, changelog, fork-changes | done (`Resources/p2-hadronic/notes/2026-10-30-claude1-born-qk-report.md`) |
 
 ## 1. Environment (facts)
 
@@ -185,7 +185,7 @@ double with 5 threads alongside):
 | A7 re-registered (contract 1.5): abs(<D>_MC - I_Born/J) <= 4 s.e. at every node of the five baths, N = 1e6, no floor (2169 nodes) | 4 s.e. | 0 of 2169 nodes fail; max 3.63 s.e. (both builds; same seeds) | **pass** (the step-4 registered failure against the fitted I/J, 18.6 s.e., is removed by the Born tables: the sampler and the table now share their mean loss) |
 | A7 diagnostics: max abs(<D>_MC/(I_Born/J) - 1) | reported | 9.1e-3 at mono05 Gamma_p 84.9 (a 3.2-s.e. node: <D> is 30 there and 1e6 draws resolve 0.3 %) | |
 | A7 weighted re-run against I_Born/J: E_p[1/D] <D> = 1 at Gamma_p in {1.05 Gamma_th, 3, 10}, five baths | 4 s.e. | 2.14 s.e. (both) | pass |
-| A12 against the Born chain, literal tolerances (mean cost 1 %, number and energy per paid energy 2 %, N = 2e5 per node, 466 nodes, the ions at the step-4 reference's nodes, which the Born grid shifts by up to 8.7e-4) | 1 % / 2 % / 2 % | single: 0 / 0 / 0 failing nodes, max 0.918 % (cost, Gamma_p 73.9), 0.910 % (number, 73.9), 1.9e-4 (energy); 9.32e7 pairs in 1273 s; double: A12DOUBLE_PLACEHOLDER | pass (single); the fit-mode A12 of step 4 fails its 1 % at Gamma_p 76.53 with 1.285 % in this build (the registered row), the Born run's largest deviation is 2.9 combined s.e. |
+| A12 against the Born chain, literal tolerances (mean cost 1 %, number and energy per paid energy 2 %, N = 2e5 per node, 466 nodes, the ions at the step-4 reference's nodes, which the Born grid shifts by up to 8.7e-4) | 1 % / 2 % / 2 % | single: 0 / 0 / 0 failing nodes, max 0.918 % (cost, Gamma_p 73.9), 0.910 % (number, 73.9), 1.9e-4 (energy); 9.32e7 pairs in 1273 s; double: 0 / 0 / 0 failing nodes, max 0.951 % (cost), 0.942 % (number), 2.0e-4 (energy) | pass (single); the fit-mode A12 of step 4 fails its 1 % at Gamma_p 76.53 with 1.285 % in this build (the registered row), the Born run's largest deviation is 2.9 combined s.e. |
 | T5 on the Born tables: K(t) vs the exact-rate RK4 built on the same tables, Gamma_p 6 / 3 groups | 1e-3 | 9.3e-5 / 8.9e-5 single, 8.6e-5 / 9.2e-5 double | pass |
 | T5b, T5fine, T6, T9, tags, above, subcycling, overflow, huge, tables on the Born tables (`bh_loss_*_born`, 11 entries) | as registered | all pass in both builds | pass |
 | T10, poisson, none, energy, momentum, T12, T10b, T-exp, R1, R2, R3, C-MPI-1 on the Born tables (`bh_pairs_*_born`, 12 entries) | as registered | all pass in both builds | pass |
@@ -221,4 +221,4 @@ and the re-run of A10b, A10c, item 8 and the A5 anchors against it.
 
 ## 5. Branch head
 
-Stage 1: (hash at the commit).
+Stage 1 `93a4c685`, stage 2 `d6d0a62d`, stage 3 `3316d77c`, final (this commit): recorded in the Resources note.
