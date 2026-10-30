@@ -45,6 +45,9 @@ gen_test(custom_prtl_update)
 gen_test(injectors_payloads)
 # [fork:hadronic/P5] weighted reduced particle statistics against a direct double sum (T-P5)
 gen_test(reduced_stats_weights)
+# [fork:hadronic/F1] GlobalInjector_kernel writes the supplied input weights (Codex 2 audit 2026-10-29,
+# poisoned-destination reproducer: 1D/2D/3D, nonzero offset, filtered inputs, weighted and unit-weight)
+gen_test(injectors_global_weights)
 # Bethe-Heitler loss-only kernel (P2 step 2): one ctest entry per pre-registered
 # group so that each verdict is visible; the executable runs every group when
 # called without arguments
@@ -77,6 +80,22 @@ foreach(grp t10 poisson none energy momentum t12 t10b texp r1 r2 r3 cmpi1)
   add_test(NAME "KERNELS::bh_pairs_${grp}_born" COMMAND test-kernels-bh_pairs.xc ${grp})
   set_tests_properties("KERNELS::bh_pairs_${grp}_born" PROPERTIES ENVIRONMENT "BH_QK_SOURCE=born")
 endforeach()
+
+# Bethe-Heitler event (Monte Carlo) loss mode (P2 step 5): E1 (array closure,
+# ledger identity), E5 (mu_d independence at the RNG level, Serial policy with
+# one OpenMP thread), E8 (bound, capacity, cap); one entry per group
+add_executable(test-kernels-bh_event.xc bh_event.cpp)
+add_dependencies(test-kernels-bh_event.xc ntt_kernels ntt_metrics ntt_framework)
+target_link_libraries(test-kernels-bh_event.xc PRIVATE ntt_kernels ntt_metrics ntt_framework)
+target_compile_definitions(test-kernels-bh_event.xc PRIVATE BH_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data/hadronic")
+foreach(grp e1 e5 e8 e2e3 e2e3_g3 e6 e7 e4)
+  add_test(NAME "KERNELS::bh_event_${grp}" COMMAND test-kernels-bh_event.xc ${grp})
+endforeach()
+set_tests_properties("KERNELS::bh_event_e5" PROPERTIES ENVIRONMENT "OMP_NUM_THREADS=1")
+set_tests_properties("KERNELS::bh_event_e1" "KERNELS::bh_event_e5" "KERNELS::bh_event_e8" PROPERTIES TIMEOUT 3600)
+# stage 3 statistics (N = 1e5 ions each; BH_EVENT_N in the environment reduces N for a development loop)
+set_tests_properties("KERNELS::bh_event_e2e3" "KERNELS::bh_event_e2e3_g3" "KERNELS::bh_event_e6" "KERNELS::bh_event_e7"
+                     "KERNELS::bh_event_e4" PROPERTIES TIMEOUT 7200)
 
 if("${pgen}" STREQUAL "rec_mix")
   gen_test(rec_mix_segments)

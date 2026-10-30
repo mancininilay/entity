@@ -59,6 +59,7 @@
 
 #include "archetypes/energy_dist.h"
 #include "archetypes/hadronic/bh_born_qk.h"
+#include "archetypes/hadronic/bh_event_host.h"
 #include "archetypes/hadronic/bh_interpolate.h"
 #include "archetypes/hadronic/bh_physics.h"
 #include "archetypes/hadronic/bh_sampler_device.h"
@@ -92,6 +93,7 @@
 #include <map>
 #include <memory>
 #include <sstream>
+#include <cstdlib>
 #include <string>
 #include <vector>
 
@@ -369,6 +371,7 @@ namespace user {
       bool                         ions_started { false };
       unsigned long long           n_capacity_warnings { 0 };
       unsigned long long           n_max_events_warnings { 0 };
+      unsigned long long           n_bound_warnings { 0 };      // event mode: on_bound = warn messages
       kernel::hadronic::dd         exported_host {};  // sum w r over dead ions, host, before each launch
       kernel::hadronic::dd         discarded_host {}; // sum w delta over dead ions, host, before each launch
       unsigned long long           n_dead_host { 0 }; // dead ions seen with a non-zero debt or pending request
@@ -483,7 +486,7 @@ namespace user {
     // ledger row (collective, consistent), rank 0 prints the gathered codes and
     // every rank aborts. The local branches never enter a collective.
     struct FailRecord {
-      long long code { 0 };    // 0 none, 1 on_capacity, 2 on_max_events
+      long long code { 0 };    // 0 none, 1 on_capacity, 2 on_max_events, 3 on_bound (event mode)
       long long step { -1 };
       long long species { 0 };
       long long count { 0 };   // n_dropped (1) or capped ion-steps (2) of the failing launch
@@ -517,6 +520,7 @@ namespace user {
     spidx_t                                    pair_minus { 0 }, pair_plus { 0 };
     npart_t                                    pair_maxnpart_m { 0 }, pair_maxnpart_p { 0 };
     bool                                       gauss_started { false };
+    bool                                       event_restart_checked { false }; // step 5: payload scan done
     std::vector<double>                        gauss_R0;                 // Gauss residual per node at the first sample
     bool                                       gauss_first_birth_done { false };
     GaussSample                                gauss_prev {};             // production placement: previous post-step sample
@@ -547,10 +551,19 @@ namespace user {
       }
       start_step = params.template get<timestep_t>("checkpoint.start_step");
       use_weights = params.template get<bool>("particles.use_weights");
-      raise::ErrorIf(not use_weights,
-                     "bh_proto: particles.use_weights must be true (the ions "
-                     "are injected with explicit weights; required with source = budget)",
-                     HERE);
+      // weights flag rule (audit F3, 2026-10-29; spec III.7): the flag may be off
+      // only when every stored weight is 1 (not with the budget source, not with
+      // pair_weight != 1 in the poisson source, not with ions.weight != 1)
+      try {
+        bhproto::check_weights_flag(setup, use_weights);
+      } catch (const std::invalid_argument& e) {
+        raise::Error(e.what(), HERE);
+      }
+#ifdef BH_TESTING
+      std::printf("bh_proto: BH_TESTING build (entity_bh_testing.xc): test-only facilities compiled in; not a "
+                  "production binary\n");
+      std::fflush(stdout);
+#endif
       raise::ErrorIf(M::CoordType != Coord::Cartesian,
                      "bh_proto: Cartesian metric required",
                      HERE);
@@ -796,6 +809,9 @@ namespace user {
           raise::Error(std::string("bh_proto: table build failed: ") + e.what(), HERE);
         }
         print_summary();
+        if (setup.event_mode()) {
+          event_mode_report();
+        }
         if (setup.pairs_enabled()) {
           capacity_estimate();
         }
@@ -803,12 +819,13 @@ namespace user {
         std::printf("bh_proto: hadronic.enabled = false: no tables, no stage\n");
       }
       std::printf("bh_proto: real_t = %s, dt = %.17g, skindepth0 = %.17g, omegaB0 = %.17g, "
-                  "max_steps = %u, stage %s, source %s, spectrum %s, t_latency = %.17g (%s), "
-                  "L_min = %.17g, seed %s%llu, start_step %u\n",
+                  "max_steps = %u, stage %s, mode %s, source %s, spectrum %s, on_bound %s, "
+                  "t_latency = %.17g (%s), L_min = %.17g, seed %s%llu, start_step %u\n",
                   sizeof(real_t) == 4 ? "float" : "double", dt, skindepth0, omegaB0, (unsigned)max_steps,
                   stage_active ? "active" : (setup.enabled ? "not launched (tau0 = 0)"
                                                            : "disabled"),
-                  setup.source.c_str(), setup.spectrum.c_str(), t_latency,
+                  setup.mode.c_str(), setup.event_mode() ? "(none: event mode)" : setup.source.c_str(),
+                  setup.spectrum.c_str(), setup.on_bound.c_str(), t_latency,
                   setup.t_latency_auto ? "auto" : "given", L_min,
                   seed_set ? "simulation.seed = " : "default ", (unsigned long long)base_seed,
                   (unsigned)start_step);
@@ -887,9 +904,213 @@ namespace user {
     }
 
     /**
+     * @brief Event mode (step 5, contract 2026-10-29 section 3): the startup
+     *        report and the refusals, computed on the host tables of step 1.
+     *
+     *   a_max(Gamma) = f_max K / D_max,unweighted(Gamma) (bh_event_host.h):
+     *   printed at gamma_p_typical, at the envelope ends, at the table edges
+     *   and at every initial ion energy; the run is refused when pair_weight
+     *   exceeds a_max anywhere on the active band: gamma_p_typical, the
+     *   envelope sampled on a log grid, the initial energies (which are
+     *   certainly in the run), and every table node from the lower edge up
+     *   to the largest of these (the cooling path of every ion of the band;
+     *   no monotonicity of a_max in Gamma is assumed, bh_event_host.h)
+     *   [proposal of the contract]. Fact: with a <= a_max no outcome of the
+     *   unweighted law at that Gamma can violate the per-event bound a D <=
+     *   f_max K.
+     *   lambda_max = max of coeff J dt / a over the same active band
+     *   (contract section 3 says "over the table"; the table reaches the
+     *   static-source envelope, Gamma_p = 92 for eps0 = 0.5, where J is
+     *   17 times its value at Gamma_p = 6, so the table-wide maximum would
+     *   refuse every run whose ions never reach the envelope: deviation,
+     *   reported as an open question; the table-wide value is printed for
+     *   information): refused at or above 1 (outside the intended
+     *   frozen-hazard regime); above 0.1 the on_max_events policy applies
+     *   (error refuses, warn continues) [proposal].
+     *   ulp-energy ratio: min over the table of a <D> / (ulp(u) mu_d u /
+     *   gamma_d) for each hadronic ion species; refused below 16 [proposal]:
+     *   the per-event rounding residual must be a small fraction of the
+     *   removed energy.
+     *   Information only: the per-step mean loss over the bound, max over the
+     *   table of coeff I dt / (f_max K). The per-step condition of spec III.5
+     *   is enforced by the kernel at the current state of every ion on every
+     *   step (revision 1.1, F2: error flags, warn sub-cycles the hazard); the
+     *   startup numbers above are admission estimates on the declared band,
+     *   not an enforcement.
+     */
+    void event_mode_report() {
+      namespace ev = arch::bh::event;
+      const auto&  T       = tables_host;
+      const double coeff   = setup.tau0 / skindepth0;
+      const double a       = setup.pair_weight;
+      const double eps_max = bath->eps_max();
+      auto a_max_at = [&](double G) {
+        return ev::a_max(G, eps_max, setup.mu_r, setup.f_max);
+      };
+      auto show = [&](const char* label, double G) {
+        const double K  = setup.mu_r * (G - 1.0);
+        const double Dm = ev::dmax_unweighted(G, eps_max);
+        double       Dmean = 0.0, em = 0.0;
+        arch::bh::interpolate_outcome_host(T, G, Dmean, em);
+        const double J   = arch::bh::interpolate_rate_host(T, G);
+        const double lam = coeff * J * dt / a;
+        std::printf("bh_proto: event mode: %s: Gamma_p = %.10g, K = %.10g, D_max,unweighted = %.10g, "
+                    "a_max = f_max K / D_max = %.6g (a <D> / (f_max K) = %.4e with <D> = %.6g), "
+                    "lambda = R dt / a = %.4e\n",
+                    label, G, K, Dm, a_max_at(G), Dmean > 0.0 ? a * Dmean / (setup.f_max * K) : 0.0, Dmean,
+                    lam);
+      };
+      std::printf("bh_proto: event mode: pair_weight a = %.10g, f_max = %.10g, eps_max of the retained bath = "
+                  "%.10g, max_events_per_step = %d, on_bound = %s, on_max_events = %s\n",
+                  a, setup.f_max, eps_max, setup.max_events_per_step, setup.on_bound.c_str(),
+                  setup.on_max_events.c_str());
+      show("table lower edge", T.gamma_min);
+      show("table upper edge", T.gamma_max);
+      // the active band: every point is checked explicitly (a_max decreases
+      // with Gamma, so the upper end binds; the explicit check does not rely on it)
+      double      a_max_band = std::numeric_limits<double>::infinity();
+      double      gamma_bind = 0.0;
+      std::string where_bind;
+      double      lambda_band = 0.0, gamma_lambda_band = 0.0;
+      std::string where_lambda;
+      auto band = [&](const char* label, double G) {
+        const double am = a_max_at(G);
+        if (am < a_max_band) {
+          a_max_band = am;
+          gamma_bind = G;
+          where_bind = label;
+        }
+        const double lam = coeff * arch::bh::interpolate_rate_host(T, G) * dt / a;
+        if (lam > lambda_band) {
+          lambda_band       = lam;
+          gamma_lambda_band = G;
+          where_lambda      = label;
+        }
+      };
+      if (setup.gamma_p_typical > 0.0) {
+        show("gamma_p_typical", setup.gamma_p_typical);
+        band("gamma_p_typical", setup.gamma_p_typical);
+      }
+      if (setup.has_envelope) {
+        show("envelope gamma_min", setup.envelope_gamma_min);
+        show("envelope gamma_max", setup.envelope_gamma_max);
+        const int    nq = 64;
+        const double l0 = std::log(setup.envelope_gamma_min), l1 = std::log(setup.envelope_gamma_max);
+        for (int i = 0; i <= nq; ++i) {
+          band("envelope", std::exp(l0 + (l1 - l0) * static_cast<double>(i) / nq));
+        }
+      }
+      double band_top = setup.gamma_p_typical;
+      if (setup.has_envelope) {
+        band_top = std::max(band_top, setup.envelope_gamma_max);
+      }
+      for (std::size_t g = 0; g < setup.ions_K.size(); ++g) {
+        const double G = 1.0 + setup.ions_K[g] / setup.mu_r;
+        show(fmt::format("initial ions.K[%zu]", g).c_str(), G);
+        band("initial ions.K", G);
+        band_top = std::max(band_top, G);
+      }
+      // the cooling path: every table node below the top of the band
+      std::size_t n_path = 0;
+      for (std::size_t i = 0; i < T.size(); ++i) {
+        if (T.gamma[i] <= band_top) {
+          band("table node on the cooling path", T.gamma[i]);
+          ++n_path;
+        }
+      }
+      std::printf("bh_proto: event mode: a_max over the active band (top Gamma_p = %.10g, %zu table nodes on the "
+                  "cooling path) = %.6g at Gamma_p = %.10g (%s): %s\n",
+                  band_top, n_path, a_max_band, gamma_bind, where_bind.c_str(),
+                  a <= a_max_band ? "pair_weight admitted" : "pair_weight EXCEEDS a_max");
+      std::fflush(stdout);
+      // round 2 (2026-10-30, Codex 1 F1): the refusal can be skipped only in the test-only binary
+      // entity_bh_testing.xc (BH_TESTING defined by tests/hadronic/CMakeLists.txt for that target alone),
+      // and there only when the environment carries BH_TESTING_BYPASS_AMAX=1 (E8 (i): the per-event
+      // bound and the on_bound policy are reachable only past this refusal, which is exactly the
+      // bound's guarantee over the active band). The production binary compiles no such path.
+#ifdef BH_TESTING
+      const char* bypass_env  = std::getenv("BH_TESTING_BYPASS_AMAX");
+      const bool  bypass_amax = (bypass_env != nullptr) && (std::string(bypass_env) == "1");
+#else
+      constexpr bool bypass_amax = false;
+#endif
+      if (bypass_amax) {
+        std::printf("bh_proto: event mode: BH_TESTING build with BH_TESTING_BYPASS_AMAX=1: the refusal pair_weight > "
+                    "a_max is SKIPPED (test-only binary entity_bh_testing.xc; never a production path)\n");
+        std::fflush(stdout);
+      } else {
+        raise::ErrorIf(!(a <= a_max_band),
+                       fmt::format("bh_proto: setup.pair_weight = %.10g exceeds a_max = f_max K / D_max,unweighted = "
+                                   "%.6g at Gamma_p = %.10g (%s) on the active band: an event with a D > f_max K "
+                                   "is possible there (contract section 3; lower pair_weight or raise f_max)",
+                                   a, a_max_band, gamma_bind, where_bind.c_str()),
+                       HERE);
+      }
+      // per ion species: the ulp-energy ratio and lambda_max over the table
+      double lambda_max = 0.0, gamma_lambda = 0.0;
+      for (const auto sp : ion_species) {
+        const double mu_d = ion_mass.at(sp);
+        const auto   n    = ev::table_numbers<real_t>(T, coeff, dt, a, mu_d);
+        lambda_max        = n.lambda_max;
+        gamma_lambda      = n.gamma_at_lambda_max;
+        std::printf("bh_proto: event mode: species %d (mu_d = %.10g): min over the table of a <D> / ulp-energy = "
+                    "%.6g at Gamma_p = %.10g (<D> = %.6g, ulp-energy = ulp(u) mu_d u / gamma_d = %.4e, real_t %s); "
+                    "registered minimum %.0f: %s\n",
+                    (int)sp, mu_d, n.ulp_ratio_min, n.gamma_at_ulp_ratio_min, n.dmean_at_min, n.dK_ulp_at_min,
+                    sizeof(real_t) == 4 ? "float" : "double", ev::ULP_RATIO_MIN,
+                    n.ulp_ratio_min >= ev::ULP_RATIO_MIN ? "admitted" : "BELOW");
+        std::fflush(stdout);
+        raise::ErrorIf(!(n.ulp_ratio_min >= ev::ULP_RATIO_MIN),
+                       fmt::format("bh_proto: setup.pair_weight = %.10g: a <D> / ulp-energy = %.6g at Gamma_p = %.10g "
+                                   "(species %d, mu_d = %.10g) is below the registered minimum %.0f: the per-event "
+                                   "rounding of the stored momentum would not be small against the removed energy "
+                                   "(contract section 2 e)",
+                                   a, n.ulp_ratio_min, n.gamma_at_ulp_ratio_min, (int)sp, mu_d, ev::ULP_RATIO_MIN),
+                       HERE);
+      }
+      // the per-step mean loss over the bound (information)
+      double loss_ratio_max = 0.0, gamma_loss = 0.0;
+      for (std::size_t i = 0; i < T.size(); ++i) {
+        const double K = T.mu_r * (T.gamma[i] - 1.0);
+        if (K > 0.0) {
+          const double r = coeff * T.I[i] * dt / (setup.f_max * K);
+          if (r > loss_ratio_max) {
+            loss_ratio_max = r;
+            gamma_loss     = T.gamma[i];
+          }
+        }
+      }
+      std::printf("bh_proto: event mode: lambda_max = max over the active band of coeff J dt / a = %.6g at Gamma_p = "
+                  "%.10g (%s) (intended regime < 1; reported above %.1f under on_max_events = %s); over the whole "
+                  "table %.6g at Gamma_p = %.10g (information: the table reaches the envelope); max over the table "
+                  "of <D> R dt / (f_max K) = %.4e at Gamma_p = %.10g\n",
+                  lambda_band, gamma_lambda_band, where_lambda.c_str(), ev::LAMBDA_WARN, setup.on_max_events.c_str(),
+                  lambda_max, gamma_lambda, loss_ratio_max, gamma_loss);
+      std::fflush(stdout);
+      raise::ErrorIf(!(lambda_band < ev::LAMBDA_MAX),
+                     fmt::format("bh_proto: event mode: lambda_max = coeff J dt / a = %.6g at Gamma_p = %.10g (%s) is "
+                                 "not below 1: the frozen-hazard event count is outside its intended regime (reduce "
+                                 "tau0 or dt, or raise pair_weight) [setup.on_max_events = %s]",
+                                 lambda_band, gamma_lambda_band, where_lambda.c_str(), setup.on_max_events.c_str()),
+                     HERE);
+      if (lambda_band > ev::LAMBDA_WARN) {
+        const auto msg = fmt::format(
+          "bh_proto: event mode: lambda_max = %.6g at Gamma_p = %.10g (%s) exceeds %.1f: more than one interaction "
+          "per step is frequent and the start-of-step rate is a coarser approximation [setup.on_max_events = %s]",
+          lambda_band, gamma_lambda_band, where_lambda.c_str(), ev::LAMBDA_WARN, setup.on_max_events.c_str());
+        if (setup.on_max_events == "error") {
+          raise::Error(msg, HERE);
+        }
+        std::printf("%s (warning, continuing)\n", msg.c_str());
+        std::fflush(stdout);
+      }
+    }
+
+    /**
      * @brief Expected spawn rate per active ion per unit time at Gamma (III.8):
      *        budget: coeff I / r_th with r_th the actual minimum of its terms;
-     *        poisson: coeff J / pair_weight
+     *        poisson and event: coeff J / pair_weight (one macro-pair of weight
+     *        a per interaction, interactions at the rate R = coeff J)
      */
     auto spawn_rate_at(double Gp) const -> double {
       const auto&  T     = tables_host;
@@ -898,7 +1119,7 @@ namespace user {
       if (!(I > 0.0)) {
         return 0.0;
       }
-      if (setup.source == "poisson") {
+      if (setup.event_mode() || setup.source == "poisson") {
         return coeff * arch::bh::interpolate_rate_host(T, Gp) / setup.pair_weight;
       }
       const double K = setup.mu_r * (Gp - 1.0);
@@ -1205,6 +1426,53 @@ namespace user {
      */
     inline void HadronicStage(timestep_t step, simtime_t /*time*/, Domain<S, M>& domain) {
       const double t_after = static_cast<double>(step + 1) * dt; // t^{n+1}
+      if (stage_active && setup.event_mode() && !event_restart_checked) {
+        // contract section 3 (step 5): the event mode is stateless per ion and
+        // cannot pay a pending request or a debt carried by a continuous-mode
+        // checkpoint; the three hadronic slots of every alive ion must read 0.
+        // Executed once per rank (one domain per rank), reduced over the ranks
+        // before the refusal so that every rank aborts together.
+        event_restart_checked = true;
+        unsigned long long n_nonzero = 0;
+        for (auto& sp : domain.species) {
+          if (ion_mass.count(sp.index()) == 0 || sp.npart() == 0 || sp.npld_r() == 0) {
+            continue;
+          }
+          auto ht = Kokkos::create_mirror_view(sp.tag);
+          auto hp = Kokkos::create_mirror_view(sp.pld_r);
+          Kokkos::deep_copy(ht, sp.tag);
+          Kokkos::deep_copy(hp, sp.pld_r);
+          const unsigned short slots[3] = { static_cast<unsigned short>(setup.payload_pending),
+                                            static_cast<unsigned short>(setup.payload_debt),
+                                            static_cast<unsigned short>(setup.payload_debt_k0) };
+          for (npart_t p = 0; p < sp.npart(); ++p) {
+            if (ht(p) == ParticleTag::dead) {
+              continue;
+            }
+            for (const auto c : slots) {
+              if (c < sp.npld_r() && hp(p, c) != ZERO) {
+                ++n_nonzero;
+                break;
+              }
+            }
+          }
+        }
+#if defined(MPI_ENABLED)
+        MPI_Allreduce(MPI_IN_PLACE, &n_nonzero, 1, MPI_UNSIGNED_LONG_LONG, MPI_SUM, MPI_COMM_WORLD);
+#endif
+        std::printf("bh_proto: event mode: payload scan at step %u (start_step %u): %llu alive ions carry a non-zero "
+                    "hadronic payload (pending, debt or debt_k0): %s\n",
+                    (unsigned)step, (unsigned)start_step, n_nonzero,
+                    bhproto::event_restart_refused(setup.mode, n_nonzero) ? "REFUSED" : "clean");
+        std::fflush(stdout);
+        raise::ErrorIf(bhproto::event_restart_refused(setup.mode, n_nonzero),
+                       fmt::format("bh_proto: mode = event entered with %llu alive ions carrying a non-zero hadronic "
+                                   "payload (start_step %u): a continuous-mode checkpoint carries a pending request "
+                                   "or a debt that the event mode cannot pay (contract section 3); restart in "
+                                   "mode = continuous or start a fresh segment",
+                                   n_nonzero, (unsigned)start_step),
+                       HERE);
+      }
       if (stage_active) {
         kernel::hadronic::HadronicParams prm;
         prm.tau0_over_skindepth0 = setup.tau0 / skindepth0;
@@ -1234,6 +1502,9 @@ namespace user {
         prm.max_events_per_step = setup.max_events_per_step;
         prm.kick                = setup.test_kick;
         prm.max_sampler_attempts = setup.test_max_sampler_attempts;
+        prm.mode = setup.event_mode() ? static_cast<int>(kernel::hadronic::LossMode::Event)
+                                      : static_cast<int>(kernel::hadronic::LossMode::Continuous);
+        prm.bound_error = setup.on_bound == "error"; // revision 1.1 (F2): the current-state condition's policy
 
         for (auto& sp : domain.species) {
           if (ion_mass.count(sp.index()) == 0 || sp.npart() == 0) {
@@ -1338,10 +1609,14 @@ namespace user {
               const auto msg = fmt::format(
                 "bh_proto: on_capacity: pair capacity exhausted at step %u (species %d): "
                 "capacity = %u, tickets = %u, inserted = %u, n_dropped = %llu this step; e- npart %u / "
-                "maxnpart %u, e+ npart %u / maxnpart %u; the debt is kept [setup.on_capacity = %s]",
+                "maxnpart %u, e+ npart %u / maxnpart %u; %s [setup.on_capacity = %s]",
                 (unsigned)step, (int)sp.index(), (unsigned)targets.capacity, (unsigned)tickets,
                 (unsigned)n_injected, L.n_dropped, (unsigned)spm.npart(), (unsigned)spm.maxnpart(),
-                (unsigned)spp.npart(), (unsigned)spp.maxnpart(), setup.on_capacity.c_str());
+                (unsigned)spp.npart(), (unsigned)spp.maxnpart(),
+                setup.event_mode() ? "no debt in the event mode: the ion keeps its energy and the interactions drawn "
+                                     "for the failing ion-steps after the failure are not executed (n_unexecuted)"
+                                   : "the debt is kept",
+                setup.on_capacity.c_str());
               if (setup.on_capacity == "error") {
                 // C-MPI-2: no collective and no abort here (rank-local path); the
                 // failure is recorded and acted upon at the end of the stage
@@ -1378,6 +1653,47 @@ namespace user {
                 H.n_max_events_warnings += 1;
               }
             }
+            // step 5: the per-event bound of the event mode (contract section 2 b) and,
+            // since revision 1.1 (F2), the current-state condition R <D> dt <= f_max K:
+            // the kernel skipped and counted the events with a D > f_max K, flagged
+            // (error) or sub-cycled (warn) the ion-steps violating the condition, and
+            // counted in n_bounded the steps it could not sub-cycle within max_substeps;
+            // error aborts at the common point, warn continues (the realised rate is
+            // biased by the skipped fraction, which n_bounded / n_events measures)
+            if (setup.event_mode() && L.n_bound_steps > 0 && L.n_bound_flagged == 0) {
+              // warn, sub-cycled within max_substeps: information, not a failure
+              if (H.n_bound_warnings < 5) {
+                std::printf("bh_proto: on_bound: the current-state condition R <D> dt > f_max K held on %llu ion-steps "
+                            "at step %u (species %d): hazard sub-cycled (n_substeps %llu this step, max_substeps = %d) "
+                            "[setup.on_bound = %s] (information, continuing)\n",
+                            L.n_bound_steps, (unsigned)step, (int)sp.index(), L.n_substeps, setup.max_substeps,
+                            setup.on_bound.c_str());
+                std::fflush(stdout);
+              }
+              H.n_bound_warnings += 1;
+            }
+            if (setup.event_mode() && (L.n_bounded > 0 || L.n_bound_flagged > 0)) {
+              const auto msg = fmt::format(
+                "bh_proto: on_bound: at step %u (species %d): %llu events with pair_weight D > f_max K skipped (no pair, "
+                "no recoil; n_bounded) out of %llu drawn, and %llu ion-steps on which R <D> dt > f_max K at the current "
+                "state flagged (error) or beyond max_substeps = %d (warn) (n_bound_flagged; %llu such ion-steps in all "
+                "this step) [setup.on_bound = %s, pair_weight = %.10g, f_max = %.10g]",
+                (unsigned)step, (int)sp.index(), L.n_bounded, L.n_events, L.n_bound_flagged, setup.max_substeps,
+                L.n_bound_steps, setup.on_bound.c_str(), setup.pair_weight, setup.f_max);
+              if (setup.on_bound == "error") {
+                std::printf("%s (error: the run aborts after every rank wrote its ledger row)\n", msg.c_str());
+                std::fflush(stdout);
+                if (fail_local.code == 0) {
+                  fail_local = FailRecord { 3, static_cast<long long>(step), static_cast<long long>(sp.index()),
+                                            static_cast<long long>(L.n_bounded + L.n_bound_flagged) };
+                }
+              } else {
+                if (H.n_bound_warnings < 5) {
+                  std::printf("%s (warning, continuing)\n", msg.c_str());
+                }
+                H.n_bound_warnings += 1;
+              }
+            }
           } else {
             H.accumulate(L, step);
           }
@@ -1410,20 +1726,22 @@ namespace user {
                 const long long* rec = all.data() + 4 * r;
                 if (rec[0] != 0) {
                   std::printf("bh_proto: failure on rank %d: %s at step %lld (species %lld), count %lld\n", r,
-                              rec[0] == 1 ? "on_capacity (pair capacity exhausted; n_dropped)"
-                                          : "on_max_events (ion-steps exceeding max_events_per_step)",
+                              rec[0] == 1   ? "on_capacity (pair capacity exhausted; n_dropped)"
+                              : rec[0] == 2 ? "on_max_events (ion-steps exceeding max_events_per_step)"
+                                            : "on_bound (event mode: events with pair_weight D > f_max K, or ion-steps with R <D> dt > f_max K at the current state; n_bounded)",
                               rec[1], rec[2], rec[3]);
                 }
               }
               std::fflush(stdout);
             }
             raise::Error(fmt::format("bh_proto: %s on %s at step %u: every rank wrote its ledger row; the run aborts "
-                                     "[setup.on_capacity = %s, setup.on_max_events = %s]",
+                                     "[setup.on_capacity = %s, setup.on_max_events = %s, setup.on_bound = %s]",
                                      fail_local.code == 1   ? "on_capacity: pair capacity exhausted"
                                      : fail_local.code == 2 ? "on_max_events: max_events_per_step exceeded"
+                                     : fail_local.code == 3 ? "on_bound: an event with pair_weight D > f_max K or an ion-step with R <D> dt > f_max K at the current state"
                                                             : "a failure on another rank",
                                      fail_local.code != 0 ? "this rank" : "another rank", (unsigned)step,
-                                     setup.on_capacity.c_str(), setup.on_max_events.c_str()),
+                                     setup.on_capacity.c_str(), setup.on_max_events.c_str(), setup.on_bound.c_str()),
                          HERE);
           }
         }
@@ -1593,6 +1911,8 @@ namespace user {
         G.C.sum_wK = buf[2 * NDD + 9];
         unsigned long long* cnt[] = { &G.C.n_events,        &G.C.n_spawned,       &G.C.n_dropped,
                                       &G.C.n_substeps,      &G.C.n_bounded,       &G.C.n_capped_loss,
+                                      &G.C.n_bound_steps,   &G.C.n_bound_flagged, // revision 1.1 (F2)
+                                      &G.C.n_attempted,     &G.C.n_unexecuted,    // revision 1.1 (F3)
                                       &G.C.n_closing,       &G.C.n_closing_at_rest, &G.C.n_capped,
                                       &G.C.n_capped_events, &G.C.n_above_table,   &G.C.n_latency,
                                       &G.C.n_resolution,    &G.C.n_processed,     &G.C.n_alive,
@@ -1686,8 +2006,10 @@ namespace user {
         out << "# bh_proto ledger, species " << (int)sp.index() << " (" << sp.label()
             << "), mu_d = " << std::setprecision(17) << ion_mass.at(sp.index())
             << ", mu_r = " << setup.mu_r << ", tau0 = " << setup.tau0
-            << ", skindepth0 = " << skindepth0 << ", dt = " << dt << ", source = " << setup.source
-            << ", spectrum = " << setup.spectrum << ", r_th_factor = " << setup.r_th_factor
+            << ", skindepth0 = " << skindepth0 << ", dt = " << dt << ", mode = " << setup.mode
+            << ", source = " << (setup.event_mode() ? std::string("none (event mode)") : setup.source)
+            << ", spectrum = " << setup.spectrum << ", on_bound = " << setup.on_bound
+            << ", r_th_factor = " << setup.r_th_factor
             << ", f_r = " << setup.f_r << ", t_latency = " << t_latency
             << ", pair_weight = " << setup.pair_weight
             << ", max_events_per_step = " << setup.max_events_per_step << "\n";
@@ -1711,7 +2033,13 @@ namespace user {
                "ions of w K in double from the stored u] | B_budget [cumulative single-precision "
                "rounding budget of the transfers] | npart_minus | npart_plus [snapshots] | "
                "n_sampler_attempts | n_sampler_overflow [1, cumulative: restframe trials of the chains and "
-               "packets whose rejection loop hit the bound; reduced over ranks; round 2]\n";
+               "packets whose rejection loop hit the bound; reduced over ranks; round 2; written as 0 in every "
+               "other mode] | n_bound_steps | n_bound_flagged | n_attempted | n_unexecuted [1, cumulative, event "
+               "mode (revision 1.1): ion-steps with R <D> dt > f_max K at the current state; those flagged under "
+               "on_bound = error or run with max_substeps chunks under warn; spawn attempts; drawn interactions "
+               "not attempted after a capacity failure or the lower edge; 0 in the continuous mode] | n_alive "
+               "[snapshot: alive and send-tagged ions after the step, reduced over ranks] | n_resolution [1, "
+               "cumulative]\n";
         H.file_started = true;
       }
       const auto& C = G.C;
@@ -1728,7 +2056,9 @@ namespace user {
           << C.n_capped_events << " " << C.n_above_table << " " << C.n_latency << " "
           << C.n_processed << " " << C.n_applied << " " << C.n_rng << " " << C.n_k0_trigger << " "
           << C.n_closing_at_rest << " " << swk << " " << C.B_budget.value() << " " << npm << " " << npp
-          << " " << C.n_sampler_attempts << " " << C.n_sampler_overflow << "\n";
+          << " " << C.n_sampler_attempts << " " << C.n_sampler_overflow << " " << C.n_bound_steps << " "
+          << C.n_bound_flagged << " " << C.n_attempted << " " << C.n_unexecuted << " " << C.n_alive << " "
+          << C.n_resolution << "\n";
     }
 
     npart_t pair_npart_minus { 0 }, pair_npart_plus { 0 };
@@ -2054,7 +2384,9 @@ namespace user {
                     "n_events %llu n_spawned %llu n_dropped %llu n_substeps %llu n_bounded %llu "
                     "n_capped_loss %llu n_closing %llu n_capped %llu n_capped_events %llu "
                     "n_above_table %llu n_latency %llu n_processed %llu n_applied %llu n_rng %llu "
-                    "n_k0_trigger %llu n_closing_at_rest %llu sum_wK %.17g B_budget %.17g npart_minus %u npart_plus %u "
+                    "n_k0_trigger %llu n_closing_at_rest %llu n_resolution %llu n_alive %llu n_bound_steps %llu "
+                    "n_bound_flagged %llu n_attempted %llu n_unexecuted %llu n_sampler_attempts %llu "
+                    "n_sampler_overflow %llu sum_wK %.17g B_budget %.17g npart_minus %u npart_plus %u "
                     "estimate_bare %.10g estimate_sized %.10g\n",
                     (int)sp.index(), C.E_drag.value(), C.E_pairs.value(), C.E_absorbed.value(),
                     C.E_exported.value(), C.E_round.value(), C.E_stochastic.value(), C.E_lost_nopairs.value(),
@@ -2064,14 +2396,15 @@ namespace user {
                     C.P_absorbed[1], C.P_absorbed[2], C.n_events, C.n_spawned, C.n_dropped,
                     C.n_substeps, C.n_bounded, C.n_capped_loss, C.n_closing, C.n_capped,
                     C.n_capped_events, C.n_above_table, C.n_latency, C.n_processed, C.n_applied,
-                    C.n_rng, C.n_k0_trigger, C.n_closing_at_rest, C.sum_wK, C.B_budget.value(), (unsigned)npm_g,
-                    (unsigned)npp_g, estimate_bare, estimate_sized);
-        if (setup.spectrum == "restframe") {
-          std::printf("bh_proto: restframe sampler species %d : n_sampler_attempts %llu n_sampler_overflow %llu "
-                      "attempts per pair %.3f\n",
-                      (int)sp.index(), C.n_sampler_attempts, C.n_sampler_overflow,
-                      C.n_spawned > 0 ? static_cast<double>(C.n_sampler_attempts) / C.n_spawned : 0.0);
-        }
+                    C.n_rng, C.n_k0_trigger, C.n_closing_at_rest, C.n_resolution, C.n_alive, C.n_bound_steps,
+                    C.n_bound_flagged, C.n_attempted, C.n_unexecuted, C.n_sampler_attempts, C.n_sampler_overflow,
+                    C.sum_wK, C.B_budget.value(), (unsigned)npm_g, (unsigned)npp_g, estimate_bare, estimate_sized);
+        // the sampler line in every mode (revision 1.1, F4: explicit zeros where the sampler is not used)
+        std::printf("bh_proto: restframe sampler species %d : n_sampler_attempts %llu n_sampler_overflow %llu "
+                    "attempts per pair %.3f (spectrum %s%s)\n",
+                    (int)sp.index(), C.n_sampler_attempts, C.n_sampler_overflow,
+                    C.n_spawned > 0 ? static_cast<double>(C.n_sampler_attempts) / C.n_spawned : 0.0,
+                    setup.spectrum.c_str(), setup.spectrum == "restframe" ? "" : ": sampler not used, counters 0");
         if (any_absorbing) {
           std::printf("bh_proto: exported species %d : E_exported_host %.17g E_exported %.17g difference %.6e "
                       "pending_discarded_host %.17g pending_discarded %.17g difference %.6e n_dead_with_payload %llu "

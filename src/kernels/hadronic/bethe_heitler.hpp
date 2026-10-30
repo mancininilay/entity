@@ -60,6 +60,30 @@
  *   K0 (spec v3.3): set when r goes from 0 to positive, kept until r returns
  *   to 0; the K0 trigger pays the whole debt and has precedence over the
  *   regular trigger.
+ *   mode = event (step 5, contract 2026-10-29 section 2): no steps 1 to 4,
+ *   no pending request, no debt (the three payload slots are neither read
+ *   nor written). Per ion and step: R = coeff J(Gamma_p) g; if R dt = 0
+ *   return without RNG use; n ~ Poisson(R dt / a) from poisson_sample
+ *   (compared with max_events_per_step before any integer conversion;
+ *   clamped and counted in n_capped_events above it); for each event at the
+ *   current state: the unweighted outcome (restframe: sample_restframe with
+ *   weighted = false, overflow falls back to the mean-energy law and counts
+ *   n_sampler_overflow; delta / threshold: outcome_law), the per-event bound
+ *   a D <= f_max K_cur (violated: the event is skipped, no spawn, no recoil,
+ *   n_bounded += 1; the host applies on_bound), the spawn with w_pair = a w
+ *   (capacity failure: no recoil, n_dropped, the loop ends), the exact recoil
+ *   in double K_new = K_cur - a D, u_new along the fixed u-hat stored as
+ *   real_t, dK_applied = K_cur - K(u_new,stored) from the stored values,
+ *   E_drag += w dK_applied, P_drag += w mu_d (u_old - u_new); E_round +=
+ *   w dK_applied - w_pair D (the ion side: realised minus intended; the
+ *   contract's section 2 e writes the first term with the opposite sign,
+ *   which does not close the identity: fact by algebra, tested by E1) plus
+ *   the pair term of spawn_pair_vec, so that E_drag = (E_pairs - E_absorbed)
+ *   + E_round holds to the accumulator's round-off with E_stochastic =
+ *   E_lost_nopairs = E_exported = debt = pending = 0. An ion that cools
+ *   below the table's lower edge within the step has no further
+ *   interaction in that step. n_events counts the drawn interactions
+ *   (spawned + dropped + bounded).
  *
  * The functor is used with `Kokkos::parallel_reduce` and the `LossLedger`
  * value type (a struct of double-double accumulators, doubles and 64-bit
@@ -108,6 +132,18 @@ namespace kernel::hadronic {
     None    = 0,
     Budget  = 1,
     Poisson = 2
+  };
+
+  /**
+   * @brief The loss operator (spec III.5, step 5): the continuous drag of
+   *        II.2 steps 1 to 4, or the event (Monte Carlo) mode of the contract
+   *        2026-10-29: n ~ Poisson(R dt / a) interactions per step, each with
+   *        an unweighted outcome, one macro-pair of weight a w and the exact
+   *        recoil a D; stateless per ion (the three payload slots stay zero)
+   */
+  enum class LossMode : int {
+    Continuous = 0,
+    Event      = 1
   };
 
   enum class PairSpectrum : int {
@@ -210,6 +246,11 @@ namespace kernel::hadronic {
     double pending_floor_ulp { 100.0 };
     double f_max { 0.01 };
     int    max_substeps { 64 };
+    // event mode (revision 1.1, F2): the policy of the current-state condition
+    // R <D> dt <= f_max K: true = on_bound = error (the violating ion-step is
+    // flagged and the ion left untouched), false = warn (sub-cycled hazard).
+    // The host sets it from setup.on_bound; the default is the warn behaviour.
+    bool   bound_error { false };
     // payload indices into pld_r of the ion species
     unsigned short pld_pending { 0 };
     unsigned short pld_debt { 1 };
@@ -220,6 +261,8 @@ namespace kernel::hadronic {
     // "design off" (T5b only): the table dK is applied to u every step with no
     // pending accumulation (the remainder of each application is discarded)
     bool unsafe_application { false };
+    // ---- loss operator (step 5) ---------------------------------------------
+    int mode { static_cast<int>(LossMode::Continuous) };
     // ---- pair creation (step 3) ---------------------------------------------
     int    source { static_cast<int>(PairSource::None) };
     int    spectrum { static_cast<int>(PairSpectrum::Delta) };
@@ -285,11 +328,22 @@ namespace kernel::hadronic {
     // creations of w_pair E_pair 2^-23 plus sum over loss applications of w K 2^-22
     dd B_budget;
     // counters
-    unsigned long long n_events { 0 };        // spawn attempts (packets or poisson events)
+    unsigned long long n_events { 0 };        // continuous: spawn attempts (packets or poisson events); event mode:
+                                              //   drawn interactions, the Poisson counts summed after the cap
+                                              //   (revision 1.1, F3): n_events = n_spawned + n_bounded + n_dropped + n_unexecuted
+    unsigned long long n_attempted { 0 };     // event mode: spawn attempts (= n_spawned + n_dropped); 0 in continuous mode
+    unsigned long long n_unexecuted { 0 };    // event mode: drawn interactions not attempted after a capacity failure or
+                                              //   the ion cooling below the lower edge within the step; 0 otherwise
     unsigned long long n_spawned { 0 };       // successful insertions (pairs)
     unsigned long long n_dropped { 0 };       // insertions refused for capacity
     unsigned long long n_substeps { 0 };
-    unsigned long long n_bounded { 0 };
+    unsigned long long n_bounded { 0 };       // continuous: substep exhaustion; event: events skipped by a D > f_max K
+    unsigned long long n_bound_steps { 0 };   // event: ion-steps on which R <D> dt > f_max K at the current state
+                                              //   (both policies; sub-cycled under warn) (revision 1.1, F2)
+    unsigned long long n_bound_flagged { 0 }; // event: those ion-steps flagged under on_bound = error (no draw, the host
+                                              //   aborts) or run with max_substeps chunks under warn because m would
+                                              //   exceed it; the on_bound policy acts on n_bounded + n_bound_flagged
+                                              //   (kept apart from n_bounded so that the counter identity stays exact)
     unsigned long long n_capped_loss { 0 };   // steps on which the f_max K cap changed the applied loss
     unsigned long long n_closing { 0 };       // closing packets (below the table edge)
     unsigned long long n_closing_at_rest { 0 }; // closing packets of ions at u = 0 (emitted along +x)
@@ -329,10 +383,14 @@ namespace kernel::hadronic {
       sum_wK              += o.sum_wK;
       B_budget            += o.B_budget;
       n_events            += o.n_events;
+      n_attempted         += o.n_attempted;
+      n_unexecuted        += o.n_unexecuted;
       n_spawned           += o.n_spawned;
       n_dropped           += o.n_dropped;
       n_substeps          += o.n_substeps;
       n_bounded           += o.n_bounded;
+      n_bound_steps       += o.n_bound_steps;
+      n_bound_flagged     += o.n_bound_flagged;
       n_capped_loss       += o.n_capped_loss;
       n_closing           += o.n_closing;
       n_closing_at_rest   += o.n_closing_at_rest;
@@ -723,7 +781,10 @@ namespace kernel::hadronic {
                                double        eps,
                                short         tag,
                                const double* kick_dir = nullptr) const -> bool {
-      L.n_events += 1;
+      if (prm.mode != static_cast<int>(LossMode::Event)) {
+        L.n_events += 1; // continuous modes: n_events counts spawn attempts; the event mode counts drawn
+                         // interactions in event_branch and the attempts in n_attempted (revision 1.1, F3)
+      }
       if (!pairs.valid) {
         L.n_dropped += 1;
         return false;
@@ -785,6 +846,171 @@ namespace kernel::hadronic {
       return true;
     }
 
+    /**
+     * @brief The event (Monte Carlo) loss mode for one alive or send-tagged
+     *        ion (contract 2026-10-29 section 2, revision 1.1 of 2026-10-30:
+     *        current-state enforcement and sub-cycled hazard; file header). Gamma_p
+     *        arrives clamped to the table's upper edge; u > 0 is the stored
+     *        momentum norm, K the kinetic energy from the stored components.
+     */
+    Inline void event_branch(prtlidx_t   p,
+                             LossLedger& L,
+                             short       tag,
+                             double      w,
+                             double      u1,
+                             double      u2,
+                             double      u3,
+                             double      u,
+                             double      K,
+                             double      Gp) const {
+      L.n_alive += 1;
+      if (Gp < tables.gamma_min || !(u > 0.0)) {
+        L.sum_wK += w * K; // below the lower edge (or at rest): no interaction, no RNG
+        return;
+      }
+      const double g_x = 1.0; // uniform profile (D5)
+      const double R   = prm.tau0_over_skindepth0 * g_x * tables.J(Gp);
+      const double Rdt = R * prm.dt;
+      L.n_processed += 1;
+      if (Rdt == 0.0) {
+        L.sum_wK += w * K; // R dt exactly 0: no RNG use (contract step 1)
+        return;
+      }
+      const double a = prm.pair_weight;
+      // Current-state enforcement (contract revision 1.1, Codex 1 F2): the per-step
+      // expected-loss condition R <D> dt <= f_max K of spec III.5, with R <D> =
+      // coeff g I at the ion's current Gamma_p. Violated: under on_bound = error
+      // the ion-step is flagged (n_bound_steps, n_bound_flagged; the host aborts
+      // at the common point) and the ion is left untouched; under warn the hazard
+      // is sub-cycled in m = ceil(R <D> dt / (f_max K)) chunks of dt / m, each
+      // drawing its own Poisson count with R re-evaluated at the state left by
+      // the previous chunk (n_substeps += m); m above max_substeps runs
+      // max_substeps chunks and counts the step in n_bound_flagged (the policy
+      // acts on n_bounded + n_bound_flagged; revision 1.1 says "n_bounded", kept
+      // apart here so that n_events = n_spawned + n_bounded + n_dropped +
+      // n_unexecuted stays an exact identity over events).
+      // The startup admission (a_max, lambda_max over the declared band) is an
+      // estimate that refuses mis-sized inputs; this check is the enforcement.
+      const double ratio = prm.tau0_over_skindepth0 * g_x * tables.I(Gp) * prm.dt / (prm.f_max * K);
+      int          m     = 1;
+      if (!(ratio <= 1.0)) { // also a non-finite ratio
+        L.n_bound_steps += 1;
+        if (prm.bound_error) {
+          L.n_bound_flagged += 1;
+          L.sum_wK += w * K;
+          return;
+        }
+        const double m_req = math::ceil(ratio);
+        if (!(m_req <= static_cast<double>(prm.max_substeps))) {
+          m = prm.max_substeps;
+          L.n_bound_flagged += 1;
+        } else {
+          m = static_cast<int>(m_req);
+        }
+        L.n_substeps += static_cast<unsigned long long>(m);
+      }
+      const double dt_c = prm.dt / static_cast<double>(m);
+      auto         gen  = pool.get_state();
+      // the fixed direction u-hat and the current state
+      const double c1 = u1 / u, c2 = u2 / u, c3 = u3 / u;
+      double       n1d = u1, n2d = u2, n3d = u3; // current stored components (double)
+      double       K_cur  = K;
+      double       Gp_cur = Gp;
+      const double w_pair = a * w;
+      const bool   rf     = restframe();
+      bool         stop   = false; // capacity failure or the lower edge: no further chunk
+      for (int c = 0; c < m && !stop; ++c) {
+        if (Gp_cur < tables.gamma_min) {
+          break; // cooled below the lower edge: no further interaction
+        }
+        // the frozen hazard of this chunk at the current state (m = 1: the whole step,
+        // lambda = R dt / a exactly as before revision 1.1)
+        const double R_c    = prm.tau0_over_skindepth0 * g_x * tables.J(Gp_cur);
+        const double lambda = R_c * dt_c / a; // double; non-finite or huge -> exceeds the cap
+        int          n      = poisson_sample(gen, lambda, prm.max_events_per_step, L.n_rng);
+        if (n > prm.max_events_per_step) {
+          n = prm.max_events_per_step; // the draw exceeded the cap: clamped and counted (on_max_events)
+          L.n_capped_events += 1;
+        }
+        L.n_events += static_cast<unsigned long long>(n); // drawn interactions (revision 1.1, F3)
+        for (int e = 0; e < n; ++e) {
+          if (Gp_cur < tables.gamma_min) {
+            L.n_unexecuted += static_cast<unsigned long long>(n - e);
+            stop = true;
+            break; // cooled below the lower edge within the chunk: no further interaction
+          }
+          // a. the unweighted outcome at the current state
+          double Dv, eps, g_m, g_p;
+          outcome_law(Gp_cur, Dv, eps, g_m, g_p);
+          double vm[3], vp[3], kph[3], Ds = Dv, eps_s = eps;
+          bool   have_vec = false;
+          if (rf) {
+            if (sample_restframe(Gp_cur, false, gen, L, c1, c2, c3, vm, vp, kph, Ds, eps_s)) {
+              have_vec = true;
+            } else {
+              L.n_sampler_overflow += 1; // fall back to the mean-energy law for this event
+              Ds    = Dv;
+              eps_s = eps;
+            }
+          }
+          // b. the per-event bound: the event is skipped (no spawn, no recoil) and counted
+          if (a * Ds > prm.f_max * K_cur) {
+            L.n_bounded += 1;
+            continue;
+          }
+          // c. the pair, weight a w; the intended transfer w_pair D in dd
+          dd intended;
+          intended.add_prod(w_pair, Ds);
+          L.n_attempted += 1;
+          const bool spawned = have_vec
+                                 ? spawn_pair_vec(p, L, w_pair, intended, vm, vp, kph, Gp_cur, eps_s, tag)
+                                 : spawn_pair(p, L, w_pair, intended, c1, c2, c3, Gp_cur, eps, g_m, g_p, tag);
+          if (!spawned) {
+            L.n_unexecuted += static_cast<unsigned long long>(n - e - 1); // drawn, not attempted after the failure
+            stop = true;
+            break; // capacity: no recoil (n_dropped counted by the spawn)
+          }
+          // d. the exact recoil in double, stored as real_t along u-hat
+          double K_new = K_cur - a * Ds; // > 0 by b. when D > 0; >= K_cur when D <= 0
+          if (K_new < 0.0) {
+            K_new = 0.0; // unreachable for f_max < 1; a guard, never a sentinel
+          }
+          const double u_new = math::sqrt(K_new * (K_new + 2.0 * mu_d)) / mu_d;
+          const real_t m1    = static_cast<real_t>(u_new * c1);
+          const real_t m2    = static_cast<real_t>(u_new * c2);
+          const real_t m3    = static_cast<real_t>(u_new * c3);
+          prtls.ux1(p)       = m1;
+          prtls.ux2(p)       = m2;
+          prtls.ux3(p)       = m3;
+          const double m1d = static_cast<double>(m1), m2d = static_cast<double>(m2), m3d = static_cast<double>(m3);
+          const double K_stored   = kinetic_energy(mu_d, m1d, m2d, m3d);
+          const double dK_applied = K_cur - K_stored;
+          L.E_drag.add_prod(w, dK_applied);
+          L.B_budget.add(w * K_cur * 0x1.0p-22);
+          L.P_drag[0] += w * mu_d * (n1d - m1d);
+          L.P_drag[1] += w * mu_d * (n2d - m2d);
+          L.P_drag[2] += w * mu_d * (n3d - m3d);
+          // e. the ion side of the rounding residual: realised minus intended (the
+          //    pair side, intended minus stored, was added by the spawn); systematic
+          //    in sign for a constant recoil (the delta law), not random
+          L.E_round.add_prod(w, dK_applied);
+          L.E_round.sub(intended);
+          L.n_applied += 1;
+          // f. the new state
+          n1d    = m1d;
+          n2d    = m2d;
+          n3d    = m3d;
+          K_cur  = K_stored;
+          Gp_cur = 1.0 + K_cur / prm.mu_r;
+          if (Gp_cur > tables.gamma_max) {
+            Gp_cur = tables.gamma_max;
+          }
+        }
+      }
+      pool.free_state(gen);
+      L.sum_wK += w * K_cur;
+    }
+
     Inline void operator()(prtlidx_t p, LossLedger& L) const {
       const short  tag   = prtls.tag(p);
       const double w     = static_cast<double>(prtls.weight(p));
@@ -830,6 +1056,10 @@ namespace kernel::hadronic {
       if (Gp > tables.gamma_max) {
         Gp = tables.gamma_max; // clamp to the edge: edge value of the table
         L.n_above_table += 1;
+      }
+      if (prm.mode == static_cast<int>(LossMode::Event)) {
+        event_branch(p, L, tag, w, u1, u2, u3, u, K, Gp);
+        return;
       }
       if (Gp < tables.gamma_min) {
         // below the lower edge: no loss; a pending request is discarded; a debt

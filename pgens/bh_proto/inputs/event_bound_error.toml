@@ -1,0 +1,101 @@
+# bh_proto input (step 5, E8 run level): the per-event bound under on_bound = error: f_max = 1.1e-3 with the delta spectrum bounds every event of the Gamma_p = 3 ions (<D>/K = 1.40e-3) and none of the Gamma_p = 6 ions (9.1e-4); the startup refusal pair_weight > a_max (which would otherwise refuse this input: a_max = 0.148) is skipped only by the test-only binary entity_bh_testing.xc with BH_TESTING_BYPASS_AMAX=1 in the environment (round 2, F1); the production binary refuses this input; the run aborts at the first bounded event with the on_bound flag
+# base: event_smoke.toml;
+# mono bath eps0 = 0.5, delta spectrum, pair_weight 1, f_max 0.01 (a_max = 1.34 at Gamma_p = 6),
+# lambda = R dt / a = 0.078 per step at Gamma_p = 6 (tau0 = 0.4; 0.11 at tau0 = 0.563 would be reported
+# under on_max_events = error), 200 steps, simulation.seed = 12345
+[simulation]
+  name    = "event_bound_error"
+  engine  = "srpic"
+  runtime = 100.0
+  seed    = 12345
+
+[grid]
+  resolution = [16]
+  extent     = [[0.0, 16.0]]
+  [grid.metric]
+    metric = "minkowski"
+  [grid.boundaries]
+    fields    = [["PERIODIC"]]
+    particles = [["PERIODIC"]]
+
+[scales]
+  larmor0    = 1.0
+  skindepth0 = 1.0
+
+[algorithms]
+  [algorithms.timestep]
+    CFL = 0.5
+  [algorithms.fieldsolver]
+    enable = false
+  [algorithms.deposit]
+    enable = false
+
+[particles]
+  ppc0        = 1.0
+  use_weights = true
+  [[particles.species]]
+    label                    = "ion"
+    mass                     = 1.0
+    charge                   = 1.0
+    maxnpart                 = 1e3
+    pusher                   = "Boris"
+    n_payloads_real          = 3
+    deposit                  = false
+    clear_interval           = 0
+    spatial_sorting_interval = 0
+  [[particles.species]]
+    label                    = "e-"
+    mass                     = 1.0
+    charge                   = -1.0
+    maxnpart                 = 2e4
+    pusher                   = "Boris"
+    n_payloads_real          = 3
+    deposit                  = false
+    clear_interval           = 0
+    spatial_sorting_interval = 0
+  [[particles.species]]
+    label                    = "e+"
+    mass                     = 1.0
+    charge                   = 1.0
+    maxnpart                 = 2e4
+    pusher                   = "Boris"
+    n_payloads_real          = 3
+    deposit                  = false
+    clear_interval           = 0
+    spatial_sorting_interval = 0
+
+[setup]
+  hadronic.enabled    = true
+  hadronic.species    = [1]
+  mode                = "event"
+  tau0                = 0.4
+  physical_mass_ratio = 1836.15
+  photon_field.type   = "mono"
+  photon_field.eps0   = 0.5
+  spectrum            = "delta"
+  pair_species        = [2, 3]
+  pair_weight         = 1.0
+  f_max               = 1.1e-3
+  gamma_p_typical     = 6.0
+  ions.K              = [3672.3, 9180.75]
+  ions.per_K          = 16
+  ions.direction      = "+x"
+  ledger.every        = 50
+  on_bound            = "error"
+
+[output]
+  interval = 100000000
+  [output.fields]
+    enable = false
+  [output.particles]
+    enable = false
+  [output.spectra]
+    enable = false
+  [output.stats]
+    enable = false
+
+[checkpoint]
+  interval = 100000000
+
+[diagnostics]
+  interval = 100000000

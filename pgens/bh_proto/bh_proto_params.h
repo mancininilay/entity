@@ -1,7 +1,7 @@
 /**
  * @file pgens/bh_proto/bh_proto_params.h
  * @brief Strict reader of the `[setup]` table of the bh_proto problem generator
- *        (Bethe-Heitler prototype, P2 steps 2 and 3).
+ *        (Bethe-Heitler prototype, P2 steps 2 to 5).
  *
  * The reader works on the raw TOML value (`SimulationParams::data()`), not on
  * the flattened `setup.*` container, so that nested tables (`hadronic.enabled`,
@@ -34,28 +34,44 @@
  *   max_substeps                int in [1, 1e6] (default 64)
  *   allow_unsafe_application    bool (default false); required true when eta_u = 0 or pending_floor_ulp = 0
  *   payload_pending / payload_debt / payload_debt_k0   int in [0, 65534], distinct (default 0, 1, 2)
- *   source                      "budget" | "poisson" | "none" (default budget)
+ *   mode                        "continuous" | "event" (default continuous; compared case-insensitively
+ *                               and stored lower-cased): the loss operator. `event` (step 5, contract
+ *                               2026-10-29) is the Monte Carlo mode: discrete interactions only, one
+ *                               macro-pair of weight pair_weight x w per event, exact recoil; stateless
+ *                               per ion (the three payload slots stay zero)
+ *   source                      "budget" | "poisson" | "none" (default budget); continuous mode only:
+ *                               refused when given with mode = event (the event mode always creates
+ *                               pairs; there is no debt and no pending request to pay)
  *   spectrum                    "delta" | "threshold" | "restframe" (default delta; restframe = the
  *                               rest-frame sampler of step 4, both sources)
  *   pair_species                array [i_minus, i_plus] of int in [1, 255], distinct, not an ion
- *                               species; required unless source = none
+ *                               species; required unless source = none (always with mode = event)
  *   r_th_factor                 float > 0 (default 10)
  *   f_r                         float in (0, 1) (default 0.02)
  *   t_latency                   "auto" | float >= 0 (default auto; 0 = cap off)
- *   pair_weight                 float > 0 (default 1; poisson)
+ *   pair_weight                 float > 0 (default 1; poisson and event: the macro-pair weight a in
+ *                               units of the ion weight; event mode refuses a above a_max over the
+ *                               active band at startup, pgen.hpp); with particles.use_weights = false
+ *                               only 1 is accepted in poisson and event (check_weights_flag, audit F3,
+ *                               2026-10-29; event clause 2026-10-30)
+ *   f_max                       (event mode) also the per-event bound a D <= f_max K
  *   max_events_per_step         int in [1, 1e6] (default 8)
- *   on_capacity / on_capacity_estimate / on_max_events   "error" | "warn" (default error)
+ *   on_capacity / on_capacity_estimate / on_max_events / on_bound   "error" | "warn" (default error);
+ *                               on_bound (event mode): an event with a D > f_max K aborts (error) or is
+ *                               skipped and counted in n_bounded (warn)
  *   gamma_p_typical             float > 1 or 0 (default 0 = use the envelope)
  *   active_fraction             float in (0, 1] (default 1)
  *   envelope.index              float (finite), envelope.gamma_min > 1, envelope.gamma_max > gamma_min
- *                               (all three or none); with source = budget one of gamma_p_typical
- *                               or the envelope is required
+ *                               (all three or none); with source = budget, and with mode = event (the
+ *                               active band of the a_max refusal), one of gamma_p_typical or the
+ *                               envelope is required
  *   c_layer                     float > 0 (default 3)
  *   comm_headroom               float >= 0 (default 0.2)
  *   ions.K                      non-empty array of float > 0 (kinetic energies, m_e c^2), required
  *   ions.per_K                  int >= 1 with per_K * ions.K.size() <= INT_MAX, required
  *   ions.direction              "+x" | "isotropic", required
- *   ions.weight                 float > 0 (default 1)
+ *   ions.weight                 float > 0 (default 1); with particles.use_weights = false only 1 is
+ *                               accepted (check_weights_flag)
  *   fields.B, fields.E          arrays of three floats (default zero)
  *   ledger.every                int in [1, INT_MAX] (default 1)
  *   table_dump                  bool (default true): write the table file next to the run output
@@ -67,11 +83,26 @@
  *   test.kick                   float >= 0 (default 0): antisymmetric transverse kick of the
  *                               leptons (T13)
  *   test.gauss                  bool (default false): write the discrete Gauss residual (T13)
+ *   (test.bypass_amax was removed in round 2 of step 5, 2026-10-30, Codex 1 finding F1: an input
+ *                               carrying it is refused as an unknown key. The on_bound run-level test
+ *                               (E8 (i)) runs the test-only binary entity_bh_testing.xc, compiled with
+ *                               BH_TESTING by tests/hadronic/CMakeLists.txt alone, which skips the a_max
+ *                               refusal when the environment carries BH_TESTING_BYPASS_AMAX=1; the
+ *                               production binary has no such path.)
  *   background.ppc              float >= 0 (default 0): a neutral background of the two pair
  *                               species injected through arch::InjectNonUniform (stock path)
  *   background.temperature      float >= 0 (default 0)
  *   background.n_global         int in [0, INT_MAX] (default 0): particles per pair species
  *                               injected through arch::InjectGlobally (stock path, weight 1)
+ *
+ * Weights flag rule (fork rule of 2026-10-29 after Codex 2's weight audit, finding F3;
+ * spec III.7): every run with any weight != 1 sets `particles.use_weights = true`.
+ * `check_weights_flag(setup, use_weights)` refuses `particles.use_weights = false`
+ * with source = budget (variable pair weights), with pair_weight != 1 and
+ * source = poisson (fixed pair weight pair_weight x w_ion), with pair_weight != 1 and
+ * mode = event (fixed pair weight a x w_ion, event clause of 2026-10-30), and with
+ * ions.weight != 1 (the ions are injected with that explicit weight). The generator
+ * calls it right after parse_setup; the parser suite tests it.
  *
  * @namespaces:
  *   - user::bhproto::
@@ -85,6 +116,7 @@
 #include <toml11/toml.hpp>
 
 #include <array>
+#include <cctype>
 #include <climits>
 #include <cmath>
 #include <limits>
@@ -112,6 +144,8 @@ namespace user::bhproto {
     int                payload_pending { 0 };
     int                payload_debt { 1 };
     int                payload_debt_k0 { 2 };
+    // loss operator (step 5): "continuous" | "event", lower-cased
+    std::string        mode { "continuous" };
     // pair creation
     std::string        source { "budget" };
     std::string        spectrum { "delta" };
@@ -126,6 +160,7 @@ namespace user::bhproto {
     std::string        on_capacity { "error" };
     std::string        on_capacity_estimate { "error" };
     std::string        on_max_events { "error" };
+    std::string        on_bound { "error" };     // event mode: a D > f_max K per event
     std::string        placement { "poststep" }; // "poststep" | "production" (hadronic.placement)
     double             gamma_p_typical { 0.0 };
     double             active_fraction { 1.0 };
@@ -157,8 +192,14 @@ namespace user::bhproto {
       return eta_u == 0.0 && pending_floor_ulp == 0.0;
     }
 
+    auto event_mode() const -> bool {
+      return mode == "event";
+    }
+
+    // pairs are created in the continuous mode with a source other than none,
+    // and always in the event mode (source is refused there)
     auto pairs_enabled() const -> bool {
-      return enabled && source != "none";
+      return enabled && (event_mode() || source != "none");
     }
   };
 
@@ -464,6 +505,22 @@ namespace user::bhproto {
     return absorbing && mpi_build && placement == "poststep";
   }
 
+  /**
+   * @brief Contract section 3 (step 5): entering the event mode with a
+   *        non-zero hadronic payload on any alive ion is refused: a
+   *        continuous-mode checkpoint carries a pending request or a debt
+   *        that the event mode cannot pay (it is stateless per ion). A fresh
+   *        run has every slot zero (P9), so the predicate fires only on a
+   *        restart from a continuous-mode segment.
+   * @param mode the parsed (lower-cased) mode
+   * @param n_nonzero_payloads number of alive ions with a non-zero value in
+   *        any of the three hadronic slots (reduced over ranks by the caller)
+   */
+  inline auto event_restart_refused(const std::string& mode,
+                                    unsigned long long n_nonzero_payloads) -> bool {
+    return mode == "event" && n_nonzero_payloads > 0;
+  }
+
   inline auto parse_setup(const toml::value& setup) -> Setup {
     using namespace detail;
     if (!setup.is_table()) {
@@ -488,18 +545,21 @@ namespace user::bhproto {
       "ions.weight",           "fields.B",
       "fields.E",              "ledger.every",
       "table_dump",
+      "mode",
       "source",                "spectrum",
       "pair_species",          "r_th_factor",
       "f_r",                   "t_latency",
       "pair_weight",           "max_events_per_step",
       "on_capacity",           "on_capacity_estimate",
-      "on_max_events",         "gamma_p_typical",
+      "on_max_events",         "on_bound",
+      "gamma_p_typical",
       "active_fraction",       "envelope.index",
       "envelope.gamma_min",    "envelope.gamma_max",
       "c_layer",               "comm_headroom",
       "test.nan_payloads",     "test.kick",
       "test.max_sampler_attempts",
-      "test.gauss",            "background.ppc",
+      "test.gauss",
+      "background.ppc",
       "background.temperature", "background.n_global"
     };
     {
@@ -720,10 +780,34 @@ namespace user::bhproto {
       }
     }
 
+    // ---- loss operator (step 5) ------------------------------------------------
+    {
+      const std::string given = get_string_or(setup, "mode", "continuous");
+      std::string       lower;
+      for (const char c : given) {
+        lower += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+      }
+      if (lower != "continuous" && lower != "event") {
+        fail("mode", "= '" + given + "' must be \"continuous\" or \"event\" (case-insensitive)");
+      }
+      s.mode = lower;
+    }
+
     // ---- pair creation (step 3) ----------------------------------------------
     s.source = get_string_or(setup, "source", "budget");
     if (s.source != "budget" && s.source != "poisson" && s.source != "none") {
       fail("source", "= '" + s.source + "' must be \"budget\", \"poisson\" or \"none\"");
+    }
+    if (s.event_mode() && has("source")) {
+      fail("source",
+           "= '" + s.source + "' must be absent with mode = \"event\": source is a continuous-mode key "
+           "(the event mode always creates one macro-pair per interaction and keeps no debt)");
+    }
+    if (s.event_mode()) {
+      // no continuous source exists in the event mode: the kernel's source enum is
+      // None and the continuous-mode guards keyed on source (eps_max < 2 and the
+      // latency cap of the budget source) do not apply; pairs_enabled() is true
+      s.source = "none";
     }
     s.spectrum = get_string_or(setup, "spectrum", "delta");
     if (s.spectrum != "delta" && s.spectrum != "threshold" && s.spectrum != "restframe") {
@@ -732,6 +816,11 @@ namespace user::bhproto {
     {
       const auto* v = find_path(setup, "pair_species");
       if (v == nullptr) {
+        if (s.event_mode()) {
+          fail("pair_species",
+               "is required with mode = \"event\" (array [i_minus, i_plus] of species indices >= 1; "
+               "every interaction creates a macro-pair)");
+        }
         if (s.source != "none") {
           fail("pair_species",
                "is required with source = \"" + s.source +
@@ -795,6 +884,7 @@ namespace user::bhproto {
     s.on_capacity          = get_policy_or(setup, "on_capacity");
     s.on_capacity_estimate = get_policy_or(setup, "on_capacity_estimate");
     s.on_max_events        = get_policy_or(setup, "on_max_events");
+    s.on_bound             = get_policy_or(setup, "on_bound");
     s.gamma_p_typical      = get_number_or(setup, "gamma_p_typical", 0.0);
     if (!(s.gamma_p_typical == 0.0 || s.gamma_p_typical > 1.0)) {
       fail("gamma_p_typical",
@@ -825,10 +915,16 @@ namespace user::bhproto {
         }
       }
     }
-    if (s.source == "budget" && s.gamma_p_typical == 0.0 && !s.has_envelope) {
+    if (!s.event_mode() && s.source == "budget" && s.gamma_p_typical == 0.0 && !s.has_envelope) {
       fail("gamma_p_typical",
            "or an envelope (envelope.index, envelope.gamma_min, envelope.gamma_max) is "
            "required with source = \"budget\" (startup capacity estimate, III.8)");
+    }
+    if (s.event_mode() && s.gamma_p_typical == 0.0 && !s.has_envelope) {
+      fail("gamma_p_typical",
+           "or an envelope (envelope.index, envelope.gamma_min, envelope.gamma_max) is "
+           "required with mode = \"event\" (the active band of the a_max refusal and the "
+           "startup capacity estimate, contract section 3)");
     }
     s.c_layer = get_number_or(setup, "c_layer", 3.0);
     if (!(s.c_layer > 0.0)) {
@@ -839,6 +935,48 @@ namespace user::bhproto {
       fail("comm_headroom", "= " + fmt_double(s.comm_headroom) + " must be >= 0");
     }
     return s;
+  }
+
+  /**
+   * @brief Weights flag rule (audit F3, 2026-10-29; spec III.7): refuse
+   *        `particles.use_weights = false` whenever the generator would store a
+   *        weight != 1, i.e. with source = budget (variable pair weights), with
+   *        pair_weight != 1 and source = poisson or mode = event (pairs of weight
+   *        pair_weight x w_ion), and with ions.weight != 1 (explicit ion weight). Host-only;
+   *        throws std::invalid_argument with a message naming
+   *        `particles.use_weights` and the offending setup key. Called by the
+   *        generator right after parse_setup (the flag lives in [particles],
+   *        outside the [setup] table the reader sees). With the flag on nothing
+   *        is refused here.
+   */
+  inline void check_weights_flag(const Setup& s, bool use_weights) {
+    if (use_weights) {
+      return;
+    }
+    const std::string rule =
+      " (rule 2026-10-29, audit F3: every run with any weight != 1 sets particles.use_weights = true)";
+    if (s.enabled && s.source == "budget") {
+      throw std::invalid_argument(
+        "bh_proto: particles.use_weights = false is refused with setup.source = budget "
+        "(the budget source creates pairs of variable weight)" + rule);
+    }
+    if (s.enabled && s.source == "poisson" && s.pair_weight != 1.0) {
+      throw std::invalid_argument(
+        "bh_proto: particles.use_weights = false is refused with setup.pair_weight = " +
+        detail::fmt_double(s.pair_weight) + " != 1 and source = poisson (the pairs would carry "
+        "weight pair_weight x w_ion while the flag-gated diagnostics count 1)" + rule);
+    }
+    if (s.enabled && s.event_mode() && s.pair_weight != 1.0) {
+      throw std::invalid_argument(
+        "bh_proto: particles.use_weights = false is refused with setup.pair_weight = " +
+        detail::fmt_double(s.pair_weight) + " != 1 and mode = event (every macro-pair would carry "
+        "weight pair_weight x w_ion while the flag-gated diagnostics count 1)" + rule);
+    }
+    if (s.ions_weight != 1.0) {
+      throw std::invalid_argument(
+        "bh_proto: particles.use_weights = false is refused with setup.ions.weight = " +
+        detail::fmt_double(s.ions_weight) + " != 1 (the ions are injected with this explicit weight)" + rule);
+    }
   }
 
 } // namespace user::bhproto

@@ -8,8 +8,11 @@
 
 #include "../../pgens/bh_proto/bh_proto_params.h"
 
+#include "archetypes/hadronic/bh_event_host.h"
+
 #include <toml11/toml.hpp>
 
+#include <cmath>
 #include <cstdio>
 #include <stdexcept>
 #include <string>
@@ -275,7 +278,8 @@ int main(int argc, char** argv) {
       const bool ok = s.source == "budget" && s.spectrum == "delta" && s.pair_minus == 2 && s.pair_plus == 3 &&
                       s.r_th_factor == 10.0 && s.f_r == 0.02 && s.t_latency_auto && s.pair_weight == 1.0 &&
                       s.max_events_per_step == 8 && s.on_capacity == "error" && s.on_capacity_estimate == "error" &&
-                      s.on_max_events == "error" && s.gamma_p_typical == 6.0 && s.active_fraction == 1.0 &&
+                      s.on_max_events == "error" && s.on_bound == "error" && s.mode == "continuous" &&
+                      !s.event_mode() && s.gamma_p_typical == 6.0 && s.active_fraction == 1.0 &&
                       !s.has_envelope && s.c_layer == 3.0 && s.comm_headroom == 0.2 && !s.test_nan_payloads &&
                       s.test_kick == 0.0 && !s.test_gauss && s.background_ppc == 0.0 && s.background_n_global == 0;
       std::printf("%s: step-3 defaults (source budget, spectrum delta, pair_species [2, 3], r_th_factor 10, f_r 0.02, "
@@ -363,6 +367,288 @@ int main(int argc, char** argv) {
                   replace_line(replace_line(VALID, "photon_field.type", "photon_field.type = \"powerlaw\""),
                                "photon_field.eps0", "photon_field.eps_min = 0.1\nphoton_field.eps_max = 2.0\nphoton_field.index = 2.0"),
                   "photon_field.eps_max");
+    // ---- step 5 (event mode, contract 2026-10-29 section 3): T23 additions -------------------
+    {
+      const auto s  = user::bhproto::parse_setup(parse_toml(VALID + std::string("mode = \"event\"\n")));
+      const bool ok = s.mode == "event" && s.event_mode() && s.pairs_enabled() && s.source == "none" &&
+                      s.pair_minus == 2 && s.pair_plus == 3 && s.on_bound == "error" && s.pair_weight == 1.0 &&
+                      s.f_max == 0.01 && s.max_events_per_step == 8;
+      std::printf("%s: mode = event accepted without source: event_mode, pairs_enabled, source none, on_bound error, "
+                  "pair_weight 1, f_max 0.01, max_events_per_step 8\n", ok ? "PASS" : "FAIL");
+      ok ? ++n_pass : ++n_fail;
+    }
+    for (const char* spelling : { "Event", "EVENT", "eVeNt" }) {
+      const auto s  = user::bhproto::parse_setup(parse_toml(VALID + std::string("mode = \"") + spelling + "\"\n"));
+      const bool ok = s.mode == "event" && s.event_mode();
+      std::printf("%s: mode = \"%s\" is accepted case-insensitively and stored as \"event\"\n", ok ? "PASS" : "FAIL",
+                  spelling);
+      ok ? ++n_pass : ++n_fail;
+    }
+    {
+      const auto s  = user::bhproto::parse_setup(parse_toml(VALID + std::string("mode = \"Continuous\"\n")));
+      const bool ok = s.mode == "continuous" && !s.event_mode() && s.source == "budget";
+      std::printf("%s: mode = \"Continuous\" is stored as \"continuous\" and keeps source = budget\n",
+                  ok ? "PASS" : "FAIL");
+      ok ? ++n_pass : ++n_fail;
+    }
+    {
+      // the continuous-mode keys are accepted and ignored with mode = event
+      std::string t = replace_line(VALID, "eta_u", "eta_u = 1e-3");
+      t             = replace_line(t, "pending_floor_ulp", "pending_floor_ulp = 10");
+      t             = replace_line(t, "f_max", "f_max = 0.02");
+      const auto s  = user::bhproto::parse_setup(parse_toml(
+        t + std::string("mode = \"event\"\nr_th_factor = 5.0\nf_r = 0.05\nt_latency = 2.0\n"
+                        "on_bound = \"warn\"\npair_weight = 2.0\nspectrum = \"restframe\"\n")));
+      const bool ok = s.event_mode() && s.on_bound == "warn" && s.pair_weight == 2.0 && s.f_max == 0.02 &&
+                      s.spectrum == "restframe" && s.r_th_factor == 5.0 && s.f_r == 0.05 && s.t_latency == 2.0 &&
+                      s.eta_u == 1e-3 && s.pending_floor_ulp == 10.0;
+      std::printf("%s: event mode accepts the continuous keys, on_bound = warn, pair_weight, f_max, spectrum\n",
+                  ok ? "PASS" : "FAIL");
+      ok ? ++n_pass : ++n_fail;
+    }
+    {
+      const auto s = user::bhproto::parse_setup(parse_toml(
+        drop_line(VALID, "gamma_p_typical") + std::string("mode = \"event\"\nenvelope.index = 2.0\n"
+                                                           "envelope.gamma_min = 2.5\nenvelope.gamma_max = 8.0\n")));
+      const bool ok = s.event_mode() && s.has_envelope && s.gamma_p_typical == 0.0;
+      std::printf("%s: event mode accepts the envelope in place of gamma_p_typical\n", ok ? "PASS" : "FAIL");
+      ok ? ++n_pass : ++n_fail;
+    }
+    expect_reject("mode unknown", VALID + std::string("mode = \"exact\"\n"), "mode");
+    expect_reject("mode not a string", VALID + std::string("mode = 1\n"), "mode");
+    expect_reject("mode = event with source = poisson", VALID + std::string("mode = \"event\"\nsource = \"poisson\"\n"),
+                  "source");
+    expect_reject("mode = event with source = budget", VALID + std::string("mode = \"event\"\nsource = \"budget\"\n"),
+                  "source");
+    expect_reject("mode = event with source = none", VALID + std::string("mode = \"event\"\nsource = \"none\"\n"),
+                  "source");
+    expect_reject("mode = event without pair_species", drop_line(VALID, "pair_species") + std::string("mode = \"event\"\n"),
+                  "pair_species");
+    expect_reject("mode = event without gamma_p_typical or envelope",
+                  drop_line(VALID, "gamma_p_typical") + std::string("mode = \"event\"\n"), "gamma_p_typical");
+    expect_reject("mode = event with pair_weight = 0", VALID + std::string("mode = \"event\"\npair_weight = 0.0\n"),
+                  "pair_weight");
+    expect_reject("on_bound invalid", VALID + std::string("on_bound = \"abort\"\n"), "on_bound");
+    // round 2 (F1, 2026-10-30): the old test hook is no longer a key; an input carrying it is refused
+    expect_reject("test.bypass_amax removed (F1): refused as an unknown key",
+                  VALID + std::string("test.bypass_amax = true\n"), "test.bypass_amax");
+    expect_reject("test.bypass_amax = false also refused (F1)",
+                  VALID + std::string("mode = \"event\"\ntest.bypass_amax = false\n"), "test.bypass_amax");
+    expect_reject("on_bound not a string", VALID + std::string("on_bound = 1\n"), "on_bound");
+    // the restart predicate (contract section 3): refused only in the event mode with a non-zero payload
+    {
+      const bool ok = !user::bhproto::event_restart_refused("event", 0) &&
+                      user::bhproto::event_restart_refused("event", 1) &&
+                      user::bhproto::event_restart_refused("event", 1000000ULL) &&
+                      !user::bhproto::event_restart_refused("continuous", 5);
+      std::printf("%s: event_restart_refused: event with 0 payloads clean, event with >= 1 refused, continuous never\n",
+                  ok ? "PASS" : "FAIL");
+      ok ? ++n_pass : ++n_fail;
+    }
+    // the closed-form D_max,unweighted (spec III.2) against a brute-force maximum over the
+    // kinematic domain (eps' in [eps'_lo, eps'_hi], |p'_z| <= sqrt(eps'^2 - 4)) at fixed eps:
+    // the grid maximum never exceeds the closed form and approaches it with the grid
+    {
+      namespace ev = arch::bh::event;
+      bool ok = true;
+      for (const double eps : { 0.3, 0.5, 1.0 }) {
+        for (const double G : { 2.5, 3.0, 6.0, 10.0, 50.0 }) {
+          const double gb    = std::sqrt((G - 1.0) * (G + 1.0));
+          const double k_hi  = G * eps + gb * eps;
+          const double k_lo  = std::max(2.0, G * eps - gb * eps);
+          const double Dref  = ev::dmax_unweighted(G, eps);
+          if (!(k_hi >= 2.0)) {
+            ok = ok && Dref == 0.0;
+            continue;
+          }
+          double Dgrid = -std::numeric_limits<double>::infinity();
+          const int nk = 4000, np = 400;
+          for (int i = 0; i <= nk; ++i) {
+            const double k  = k_lo + (k_hi - k_lo) * static_cast<double>(i) / nk;
+            const double pm = std::sqrt(std::max(0.0, (k - 2.0) * (k + 2.0)));
+            for (int j = 0; j <= np; ++j) {
+              const double pz = -pm + 2.0 * pm * static_cast<double>(j) / np;
+              Dgrid           = std::max(Dgrid, G * k + gb * pz - eps); // D = Gamma (eps' + beta p'_z) - eps
+            }
+          }
+          const bool here = Dgrid <= Dref * (1.0 + 1e-12) && Dgrid >= Dref * (1.0 - 1e-6);
+          if (!here) {
+            std::printf("FAIL: D_max closed form at eps = %g, Gamma = %g: grid %.12g, closed form %.12g\n", eps, G, Dgrid,
+                        Dref);
+          }
+          ok = ok && here;
+        }
+      }
+      // the contract's orientation numbers (mono eps0 = 0.5, mu_r = 1836.15, f_max = 0.01) are
+      // reported, not asserted: they were computed with <D>, not D_max (see the report)
+      std::printf("%s: D_max,unweighted closed form equals the brute-force maximum over (eps', p'_z) at fixed eps "
+                  "(15 cases, 4001 x 401 grid); a_max(3) = %.4g, a_max(6) = %.4g, a_max(10) = %.4g at eps0 = 0.5, "
+                  "mu_r = 1836.15, f_max = 0.01\n",
+                  ok ? "PASS" : "FAIL", ev::a_max(3.0, 0.5, 1836.15, 0.01), ev::a_max(6.0, 0.5, 1836.15, 0.01),
+                  ev::a_max(10.0, 0.5, 1836.15, 0.01));
+      ok ? ++n_pass : ++n_fail;
+    }
+    // the shape of a_max(Gamma) (documented in bh_event_host.h; the pgen's active-band check does not
+    // rely on it): monotone decrease above the threshold for eps <= 1, and for Gamma >= 2 in every
+    // case; for eps = 1.9 the maximum lies between the threshold and Gamma = 2 (measured here)
+    {
+      namespace ev = arch::bh::event;
+      bool ok = true;
+      for (const double eps : { 0.3, 0.5, 1.0, 1.9 }) {
+        const double gth  = 1.0 / eps + 0.25 * eps;
+        double       prev = std::numeric_limits<double>::infinity(), am_max = 0.0, g_max = 0.0;
+        bool         mono_all = true, mono_above2 = true;
+        for (int i = 1; i <= 400; ++i) {
+          const double G  = gth * std::pow(100.0 / gth, static_cast<double>(i) / 400);
+          const double am = ev::a_max(G, eps, 1836.15, 0.01);
+          if (am > am_max) {
+            am_max = am;
+            g_max  = G;
+          }
+          if (!(am <= prev)) {
+            mono_all = false;
+            if (G >= 2.0) {
+              mono_above2 = false;
+            }
+          }
+          prev = am;
+        }
+        const bool here = mono_above2 && (eps > 1.0 || mono_all) && (eps <= 1.0 || (g_max > gth && g_max < 2.0));
+        std::printf("%s: a_max(Gamma) at eps = %g: Gamma_th = %.6g, maximum %.6g at Gamma = %.6g, monotone decrease "
+                    "from the threshold: %s, for Gamma >= 2: %s\n",
+                    here ? "PASS" : "FAIL", eps, gth, am_max, g_max, mono_all ? "yes" : "no", mono_above2 ? "yes" : "no");
+        ok = ok && here;
+      }
+      ok ? ++n_pass : ++n_fail;
+    }
+    // the ulp-energy of the stored momentum: float against double at the same K (ratio 2^29 for the
+    // same binade), and the double value against ulp(u) mu u / gamma from std::nextafter directly
+    {
+      namespace ev = arch::bh::event;
+      bool ok = true;
+      for (const double mu_d : { 1.0, 1836.15 }) {
+        for (const double K : { 3672.3, 9180.75, 1.0e5 }) {
+          const double ef = ev::ulp_energy<float>(K, mu_d);
+          const double ed = ev::ulp_energy<double>(K, mu_d);
+          const double u  = std::sqrt(K * (K + 2.0 * mu_d)) / mu_d;
+          const double gd = std::sqrt(1.0 + u * u);
+          const double ref = (std::nextafter(u, std::numeric_limits<double>::infinity()) - u) * mu_d * u / gd;
+          const double ratio = ef / ed;
+          const bool   here  = ed > 0.0 && std::fabs(ed / ref - 1.0) < 1e-12 && ratio > std::ldexp(1.0, 28) &&
+                            ratio < std::ldexp(1.0, 30);
+          if (!here) {
+            std::printf("FAIL: ulp_energy at K = %g, mu_d = %g: float %.6e, double %.6e, ref %.6e, ratio %.6g\n", K,
+                        mu_d, ef, ed, ref, ratio);
+          }
+          ok = ok && here;
+        }
+      }
+      std::printf("%s: ulp_energy<float> / ulp_energy<double> in (2^28, 2^30) and the double value matches nextafter "
+                  "directly (6 cases)\n", ok ? "PASS" : "FAIL");
+      ok ? ++n_pass : ++n_fail;
+    }
+    // table_numbers on a synthetic host table: lambda_max and the ulp ratio pick the right nodes,
+    // nodes with J = 0 or <D> = 0 are skipped, and the double instantiation is exercised
+    {
+      namespace ev = arch::bh::event;
+      arch::bh::HadronicTablesHost T;
+      T.mu_r  = 1836.15;
+      T.gamma = { 2.2, 3.0, 6.0, 10.0, 30.0 };
+      T.J     = { 0.0, 1.0e-3, 4.0e-3, 2.0e-3, 5.0e-3 };
+      T.Dmean = { 0.0, 6.0, 12.0, 20.0, 60.0 };
+      T.I     = { 0.0, 6.0e-3, 4.8e-2, 4.0e-2, 3.0e-1 };
+      const double coeff = 2.0, dt = 0.5, a = 3.0;
+      const auto nf = ev::table_numbers<float>(T, coeff, dt, a, 1.0);
+      const auto nd = ev::table_numbers<double>(T, coeff, dt, a, 1.0);
+      // lambda at the nodes: 0, 1e-3/3, 4e-3/3, 2e-3/3, 5e-3/3 -> max at Gamma = 30
+      const bool lam_ok = std::fabs(nf.lambda_max - coeff * 5.0e-3 * dt / a) < 1e-15 && nf.gamma_at_lambda_max == 30.0 &&
+                          nd.lambda_max == nf.lambda_max && nd.gamma_at_lambda_max == 30.0;
+      // the ulp ratio a <D> / ulp_energy(K) at the four interacting nodes; the minimum is checked
+      // against a direct evaluation and must be at the node where a <D> / dK_ulp is smallest
+      double ref_min_f = std::numeric_limits<double>::infinity(), ref_min_d = ref_min_f;
+      double gf = 0.0, gdbl = 0.0;
+      for (std::size_t i = 1; i < T.gamma.size(); ++i) {
+        const double K  = T.mu_r * (T.gamma[i] - 1.0);
+        const double rf = a * T.Dmean[i] / ev::ulp_energy<float>(K, 1.0);
+        const double rd = a * T.Dmean[i] / ev::ulp_energy<double>(K, 1.0);
+        if (rf < ref_min_f) { ref_min_f = rf; gf = T.gamma[i]; }
+        if (rd < ref_min_d) { ref_min_d = rd; gdbl = T.gamma[i]; }
+      }
+      const bool ulp_ok = nf.ulp_ratio_min == ref_min_f && nf.gamma_at_ulp_ratio_min == gf &&
+                          nd.ulp_ratio_min == ref_min_d && nd.gamma_at_ulp_ratio_min == gdbl &&
+                          nd.ulp_ratio_min / nf.ulp_ratio_min > std::ldexp(1.0, 28) && nf.nodes == 5;
+      const bool ok = lam_ok && ulp_ok;
+      std::printf("%s: table_numbers (synthetic table): lambda_max = %.6g at Gamma = %g (expected %.6g at 30); ulp ratio "
+                  "min float %.6g at Gamma = %g, double %.6g at Gamma = %g (J = 0 and <D> = 0 nodes skipped)\n",
+                  ok ? "PASS" : "FAIL", nf.lambda_max, nf.gamma_at_lambda_max, coeff * 5.0e-3 * dt / a, nf.ulp_ratio_min,
+                  nf.gamma_at_ulp_ratio_min, nd.ulp_ratio_min, nd.gamma_at_ulp_ratio_min);
+      ok ? ++n_pass : ++n_fail;
+    }
+
+    // ---- weights flag rule (audit F3, 2026-10-29; spec III.7): check_weights_flag ----------
+    {
+      auto expect_flag = [&](const std::string& label, const std::string& text, bool use_weights,
+                             bool expect_refused, const std::string& key) {
+        try {
+          const auto s = user::bhproto::parse_setup(parse_toml(text));
+          user::bhproto::check_weights_flag(s, use_weights);
+          if (expect_refused) {
+            std::printf("FAIL: flag rule: %s: accepted (expected a refusal naming %s)\n", label.c_str(), key.c_str());
+            ++n_fail;
+          } else {
+            std::printf("PASS: flag rule: %s: accepted\n", label.c_str());
+            ++n_pass;
+          }
+        } catch (const std::invalid_argument& e) {
+          const std::string msg = e.what();
+          if (!expect_refused) {
+            std::printf("FAIL: flag rule: %s: refused (expected acceptance): %s\n", label.c_str(), msg.c_str());
+            ++n_fail;
+          } else if (msg.find("particles.use_weights") != std::string::npos && msg.find(key) != std::string::npos) {
+            std::printf("PASS: flag rule: %s: refused: %s\n", label.c_str(), msg.c_str());
+            ++n_pass;
+          } else {
+            std::printf("FAIL: flag rule: %s: refused but the message does not name particles.use_weights and %s: %s\n",
+                        label.c_str(), key.c_str(), msg.c_str());
+            ++n_fail;
+          }
+        }
+      };
+      const std::string poisson = drop_line(VALID, "gamma_p_typical") + std::string("source = \"poisson\"\n");
+      const std::string none    = drop_line(drop_line(VALID, "pair_species"), "gamma_p_typical") +
+                               std::string("source = \"none\"\n");
+      // refusals with the flag off
+      expect_flag("use_weights = false with source = budget", VALID, false, true, "setup.source = budget");
+      expect_flag("use_weights = false with source = poisson and pair_weight = 2.5",
+                  poisson + "pair_weight = 2.5\n", false, true, "setup.pair_weight = 2.5");
+      expect_flag("use_weights = false with source = poisson and pair_weight = 1e-20",
+                  poisson + "pair_weight = 1e-20\n", false, true, "setup.pair_weight");
+      expect_flag("use_weights = false with ions.weight = 2 (source = none)",
+                  replace_line(none, "ions.weight", "ions.weight = 2.0"), false, true, "setup.ions.weight = 2");
+      expect_flag("use_weights = false with ions.weight = 0.5 (poisson, pair_weight = 1)",
+                  replace_line(poisson, "ions.weight", "ions.weight = 0.5"), false, true, "setup.ions.weight = 0.5");
+      // accepted with the flag off: every stored weight is 1
+      expect_flag("use_weights = false with source = poisson and pair_weight = 1 (default)", poisson, false, false, "");
+      expect_flag("use_weights = false with source = poisson and pair_weight = 1 (explicit)",
+                  poisson + "pair_weight = 1.0\n", false, false, "");
+      expect_flag("use_weights = false with source = none", none, false, false, "");
+      expect_flag("use_weights = false with the stage disabled (ions.weight = 1)",
+                  "hadronic.enabled = false\nhadronic.species = [1]\nions.K = [1.0]\nions.per_K = 1\nions.direction = \"+x\"\n",
+                  false, false, "");
+      // nothing refused with the flag on
+      expect_flag("use_weights = true with source = budget", VALID, true, false, "");
+      expect_flag("use_weights = true with source = poisson and pair_weight = 2.5",
+                  poisson + "pair_weight = 2.5\n", true, false, "");
+      expect_flag("use_weights = true with ions.weight = 2", replace_line(VALID, "ions.weight", "ions.weight = 2.0"),
+                  true, false, "");
+      // event clause (round 2, 2026-10-30): a != 1 with mode = event needs the flag; a = 1 does not
+      const std::string event = VALID + std::string("mode = \"event\"\n");
+      expect_flag("use_weights = false with mode = event and pair_weight = 2", event + "pair_weight = 2.0\n", false,
+                  true, "setup.pair_weight");
+      expect_flag("use_weights = false with mode = event and pair_weight = 1", event, false, false, "");
+      expect_flag("use_weights = true with mode = event and pair_weight = 2", event + "pair_weight = 2.0\n", true,
+                  false, "");
+    }
     // C-MPI-3 (round 3): the construction-time guard predicate on every combination of
     // (absorbing, MPI build, domain count, placement): refused only for absorbing boundaries
     // at the post-step placement in an MPI build, for any domain count

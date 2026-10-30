@@ -468,7 +468,7 @@ namespace kernel {
           global_metric.template transform_xyz<Idx::T, Idx::XYZ>(x_Cd, u_Ph, u_Cd);
 
           if (use_weights) {
-            weight = weights(p);
+            weight = in_wei(p);
           }
         }
       } else if constexpr (D == Dim::_2D) {
@@ -507,7 +507,7 @@ namespace kernel {
           }
 
           if (use_weights) {
-            weight = weights(p);
+            weight = in_wei(p);
           }
         }
       } else {
@@ -540,7 +540,7 @@ namespace kernel {
           }
 
           if (use_weights) {
-            weight = weights(p);
+            weight = in_wei(p);
           }
         }
       }

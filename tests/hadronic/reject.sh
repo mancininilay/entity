@@ -15,7 +15,8 @@ for pair in reject_tau0:tau0 reject_fmax:f_max reject_bool:hadronic.enabled \
             reject_gamma_typical:gamma_p_typical reject_fr:f_r reject_rth:r_th_factor \
             reject_pairweight:pair_weight reject_maxevents:max_events_per_step \
             reject_oncapacity:on_capacity reject_envelope:envelope.gamma_max \
-            reject_placement:hadronic.placement; do
+            reject_placement:hadronic.placement \
+            reject_mode:mode reject_mode_source:source reject_event_bypass:test.bypass_amax; do
   name="${pair%%:*}"; key="${pair#*:}"
   if [ ! -f "$INP/$name.toml" ]; then
     echo "FAIL: $name: input $INP/$name.toml not found"; n_fail=$((n_fail + 1)); continue
@@ -34,10 +35,13 @@ for pair in reject_tau0:tau0 reject_fmax:f_max reject_bool:hadronic.enabled \
     fi
   fi
 done
-# species-level and particles-level refusals (messages name the input key)
+# species-level, particles-level and startup (table-based) refusals: messages name the key or the quantity
+# (step 5: the a_max, ulp-energy and lambda_max refusals of the event mode need the startup tables)
 for pair in "reject_payloads:n_payloads_real" "reject_weights:use_weights" "reject_gca:GCA" \
+            "reject_poisson_weights:use_weights" "reject_ions_weight_flag:use_weights" \
             "reject_pair_charge:charge" "reject_pair_mass:mass 1" "reject_pair_slots:n_payloads_real" \
-            "reject_tlatency:t_latency" "reject_two_species:exactly one hadronic ion species"; do
+            "reject_tlatency:t_latency" "reject_two_species:exactly one hadronic ion species" \
+            "reject_event_amax:exceeds a_max" "reject_event_ulp:ulp-energy" "reject_event_lambda:lambda_max"; do
   name="${pair%%:*}"; key="${pair##*:}"
   if [ ! -f "$INP/$name.toml" ]; then
     echo "FAIL: $name: input $INP/$name.toml not found"; n_fail=$((n_fail + 1)); continue

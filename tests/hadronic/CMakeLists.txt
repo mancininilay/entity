@@ -31,6 +31,14 @@ add_test(NAME "HADRONIC::bh_proto_params" COMMAND test-hadronic-bh_proto_params.
 
 if("${pgen}" STREQUAL "bh_proto")
   set(BH_SINGLE_ENTITY $<TARGET_FILE:entity.xc>)
+  # step 5 round 2 (F1, 2026-10-30): the test-only engine binary. Same translation unit as entity.xc
+  # (src/entity.cpp, which includes pgen.hpp), compiled with BH_TESTING defined here and nowhere else:
+  # it alone can skip the a_max refusal of the event mode (environment BH_TESTING_BYPASS_AMAX=1), which
+  # the on_bound run-level test (E8 (i)) needs. The production target entity.xc compiles no such path.
+  add_executable(entity_bh_testing.xc ${CMAKE_SOURCE_DIR}/src/entity.cpp)
+  target_link_libraries(entity_bh_testing.xc PUBLIC ntt_global ntt_framework ntt_metrics ntt_engines ntt_pgen)
+  target_compile_definitions(entity_bh_testing.xc PRIVATE BH_TESTING=1)
+  set(BH_TESTING_ENTITY $<TARGET_FILE:entity_bh_testing.xc>)
   set(BH_INPUTS ${CMAKE_SOURCE_DIR}/pgens/bh_proto/inputs)
   set(BH_WORK ${CMAKE_CURRENT_BINARY_DIR}/work)
   set(BH_SCRIPTS ${CMAKE_CURRENT_SOURCE_DIR})
@@ -77,6 +85,16 @@ if("${pgen}" STREQUAL "bh_proto")
   add_test(NAME "HADRONIC::t14b_placement"
            COMMAND bash ${BH_SCRIPTS}/t14b_placement.sh ${BH_SINGLE_ENTITY} "${BH_SERIAL_ENTITY}" $<TARGET_FILE:bh_check>
                    ${BH_INPUTS} ${BH_WORK}/t14b)
+  # step 5 (event mode): E8 at the run level, the host-side policies on_bound, on_capacity, on_max_events
+  add_test(NAME "HADRONIC::event_e8"
+           COMMAND bash ${BH_SCRIPTS}/event_e8.sh ${BH_SINGLE_ENTITY} $<TARGET_FILE:bh_check>
+                   ${BH_INPUTS} ${BH_WORK}/event_e8 ${BH_TESTING_ENTITY})
+  set_tests_properties("HADRONIC::event_e8" PROPERTIES TIMEOUT 1800)
+  # step 5: the restart refusal (a continuous-mode checkpoint resumed in the event mode) and its controls
+  add_test(NAME "HADRONIC::event_restart"
+           COMMAND bash ${BH_SCRIPTS}/event_restart.sh ${BH_SINGLE_ENTITY} $<TARGET_FILE:bh_check>
+                   ${BH_INPUTS} ${BH_WORK}/event_restart)
+  set_tests_properties("HADRONIC::event_restart" PROPERTIES TIMEOUT 1800)
   set_tests_properties("HADRONIC::t5b_cross_build" "HADRONIC::t8_bit_identity" "HADRONIC::t10_poisson_determinism"
                        PROPERTIES SKIP_RETURN_CODE 77)
   set_tests_properties("HADRONIC::t12_capacity" "HADRONIC::t12b_estimate" "HADRONIC::t13_gauss"
