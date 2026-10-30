@@ -1026,8 +1026,8 @@ namespace {
   }
 
   /**
-   * @brief E2 at the targets <K>/K0 (contract: {0.9, 0.7, 0.5}; revision 1.1 for Gamma_p0 = 3:
-   *        {0.9, 0.7, 0.6}): |<K> - K_ODE,corr| <= 4 s.e. (s.e. = sigma_K / sqrt(N) from the
+   * @brief E2 at the targets <K>/K0 (contract: {0.9, 0.7, 0.5}; revision 1.1.1 for Gamma_p0 = 3:
+   *        {0.9, 0.7, 0.65}): |<K> - K_ODE,corr| <= 4 s.e. (s.e. = sigma_K / sqrt(N) from the
    *        sample variance); the plain ODE difference and the Jensen term relative to 4 s.e.
    *        are reported. Unreachable targets (the run stopped above them) are reported as
    *        such, with the launches run.
@@ -1062,10 +1062,12 @@ namespace {
   }
 
   /**
-   * @brief E3 (revision 1.1, Nilay 2026-10-30): Var K(t) against the drift-feedback equation
+   * @brief E3 (revision 1.1 and 1.1.1, Nilay 2026-10-30): Var K(t) against the drift-feedback equation
    *        dV/dt = -2 coeff (dI/dK) V + a R E[D^2] (E[D^2] from the frozen D2mean, delta: <D>^2),
-   *        in the window sigma_K/K <= 0.02, |Var_meas / Var_fb - 1| <= 4 sqrt(2/N) at the records
-   *        where sigma_K/K first exceeds 0.005, 0.01 and at the last record inside the window;
+   *        in the registered domain sigma_K/K <= 0.02 and curvature budget <= 0.6 % (1.1.1),
+   *        |Var_meas / Var_fb - 1| <= 4 sqrt(2/N) at the records where sigma_K/K first exceeds
+   *        0.005, 0.01 and at the last record inside the domain; deeper points (the revision-1.1
+   *        endpoint) carry the curvature-corrected prediction as a labelled diagnostic, no verdict;
    *        the revision-1.0 reference (no feedback, int a R E[D^2] dt') is kept as the history
    *        row, reported without verdict. Budgets reported separately: curvature (the (1/2) B'' V
    *        source, next order in the jump scale), the Jensen share of the mean path, the frozen
@@ -1075,11 +1077,19 @@ namespace {
    */
   void verdict_E3(const std::string& tag, const Tables& T, const Series& S, const Reference& R) {
     const double tol = 4.0 * std::sqrt(2.0 / static_cast<double>(S.N));
-    std::size_t  last_in = std::string::npos, i005 = std::string::npos, i01 = std::string::npos;
+    // revision 1.1.1 (Nilay, 2026-10-30): the registered domain is sigma_K/K <= 0.02 AND the curvature
+    // budget (the (1/2) B'' V source integrated alongside) <= 0.6 %, one third of the tolerance; deeper
+    // points carry the curvature-corrected prediction as a labelled diagnostic (no verdict)
+    constexpr double CURV_DOMAIN = 0.006;
+    auto curv_of = [&](std::size_t i) { return R.var_fb[i] > 0.0 ? std::abs(R.var_fb_curv[i] / R.var_fb[i] - 1.0) : 1.0; };
+    std::size_t  last_in = std::string::npos, last_old = std::string::npos, i005 = std::string::npos, i01 = std::string::npos;
     for (std::size_t i = 1; i < S.t.size(); ++i) {
       const double rel = std::sqrt(S.varK[i]) / S.meanK[i];
       if (rel <= 0.02) {
-        last_in = i;
+        last_old = i;
+        if (curv_of(i) <= CURV_DOMAIN) {
+          last_in = i;
+        }
       }
       if (i005 == std::string::npos && rel >= 0.005) {
         i005 = i;
@@ -1089,7 +1099,10 @@ namespace {
       }
     }
     std::vector<std::pair<const char*, std::size_t>> pts = { { "sigma_K/K = 0.005", i005 }, { "sigma_K/K = 0.01", i01 },
-                                                             { "last record with sigma_K/K <= 0.02", last_in } };
+                                                             { "last record in the domain (sigma_K/K <= 0.02, curvature <= 0.6 %)", last_in } };
+    if (last_old != last_in) {
+      pts.emplace_back("deepest record with sigma_K/K <= 0.02 [revision 1.1 endpoint, outside the 1.1.1 domain]", last_old);
+    }
     for (const auto& pt : pts) {
       const std::size_t i = pt.second;
       if (i == std::string::npos || !(R.var_fb[i] > 0.0)) {
@@ -1098,11 +1111,20 @@ namespace {
       }
       const double dKK      = (S.K0 - R.K_corr[i]) / S.K0;
       const double ratio_fb = S.varK[i] / R.var_fb[i];
-      verdict(std::abs(ratio_fb - 1.0) <= tol,
-              tag + fmt(": E3 [registered, revision 1.1: drift feedback] at %s (t = %.6g, Delta K/K = %.4f, Var_meas = %.6g, "
-                        "Var_fb = %.6g): |Var_meas/Var_fb - 1|",
-                        pt.first, S.t[i], dKK, S.varK[i], R.var_fb[i]),
-              std::abs(ratio_fb - 1.0), tol);
+      const double curv     = curv_of(i);
+      if (curv <= CURV_DOMAIN) {
+        verdict(std::abs(ratio_fb - 1.0) <= tol,
+                tag + fmt(": E3 [registered, revision 1.1.1: drift feedback] at %s (t = %.6g, Delta K/K = %.4f, Var_meas = %.6g, "
+                          "Var_fb = %.6g, curvature budget %.3f %%): |Var_meas/Var_fb - 1|",
+                          pt.first, S.t[i], dKK, S.varK[i], R.var_fb[i], 100.0 * curv),
+                std::abs(ratio_fb - 1.0), tol);
+      } else {
+        const double ratio_c = S.varK[i] / R.var_fb_curv[i];
+        std::printf("(diag) %s: E3 at %s (t = %.6g, Delta K/K = %.4f) is OUTSIDE the registered domain (curvature budget %.3f %% > 0.6 %%, "
+                    "revision 1.1.1): leading closure |Var_meas/Var_fb - 1| = %.4g, curvature-corrected |Var_meas/Var_fb,curv - 1| = %.4g "
+                    "(tolerance %.4g; labelled diagnostic, no verdict)\n",
+                    tag.c_str(), pt.first, S.t[i], dKK, 100.0 * curv, std::abs(ratio_fb - 1.0), std::abs(ratio_c - 1.0), tol);
+      }
       const double ratio = R.var_pred[i] > 0.0 ? S.varK[i] / R.var_pred[i] : 0.0;
       std::printf("(diag) %s: E3 history row [revision 1.0, no feedback] at %s: Var_pred = %.6g, |Var_meas/Var_pred - 1| = %.4g "
                   "(tolerance %.4g, %s; superseded, no verdict)\n",
@@ -1162,11 +1184,13 @@ namespace {
     std::printf("\n=== E2 / E3 at Gamma_p0 = %g: N = %u, a = 1, lambda = %.3g at Gamma_p0 (dt = %.3g), delta and restframe, "
                 "stop at <K>/K0 = %.2f or %d launches ===\n",
                 Gp0, (unsigned)N, lambda, DT, stop_frac, n_max);
-    const std::vector<double> targets = Gp0 == 3.0 ? std::vector<double> { 0.9, 0.7, 0.6 } : std::vector<double> { 0.9, 0.7, 0.5 };
+    const std::vector<double> targets = Gp0 == 3.0 ? std::vector<double> { 0.9, 0.7, 0.65 } : std::vector<double> { 0.9, 0.7, 0.5 };
     if (Gp0 == 3.0) {
-      // revision 1.1: the 0.5 target (Gamma = 2 < Gamma_th = 2.125, unreachable by any run) is replaced by 0.6
-      std::printf("(diag) E2 targets at Gamma_p0 = 3 re-registered (revision 1.1): 0.9, 0.7, 0.6 (the 0.5 target sat below the pair "
-                  "threshold, Gamma = %.4g < Gamma_th = %.4g, unreachable by any run); the run stops at <K>/K0 = %.2f or %d launches\n",
+      // revision 1.1 replaced the 0.5 target (Gamma = 2 < Gamma_th = 2.125, unreachable by any run) by 0.6;
+      // revision 1.1.1 by 0.65 (0.6 at Gamma_p = 2.2 would cost 35 times the 0.7 run: t = 6.8e5, 1.35e6 launches)
+      std::printf("(diag) E2 targets at Gamma_p0 = 3 (revision 1.1.1): 0.9, 0.7, 0.65 (the 0.5 target sat below the pair threshold, "
+                  "Gamma = %.4g < Gamma_th = %.4g; the 0.6 target of revision 1.1 is not run, 35 times the cost of 0.7); the run stops "
+                  "at <K>/K0 = %.2f or %d launches\n",
                   0.5 * (Gp0 + 1.0), T.bath->gamma_th(), stop_frac, n_max);
     }
     std::printf("(diag) E[D^2] fixture: bhref-0.2.0/moments_mono05.txt, %zu nodes, data_sha256 %s\n", D2.gamma.size(),
@@ -1182,12 +1206,6 @@ namespace {
       const std::function<double(double)> dmean_born = [&](double G) { return D2.dmean_at(G); };
       const auto R = reference(T, S, d2, spectrum == RESTFRAME ? &dmean_born : nullptr);
       verdict_E2(tag, S, R, targets);
-      if (Gp0 == 3.0) {
-        // proposal for Nilay (fact, table integration): the 0.6 target lies at Gamma_p = 2.2, where the loss
-        // rate is 1.4e-4 of its value at 3; the plain ODE reaches it at t = 6.8e5 (1.35e6 launches at dt =
-        // 0.5, 35 times the cost of the 0.7 target); 0.65 (Gamma_p = 2.3) is reached at t = 6.4e4
-        verdict_E2(tag + " [diagnostic target 0.65, proposal]", S, R, { 0.65 });
-      }
       verdict_E3(tag, T, S, R);
       verdict(S.C.n_bounded == 0 && S.C.n_dropped == 0 && S.C.n_capped_events == 0,
               tag + ": no bounded, dropped or capped event", static_cast<double>(S.C.n_bounded + S.C.n_dropped + S.C.n_capped_events),
@@ -1596,9 +1614,9 @@ namespace {
    *        no condition binds there): same physical time, <K> and Var K within 4 s.e.
    *        (the two runs follow the same law; only the seeds differ); n_substeps = 3 N
    *        per launch, n_bounded = 0, E1 holds. (b) error: every ion-step flagged
-   *        (n_bounded = n_bound_steps = N), no pair, stored u bitwise unchanged.
-   *        (c) max_substeps = 2 below the needed 3: two chunks run, the step counted
-   *        in n_bounded, pairs created, E1 holds.
+   *        (n_bound_flagged = n_bound_steps = N; n_bounded counts skipped events only),
+   *        no pair, stored u bitwise unchanged. (c) max_substeps = 2 below the needed 3:
+   *        two chunks run, the step counted in n_bound_flagged, pairs created, E1 holds.
    */
   void test_E8_current_state(Tables& T, npart_t N) {
     const double Gp0 = 6.0, K0 = K_of_gamma(Gp0), f_lo = 2.0e-3, ratio = 2.6;
@@ -1890,7 +1908,7 @@ auto main(int argc, char* argv[]) -> int {
     }
     if (want("e2e3_g3")) {
       const auto D2 = load_d2(T);
-      test_E2E3(T, D2, 3.0, N_stat, 130000, 0.59); // revision 1.1: target 0.6; 130000 launches reach 0.65 (t = 6.4e4)
+      test_E2E3(T, D2, 3.0, N_stat, 130000, 0.64); // revision 1.1.1: third target 0.65 (t = 6.4e4, 128000 launches)
     }
     if (want("e6")) {
       test_E6(T, N_stat);
