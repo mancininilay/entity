@@ -509,9 +509,15 @@ namespace {
     impl_abs("A7: max |<D>_MC - <D>_sampled| / s.e. over all nodes (the quadrature of the density the chain samples, "
              "SampledChainD)",
              worst_se_chain, 5.0, "max |dev| / s.e.");
-    diag("A7: max |<D>_MC - I/J| / s.e. over all nodes = %.1f (the eq. 3.7 fit of step 1 vs the Born laws, not a "
-         "sampling error; see A5b)",
-         worst_se_exact);
+    if (born_mode()) {
+      diag("A7: max |<D>_MC - I_Born/J| / s.e. over all nodes = %.1f (the table's own Born recoil: a sampling statistic, "
+           "the registered row above; see A5-numerical)",
+           worst_se_exact);
+    } else {
+      diag("A7: max |<D>_MC - I/J| / s.e. over all nodes = %.1f (the eq. 3.7 fit of step 1 vs the Born laws, not a "
+           "sampling error; see A5b)",
+           worst_se_exact);
+    }
   }
 
   void test_A7_weighted(const std::vector<BathSetup>& setups, const rf::SamplerCumulatives& cum,

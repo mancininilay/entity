@@ -29,8 +29,9 @@
  *     and pair energy per unit paid energy within 2%, of the reference's
  *     Born-chain values (bhref-0.2.0/moments_mono05.txt: <D>; its
  *     nodes must be this table's nodes to 1e-12); every failing node listed.
- *     The step-1 I/J (eq. 3.7 fit, 0.1 to 0.5% off the Born law) and the host
- *     chain's sampled <D> are diagnostics.
+ *     The table's I/J (on the fit tables the step-1 eq. 3.7 fit, 0.1 to 0.5%
+ *     off the Born law; on the Born tables, BH_QK_SOURCE=born, the Born
+ *     recoil itself) and the host chain's sampled <D> are diagnostics.
  *   - the spectrum runs (round 2, finding 4): for mono05 and powerlaw at the
  *     reference's histogram Gamma_p that lie inside the bath's rate table
  *     (mono05: 2.23125, 3, 10; powerlaw: 1.09375, 3, 10; Gamma_p = 100 is
@@ -1017,8 +1018,10 @@ namespace {
     verdict(wg <= 1.0e-6, "A12: pair payload Gamma_p = the parent's Gamma_p", wg, 1.0e-6);
     diag("A12: relative s.e. of the cost up to " + fmt("%.2e", maxse) + "; max |cost/<D>_ref - 1| / combined s.e. " +
          fmt("%.1f", w_nse_ref) + "; max |<1/D> - 1/<D>_sampled| / s.e. " + fmt("%.1f", w_nse_samp) +
-         " (the host chain's sampled density, SampledChainD); diagnostic vs the step-1 I/J (eq. 3.7 fit, expected "
-         "0.1 to 0.5% off the Born law, decision (a)): max |cost/(I/J) - 1| " + fmt("%.3e", w_ij));
+         " (the host chain's sampled density, SampledChainD); diagnostic vs the table's I/J (" +
+         std::string(born_mode() ? "the Born tables' own recoil, qk_source = born: a sampling statistic"
+                                 : "the step-1 eq. 3.7 fit, expected 0.1 to 0.5% off the Born law, decision (a)") +
+         "): max |cost/(I/J) - 1| " + fmt("%.3e", w_ij));
     diag("A12: nodes expected beyond the literal tolerance from the sampling noise alone (sum over the nodes of "
          "erfc(tol / (sqrt(2) combined relative s.e.))): " + fmt("%.2f", exp_fail_cost) + " for the 1% cost, " +
          fmt("%.2g", exp_fail_num) + " for the 2% pair number");

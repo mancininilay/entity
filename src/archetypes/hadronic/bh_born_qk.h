@@ -222,8 +222,9 @@ namespace arch::bh::born {
         lnq[i] = std::log(m_q[i]);
       }
       m_spline = CubicSpline(t, lnq);
-      // threshold continuation below the first node: q = 2 - s delta, s from the first two nodes
-      // (q_k(2) = 2 exactly; the slope of the Born law at threshold)
+      // threshold continuation below the first node: q = 2 - s delta, s the secant from the exact
+      // threshold value q_k(2) = 2 (the pair at rest in the proton frame) to the first positive node
+      // (delta = 1e-5): s = 1/4 + O(delta), the Born threshold slope being exactly 1/4 (A3)
       m_slope = (2.0 - m_q[0]) / (m_k[0] - 2.0);
       m_k_max = k_max;
       m_build_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();

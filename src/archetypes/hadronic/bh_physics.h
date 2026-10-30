@@ -152,8 +152,9 @@ namespace arch::bh {
    *        exchange-file value "chodorowski-3.7") or the Born machinery of the
    *        pair sampler (`Born`, "born-3D2000", `bh_born_qk.h`). The library
    *        default is `Fit` so that every existing table and test is
-   *        byte-identical in behaviour; the problem generator's input default is
-   *        `born` (contract section 3, a proposal pending Nilay's confirmation).
+   *        byte-identical in behaviour (the regression and reference path); the
+   *        problem generator's input default is `born`, the decided production
+   *        default (Nilay, 2026-10-30, contract 1.5 section 3).
    */
   enum class QkSource : int {
     Fit  = 0,
@@ -263,8 +264,10 @@ namespace arch::bh {
     int    gl_order    = 16;
     // upper end of the kernel domain in k
     double k_max       = constants::K_MAX;
-    // the source of q_k in the cumulatives (contract 1.5); Fit keeps every
-    // existing result byte-identical, Born is the production proposal
+    // the source of q_k in the cumulatives (contract 1.5); Fit, the library
+    // default, keeps every existing result byte-identical (regression path);
+    // Born is the decided production default (2026-10-30), selected by the
+    // problem generator's input default
     QkSource qk_source = QkSource::Fit;
 
     Quadrature halved() const {
