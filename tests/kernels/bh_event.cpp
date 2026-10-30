@@ -1205,8 +1205,11 @@ namespace {
                                          7u, 1.0e-5);
         print_series(tag + " continuous (eta_u = 1e-5) at dt", Sc);
         print_series(tag + " continuous (eta_u = 1e-5) at dt / 16", Sc16);
-        verdict(Sc.varK.back() == 0.0 && Sc16.varK.back() == 0.0, tag + ": the continuous mode is deterministic (Var K = 0 exactly)",
-                Sc.varK.back() + Sc16.varK.back(), 0.0);
+        // deterministic: every ion follows the same trajectory; the two-pass variance of N_c identical stored
+        // values is rounding noise (2.5e-21 measured at K ~ 9e3), bounded here by 1e-20 K0^2
+        verdict(Sc.varK.back() <= 1.0e-20 * S.K0 * S.K0 && Sc16.varK.back() <= 1.0e-20 * S.K0 * S.K0,
+                tag + ": the continuous mode is deterministic (Var K / K0^2 at rounding level)",
+                std::max(Sc.varK.back(), Sc16.varK.back()) / (S.K0 * S.K0), 1.0e-20);
         for (const double f : targets) {
           const std::size_t i = first_below(S, f);
           if (i == std::string::npos || i >= Sc16.meanK.size() || i >= Sc.meanK.size()) {
