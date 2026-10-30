@@ -88,8 +88,8 @@ Facts measured in stage 1 (single build; the test executable
 | A10c interpolant vs direct quadrature at the 448 contract midpoints | 1e-8 | 2.94e-13 at 128 nodes per decade; at the chosen 64 per decade: see the stage-1 rerun below | pass |
 | A10c diagnostic: C++ direct vs the candidate's `q_direct` at the midpoints | reported | 3.30e-12 | |
 | the candidate's eq. 3.7 column vs the C++ fit `q_k` | reported | 4.5e-13 | consistent anchors |
-| A3 registered in the brief: abs(q_k^Born(2 + 1e-9) - 2) <= 1e-10, direct and provider | 1e-10 | **2.50e-10** (both) | **FAIL**: the Born law has q_k(2 + delta) = 2 - delta/4 + O(delta^2) (fact: (2 - q)/delta = 0.25000006 at delta = 1e-5, 1.02e-5, 1.04e-5 from the direct nodes), so at delta = 1e-9 the exact value is 2 - 2.5e-10 and no correct provider can be within 1e-10 of 2; the registered tolerance was written below the physical slope |
-| A3 proposal: q_k^Born(2 + delta) = 2 - s delta at delta = 1e-9 with the measured slope s | 1e-3 relative on the slope | 1.7e-7 | pass (labelled) |
+| A3 registered in the brief: abs(q_k^Born(2 + 1e-9) - 2) <= 1e-10, direct and provider [**history**: superseded by the slope-form registration of 2026-10-30, §7 F1; no longer an active failure] | 1e-10 | **2.50e-10** (both) | **FAIL (history)**: the Born law has q_k(2 + delta) = 2 - delta/4 + O(delta^2) (fact: (2 - q)/delta = 0.25000006 at delta = 1e-5, 1.02e-5, 1.04e-5 from the direct nodes), so at delta = 1e-9 the exact value is 2 - 2.5e-10 and no correct provider can be within 1e-10 of 2; the registered tolerance was written below the physical slope |
+| A3 proposal: q_k^Born(2 + delta) = 2 - s delta at delta = 1e-9 with the measured slope s [history: replaced in round 2 by the decided gate abs(q_k(2 + delta) - (2 - delta/4)) <= 1e-10 and the implementation check abs(s - 1/4) <= 1e-6, §7 F1] | 1e-3 relative on the slope | 1.7e-7 | pass (labelled) |
 | A3 diagnostic: q_k eps'/(4 ln^2 eps') at eps' = 1e3 | reported (leading-order limit 3/14 = 0.2143) | 0.2321 (eq. 3.7 gives 0.2321) | the subleading terms are 8 % at 1e3, as in step 4 |
 | fit path untouched: `Cumulatives(QkSource::Fit)` vs a standalone step-1 re-integration of Phi, phi, psi at six deltas | 1e-12 | 1.6e-15 | pass |
 | Born vs fit cumulatives: Phi identical; phi differs | reported | Phi bitwise equal; max abs(phi_Born/phi_fit - 1) = 4.8e-3 at k = 52 (within the 2 % fit budget of A4) | |
@@ -191,7 +191,7 @@ double with 5 threads alongside):
 | T10, poisson, none, energy, momentum, T12, T10b, T-exp, R1, R2, R3, C-MPI-1 on the Born tables (`bh_pairs_*_born`, 12 entries) | as registered | all pass in both builds | pass |
 | sampler tables, A11, identity, spectrum on the Born tables (`bh_sampler_*_born`, 4 entries besides A12) | as registered | all pass in both builds | pass |
 | run-level entries (`HADRONIC::*`, 16 entries, the generator with its default `qk_source = born` and `bh_check` references at `--qk_source born`): reject, T7a, T7b, T12, T12b, T13, T10 determinism, T-exp, r2 tiny, T14b, sampler overflow, parser | as registered | all pass (3 cross-build / Serial entries skipped as before) in both builds | pass |
-| `bh_born_qk`: A3 registered limit (stage 1) | 1e-10 | 2.5e-10 | **FAIL** (the Born slope 1/4, stage 1) |
+| `bh_born_qk`: A3 registered limit (stage 1) [history: re-registered 2026-10-30, §7 F1] | 1e-10 | 2.5e-10 | **FAIL (history)** (the Born slope 1/4, stage 1) |
 
 The continuous-mode cooling curves on the Born tables differ from the fit
 ones by at most the fit budget of I, 0.49 % at the worst node (contract 1.5:
@@ -200,7 +200,7 @@ tolerance (1e-3 against the RK4 of the same table) untouched.
 
 ## 3. Open questions for Nilay
 
-1. **A3's registered limit test** (brief, stage 1: "q_k(2) = 2 to 1e-10 at
+1. [Decided 2026-10-30 ("yes to all"): re-registered on the slope form, implemented in round 2, §7 F1.] **A3's registered limit test** (brief, stage 1: "q_k(2) = 2 to 1e-10 at
    eps' - 2 = 1e-9") cannot be met by a correct implementation: the Born
    threshold slope is exactly 1/4 (fact above), so q_k(2 + 1e-9) = 2 -
    2.5e-10. Recommendation: re-register as abs(q_k(2 + delta) - (2 -
@@ -270,8 +270,9 @@ value compared (negligible against the 1 % tolerance); diag line printed.
 
 Measured (single | double):
 - A10b 3.810e-12 (direct), 3.810e-12 (interpolant) | same; A10c 5.181e-10 |
-  same; A3 as written 2.50e-10 vs 1e-10 (registered failure kept; the
-  slope-corrected proposal row 1.67e-7); header-key checks pass.
+  same; A3 as written 2.50e-10 vs 1e-10 (registered failure kept at that
+  head; the slope-corrected proposal row 1.67e-7; re-registered in round 2,
+  §7 F1); header-key checks pass.
 - item 8 vs the frozen tables (bh_fixtures, 85/85 both builds): file sha256
   and headers (status frozen:0.3.0, qk_source born-3D2000) verified; node
   placement max |dy| 4.57e-12 (mono05); |dJ/J| <= 8.2e-13; |dI/I| core and

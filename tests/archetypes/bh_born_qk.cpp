@@ -10,10 +10,14 @@
  *         of the contract grid (the release's `qk_midpoints.txt` eps_prime
  *         column): <= 1e-8 relative; the difference to the release's
  *         `q_direct` there is a diagnostic.
- *   A3    exact limits: q_k(2 + 1e-9) = 2 within 1e-10 as registered in the
- *         brief (the Born law has q_k(2 + delta) = 2 - delta/4 + O(delta^2):
- *         the registered tolerance sits below the physical slope, reported
- *         with the measured slope); the asymptotic ratio q_k eps'/(4 ln^2 eps')
+ *   A3    exact limits, re-registered on the slope form (Nilay, 2026-10-30,
+ *         "yes to all"; Codex 1 review F1): |q_k^Born(2 + delta) - (2 -
+ *         delta/4)| <= 1e-10 at delta = 1e-9, direct quadrature and provider
+ *         (the Born law has q_k(2 + delta) = 2 - delta/4 + O(delta^2), so the
+ *         brief's constant-limit form |q_k(2 + 1e-9) - 2| <= 1e-10 was
+ *         unreachable by any correct provider: that row is printed as history,
+ *         no verdict); the provider's continuation slope against 1/4
+ *         (implementation check); the asymptotic ratio q_k eps'/(4 ln^2 eps')
  *         at eps' = 1e3 reported against 3/14 (diagnostic).
  *   Fit-path regression: the cumulatives with qk_source = fit reproduce the
  *         step-1 values (the Born switch did not touch that path): spot values
@@ -210,27 +214,37 @@ int main() {
               1.0, 1.0);
     }
 
-    // ---- A3: the exact limits
+    // ---- A3: the exact limits (re-registered on the slope form, 2026-10-30)
     {
-      const double d  = 1.0e-9;
-      const double qd = born::direct(2.0 + d);
-      const double qt = BT.q_k(2.0 + d);
-      verdict(std::abs(qd - 2.0) <= 1.0e-10,
-              "A3 [registered in the brief]: |q_k^Born(2 + 1e-9) - 2| <= 1e-10 by direct quadrature", std::abs(qd - 2.0),
-              1.0e-10);
-      verdict(std::abs(qt - 2.0) <= 1.0e-10, "A3 [registered in the brief]: |q_k^Born(2 + 1e-9) - 2| <= 1e-10 by the provider",
-              std::abs(qt - 2.0), 1.0e-10);
+      const double d     = 1.0e-9;
+      const double qd    = born::direct(2.0 + d);
+      const double qt    = BT.q_k(2.0 + d);
+      const double q_lim = 2.0 - d / 4.0; // the Born threshold law q_k = 2 - delta/4 + O(delta^2)
+      verdict(std::abs(qd - q_lim) <= 1.0e-10,
+              "A3 [re-registered, decision 2026-10-30]: |q_k^Born(2 + 1e-9) - (2 - 1e-9/4)| <= 1e-10 by direct quadrature",
+              std::abs(qd - q_lim), 1.0e-10);
+      verdict(std::abs(qt - q_lim) <= 1.0e-10,
+              "A3 [re-registered, decision 2026-10-30]: |q_k^Born(2 + 1e-9) - (2 - 1e-9/4)| <= 1e-10 by the provider",
+              std::abs(qt - q_lim), 1.0e-10);
+      // history (brief, stage 1; superseded 2026-10-30): the constant-limit form |q_k(2 + 1e-9) - 2| <= 1e-10,
+      // which no correct provider can meet (the exact value is 2 - 2.5e-10); reported, no verdict
+      diag("A3 [history, superseded 2026-10-30]: |q_k^Born(2 + 1e-9) - 2| = %.4e (direct), %.4e (provider) vs the brief's "
+           "1e-10: the constant-limit row, failing by the physical slope 1/4, kept as history",
+           std::abs(qd - 2.0), std::abs(qt - 2.0));
       // the Born threshold slope from the dense nodes: (2 - q)/delta at the first nodes
       const auto& kn = BT.nodes_k();
       const auto& qn = BT.nodes_q();
-      diag("A3: (2 - q_k)/delta at delta = %.2e, %.2e, %.2e: %.10g, %.10g, %.10g (the slope the registered 1e-10 at delta = "
-           "1e-9 would need to be below 0.1); direct at 2 + 1e-9: 2 - q = %.4e, provider: %.4e",
+      diag("A3: (2 - q_k)/delta at delta = %.2e, %.2e, %.2e: %.10g, %.10g, %.10g (the exact threshold slope is 1/4); direct "
+           "at 2 + 1e-9: 2 - q = %.4e, provider: %.4e",
            kn[0] - 2.0, kn[1] - 2.0, kn[2] - 2.0, (2.0 - qn[0]) / (kn[0] - 2.0), (2.0 - qn[1]) / (kn[1] - 2.0),
            (2.0 - qn[2]) / (kn[2] - 2.0), 2.0 - qd, 2.0 - qt);
-      verdict(std::abs((2.0 - qt) / d - BT.threshold_slope()) <= 1.0e-3 * BT.threshold_slope(),
-              "A3 [proposal]: q_k^Born(2 + delta) = 2 - s delta at delta = 1e-9 with the slope s of the first nodes, "
-              "|(2 - q)/delta - s| / s",
-              std::abs((2.0 - qt) / d - BT.threshold_slope()) / BT.threshold_slope(), 1.0e-3);
+      // implementation check: the provider's threshold continuation slope (the secant from the exact threshold
+      // q_k(2) = 2 to the first node) against the exact 1/4; the O(delta) correction at the first node
+      // (delta = 1e-5) is the expected size of the difference
+      verdict(std::abs(BT.threshold_slope() - 0.25) <= 1.0e-6,
+              "A3 [implementation check]: the provider's continuation slope s (secant threshold -> first node) vs the exact "
+              "1/4, |s - 1/4|",
+              std::abs(BT.threshold_slope() - 0.25), 1.0e-6);
       const double L = std::log(1000.0);
       diag("A3: asymptotic ratio q_k eps'/(4 ln^2 eps') at eps' = 1e3: %.6f (leading-order limit 3/14 = %.6f; eq. 3.7 gives %.6f)",
            BT.q_k(1000.0) * 1000.0 / (4.0 * L * L), 3.0 / 14.0, q_k(1000.0) * 1000.0 / (4.0 * L * L));
