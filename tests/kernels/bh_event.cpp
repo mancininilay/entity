@@ -48,6 +48,15 @@
  *     a pair). (iii) max_events_per_step = 1 at lambda = 1: n_capped_events
  *     > 0, at most one pair per (ion, launch), E1 holds.
  *
+ * E10 (revision 1.1, after step 6 merged, 2026-10-30): E2 restframe rerun on the
+ *   Born loss tables (BH_QK_SOURCE=born in the environment selects qk_source =
+ *   born for this program's tables, as in the other kernel tests), Gamma_p0 = 6
+ *   at 0.9 / 0.7 / 0.5 and Gamma_p0 = 3 at 0.9 / 0.7 / 0.65, 4 s.e. against the
+ *   Jensen-corrected ODE on the Born table: the test that the fit-vs-Born offset
+ *   of rounds 1 and 2 (restframe E2 against the fitted table) predicted would
+ *   close. Groups e10 (Gamma_p0 = 6) and e10_g3 (Gamma_p0 = 3), restframe only;
+ *   refused without BH_QK_SOURCE=born.
+ *
  * Verdict lines: "PASS" / "FAIL" with the measured number and the tolerance;
  * "(diag)" lines are reported only. One ctest entry per group (e1, e5, e8).
  */
@@ -59,6 +68,7 @@
 
 #include "metrics/minkowski.h"
 
+#include "archetypes/hadronic/bh_born_qk.h" // E10: the Born q_k provider (registration hook)
 #include "archetypes/hadronic/bh_calibrated_test.h"
 #include "archetypes/hadronic/bh_event_host.h"
 #include "archetypes/hadronic/bh_interpolate.h"
@@ -167,13 +177,28 @@ namespace {
     bool                                   sampler_built { false };
   };
 
+  // E10 (step 6 integration): BH_QK_SOURCE=born builds this program's loss tables with qk_source = born
+  bool born_mode() {
+    const char* e = std::getenv("BH_QK_SOURCE");
+    return e != nullptr && std::string(e) == "born";
+  }
+
   Tables make_tables() {
     Tables       T;
     bh::BathSpec spec;
     spec.type = "mono";
     spec.eps0 = EPS0;
     T.bath    = bh::make_bath(spec);
-    T.rates   = std::make_unique<bh::BetheHeitlerRates>(T.bath);
+    bh::Quadrature q;
+    if (const char* e = std::getenv("BH_QK_SOURCE")) {
+      const std::string v(e);
+      if (v == "born") {
+        q.qk_source = bh::QkSource::Born;
+      } else if (v != "fit") {
+        throw std::runtime_error("BH_QK_SOURCE = '" + v + "' is neither born nor fit");
+      }
+    }
+    T.rates   = std::make_unique<bh::BetheHeitlerRates>(T.bath, q);
     T.host    = bh::build_tables(*T.rates, MU_R);
     bh::validate_tables(T.host);
     T.dev = bh::mirror_tables_to_device(T.host);
@@ -1178,12 +1203,14 @@ namespace {
    *        delta and restframe, N ions; plus the continuous mode (eta_u = 1e-5,
    *        source none) on the same ions and dt as the small-jump statement
    */
-  void test_E2E3(Tables& T, const D2Table& D2, double Gp0, npart_t N, int n_max, double stop_frac) {
+  void test_E2E3(Tables& T, const D2Table& D2, double Gp0, npart_t N, int n_max, double stop_frac,
+                 const std::vector<int>& spectra = { DELTA, RESTFRAME }, const std::string& prefix = "") {
     const double lambda = 0.05;
     const double coeff  = coeff_for_lambda(T, Gp0, lambda, 1.0);
-    std::printf("\n=== E2 / E3 at Gamma_p0 = %g: N = %u, a = 1, lambda = %.3g at Gamma_p0 (dt = %.3g), delta and restframe, "
-                "stop at <K>/K0 = %.2f or %d launches ===\n",
-                Gp0, (unsigned)N, lambda, DT, stop_frac, n_max);
+    std::printf("\n=== %sE2 / E3 at Gamma_p0 = %g: N = %u, a = 1, lambda = %.3g at Gamma_p0 (dt = %.3g), %s, "
+                "stop at <K>/K0 = %.2f or %d launches; loss tables qk_source = %s ===\n",
+                prefix.c_str(), Gp0, (unsigned)N, lambda, DT, spectra.size() == 1 ? "restframe only" : "delta and restframe",
+                stop_frac, n_max, born_mode() ? "born-3D2000" : "chodorowski-3.7");
     const std::vector<double> targets = Gp0 == 3.0 ? std::vector<double> { 0.9, 0.7, 0.65 } : std::vector<double> { 0.9, 0.7, 0.5 };
     if (Gp0 == 3.0) {
       // revision 1.1 replaced the 0.5 target (Gamma = 2 < Gamma_th = 2.125, unreachable by any run) by 0.6;
@@ -1196,9 +1223,9 @@ namespace {
     std::printf("(diag) E[D^2] fixture: bhref-0.2.0/moments_mono05.txt, %zu nodes, data_sha256 %s\n", D2.gamma.size(),
                 D2.sha.c_str());
     const int out_every = 25;
-    for (const int spectrum : { DELTA, RESTFRAME }) {
+    for (const int spectrum : spectra) {
       const std::string name = spectrum == DELTA ? "delta" : "restframe";
-      const std::string tag  = fmt("G%g %s", Gp0, name.c_str());
+      const std::string tag  = prefix + fmt("G%g %s", Gp0, name.c_str());
       const auto S = cooling_run(T, EVENT, spectrum, 1.0, 0.01, coeff, DT, Gp0, N, stop_frac, n_max, out_every, 1000u + (unsigned)Gp0);
       print_series(tag, S);
       auto d2 = spectrum == DELTA ? std::function<double(double)>([&](double G) { return d2_delta(T, G); })
@@ -1866,9 +1893,9 @@ auto main(int argc, char* argv[]) -> int {
   int rc = 0;
   try {
     std::printf("bh_event: real_t = %s, Kokkos default execution space = %s, tolerances: closure %.1e, identity %.1e, "
-                "E_round %.1e, E5 K %.1e\n",
+                "E_round %.1e, E5 K %.1e; loss tables qk_source = %s (BH_QK_SOURCE)\n",
                 SINGLE ? "float" : "double", Kokkos::DefaultExecutionSpace::name(), TOL_CLOSURE, TOL_IDENTITY, TOL_EROUND,
-                TOL_E5_K);
+                TOL_E5_K, born_mode() ? "born-3D2000" : "chodorowski-3.7");
     auto T = make_tables();
     std::vector<std::string> groups;
     for (int i = 1; i < argc; ++i) {
@@ -1909,6 +1936,22 @@ auto main(int argc, char* argv[]) -> int {
     if (want("e2e3_g3")) {
       const auto D2 = load_d2(T);
       test_E2E3(T, D2, 3.0, N_stat, 130000, 0.64); // revision 1.1.1: third target 0.65 (t = 6.4e4, 128000 launches)
+    }
+    // E10 (revision 1.1; after the step-6 merge): E2 restframe on the Born tables, every target, 4 s.e.
+    // against the Jensen-corrected ODE on the Born table; refused on the fit tables
+    if (want("e10") || want("e10_g3")) {
+      if (!born_mode()) {
+        std::printf("FAIL: E10 requires BH_QK_SOURCE=born (the Born loss tables); the environment selects the fit tables\n");
+        ++n_fail;
+      } else {
+        const auto D2 = load_d2(T);
+        if (want("e10")) {
+          test_E2E3(T, D2, 6.0, N_stat, 40000, 0.5, { RESTFRAME }, "E10 ");
+        }
+        if (want("e10_g3")) {
+          test_E2E3(T, D2, 3.0, N_stat, 130000, 0.64, { RESTFRAME }, "E10 ");
+        }
+      }
     }
     if (want("e6")) {
       test_E6(T, N_stat);

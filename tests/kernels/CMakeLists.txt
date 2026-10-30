@@ -96,6 +96,11 @@ set_tests_properties("KERNELS::bh_event_e1" "KERNELS::bh_event_e5" "KERNELS::bh_
 # stage 3 statistics (N = 1e5 ions each; BH_EVENT_N in the environment reduces N for a development loop)
 set_tests_properties("KERNELS::bh_event_e2e3" "KERNELS::bh_event_e2e3_g3" "KERNELS::bh_event_e6" "KERNELS::bh_event_e7"
                      "KERNELS::bh_event_e4" PROPERTIES TIMEOUT 7200)
+# [fork:hadronic/P2 step 6 integration] E10 (event contract revision 1.1): E2 restframe on the Born loss tables
+foreach(grp e10 e10_g3)
+  add_test(NAME "KERNELS::bh_event_${grp}_born" COMMAND test-kernels-bh_event.xc ${grp})
+  set_tests_properties("KERNELS::bh_event_${grp}_born" PROPERTIES ENVIRONMENT "BH_QK_SOURCE=born" TIMEOUT 7200)
+endforeach()
 
 if("${pgen}" STREQUAL "rec_mix")
   gen_test(rec_mix_segments)
