@@ -55,6 +55,7 @@
  * Seeds: SplitMix64(8080 + j) for case j.
  */
 
+#include "archetypes/hadronic/bh_born_qk.h" // step 6 round 2 (F9): the Born q_k provider
 #include "archetypes/hadronic/bh_exact_chain_cdf.h"
 #include "archetypes/hadronic/bh_physics.h"
 #include "archetypes/hadronic/bh_sampler_host.h"
@@ -64,15 +65,33 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <exception>
 #include <fstream>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
 using namespace arch::bh;
 
 namespace {
+
+  // step 6 round 2 (Codex 1 F9): the loss tables of the host chain follow the BH_QK_SOURCE selector
+  // (born | fit; absent = the library default, fit), as in bh_chain.cpp, so that the _born ctest
+  // entry exercises the Born table construction in this consumer
+  Quadrature loss_quadrature() {
+    Quadrature q;
+    if (const char* e = std::getenv("BH_QK_SOURCE")) {
+      const std::string v(e);
+      if (v == "born") {
+        q.qk_source = QkSource::Born;
+      } else if (v != "fit") {
+        throw std::runtime_error("BH_QK_SOURCE = '" + v + "' is neither born nor fit");
+      }
+    }
+    return q;
+  }
 
   int g_pass_contract = 0, g_fail_contract = 0, g_pass_impl = 0, g_fail_impl = 0;
 
@@ -131,6 +150,8 @@ auto main() -> int {
     auto         cum     = std::make_shared<const rf::SamplerCumulatives>();
     const double mu_r    = rf::canonical_bath("mono05").mu_r;
     diag("rest-frame tables built in %.1f s; mu_r = %g", seconds_since(t_start), mu_r);
+    diag("loss tables of the host chain: qk_source = %s (BH_QK_SOURCE; step 6 round 2, F9)",
+         loss_quadrature().qk_source == QkSource::Born ? "born-3D2000" : "chodorowski-3.7");
 
     const std::vector<Case> cases { { "mono05", 0.5, 100.0 }, { "mono05", 0.5, 1000.0 }, { "mono005", 0.05, 1000.0 } };
     const std::size_t       N = 1000000;
@@ -146,7 +167,7 @@ auto main() -> int {
       spec.type        = "mono";
       spec.eps0        = c.eps0;
       const auto bath  = make_bath(spec);
-      BetheHeitlerRates rates(bath);
+      BetheHeitlerRates rates(bath, loss_quadrature()); // step 6 round 2 (F9): BH_QK_SOURCE selects the tables
       const auto        H = build_tables(rates, mu_r);
       auto B = std::make_shared<const rf::BathEpsTables>(rf::BathEpsTables::build(*bath, H, *cum));
       rf::HostSampler S(bath, H, T, cum, B);

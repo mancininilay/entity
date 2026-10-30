@@ -87,6 +87,9 @@ target_compile_definitions(
   PRIVATE BH_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data/hadronic")
 target_link_libraries(test-archetypes-bh_ka2008.xc PRIVATE Threads::Threads)
 set_tests_properties("ARCHETYPES::bh_ka2008" PROPERTIES TIMEOUT 1800)
+# [fork:hadronic/P2 step 6 round 2, Codex 1 F9] the same consumer on the Born loss tables
+add_test(NAME "ARCHETYPES::bh_ka2008_born" COMMAND test-archetypes-bh_ka2008.xc)
+set_tests_properties("ARCHETYPES::bh_ka2008_born" PROPERTIES ENVIRONMENT "BH_QK_SOURCE=born" TIMEOUT 1800)
 # [fork:hadronic/P2 step 4, round 2] contract A10 inside ctest: the C++ sampler
 # fixtures against the reference's (bhref 0.2.0 (frozen)), file against file
 gen_test(bh_sampler_fixtures)
@@ -95,3 +98,6 @@ target_compile_definitions(
   PRIVATE BH_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data/hadronic")
 target_link_libraries(test-archetypes-bh_sampler_fixtures.xc PRIVATE Threads::Threads)
 set_tests_properties("ARCHETYPES::bh_sampler_fixtures" PROPERTIES TIMEOUT 1800)
+# [fork:hadronic/P2 step 6 round 2, Codex 1 F9] the same consumer on the Born loss tables
+add_test(NAME "ARCHETYPES::bh_sampler_fixtures_born" COMMAND test-archetypes-bh_sampler_fixtures.xc)
+set_tests_properties("ARCHETYPES::bh_sampler_fixtures_born" PROPERTIES ENVIRONMENT "BH_QK_SOURCE=born" TIMEOUT 1800)

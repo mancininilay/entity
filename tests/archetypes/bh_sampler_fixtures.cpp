@@ -60,6 +60,7 @@
  * Seeds (A8 part): SplitMix64(8080 + j), as in bh_ka2008.cpp.
  */
 
+#include "archetypes/hadronic/bh_born_qk.h" // step 6 round 2 (F9): the Born q_k provider
 #include "archetypes/hadronic/bh_calibrated_test.h"
 #include "archetypes/hadronic/bh_physics.h"
 #include "archetypes/hadronic/bh_sampler_host.h"
@@ -69,16 +70,34 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <exception>
 #include <map>
 #include <memory>
 #include <random>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
 using namespace arch::bh;
 
 namespace {
+
+  // step 6 round 2 (Codex 1 F9): the loss tables of the host chain follow the BH_QK_SOURCE selector
+  // (born | fit; absent = the library default, fit), as in bh_chain.cpp, so that the _born ctest
+  // entry exercises the Born table construction in this consumer
+  Quadrature loss_quadrature() {
+    Quadrature q;
+    if (const char* e = std::getenv("BH_QK_SOURCE")) {
+      const std::string v(e);
+      if (v == "born") {
+        q.qk_source = QkSource::Born;
+      } else if (v != "fit") {
+        throw std::runtime_error("BH_QK_SOURCE = '" + v + "' is neither born nor fit");
+      }
+    }
+    return q;
+  }
 
   int g_pass = 0, g_fail = 0;
 
@@ -479,6 +498,8 @@ namespace {
     auto       T   = std::make_shared<const rf::RestFrameTables>(rf::RestFrameTables::build());
     auto       cum = std::make_shared<const rf::SamplerCumulatives>();
     diag("rest-frame tables built in %.1f s", seconds_since(t0));
+    diag("loss tables of the host chain: qk_source = %s (BH_QK_SOURCE; step 6 round 2, F9)",
+         loss_quadrature().qk_source == QkSource::Born ? "born-3D2000" : "chodorowski-3.7");
     struct Case {
       std::string bath;
       double      eps0, gamma;
@@ -493,7 +514,7 @@ namespace {
       spec.type   = "mono";
       spec.eps0   = c.eps0;
       const auto        bath = make_bath(spec);
-      BetheHeitlerRates rates(bath);
+      BetheHeitlerRates rates(bath, loss_quadrature()); // step 6 round 2 (F9): BH_QK_SOURCE selects the tables
       const auto        H = build_tables(rates, 1836.15);
       auto B = std::make_shared<const rf::BathEpsTables>(rf::BathEpsTables::build(*bath, H, *cum));
       rf::HostSampler S(bath, H, T, cum, B);
