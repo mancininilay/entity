@@ -16,7 +16,7 @@ for pair in reject_tau0:tau0 reject_fmax:f_max reject_bool:hadronic.enabled \
             reject_pairweight:pair_weight reject_maxevents:max_events_per_step \
             reject_oncapacity:on_capacity reject_envelope:envelope.gamma_max \
             reject_placement:hadronic.placement \
-            reject_mode:mode reject_mode_source:source; do
+            reject_mode:mode reject_mode_source:source reject_event_bypass:test.bypass_amax; do
   name="${pair%%:*}"; key="${pair#*:}"
   if [ ! -f "$INP/$name.toml" ]; then
     echo "FAIL: $name: input $INP/$name.toml not found"; n_fail=$((n_fail + 1)); continue

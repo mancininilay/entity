@@ -82,7 +82,6 @@
   ions.direction      = "+x"
   ledger.every        = 50
   on_bound            = "warn"
-  test.bypass_amax    = true
 
 [output]
   interval = 100000000

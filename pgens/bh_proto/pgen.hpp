@@ -92,6 +92,7 @@
 #include <map>
 #include <memory>
 #include <sstream>
+#include <cstdlib>
 #include <string>
 #include <vector>
 
@@ -557,6 +558,11 @@ namespace user {
       } catch (const std::invalid_argument& e) {
         raise::Error(e.what(), HERE);
       }
+#ifdef BH_TESTING
+      std::printf("bh_proto: BH_TESTING build (entity_bh_testing.xc): test-only facilities compiled in; not a "
+                  "production binary\n");
+      std::fflush(stdout);
+#endif
       raise::ErrorIf(M::CoordType != Coord::Cartesian,
                      "bh_proto: Cartesian metric required",
                      HERE);
@@ -998,9 +1004,20 @@ namespace user {
                   band_top, n_path, a_max_band, gamma_bind, where_bind.c_str(),
                   a <= a_max_band ? "pair_weight admitted" : "pair_weight EXCEEDS a_max");
       std::fflush(stdout);
-      if (setup.test_bypass_amax) {
-        std::printf("bh_proto: event mode: setup.test.bypass_amax = true: the refusal pair_weight > a_max is SKIPPED "
-                    "(test hook for the on_bound policy; never a production setting)\n");
+      // round 2 (2026-10-30, Codex 1 F1): the refusal can be skipped only in the test-only binary
+      // entity_bh_testing.xc (BH_TESTING defined by tests/hadronic/CMakeLists.txt for that target alone),
+      // and there only when the environment carries BH_TESTING_BYPASS_AMAX=1 (E8 (i): the per-event
+      // bound and the on_bound policy are reachable only past this refusal, which is exactly the
+      // bound's guarantee over the active band). The production binary compiles no such path.
+#ifdef BH_TESTING
+      const char* bypass_env  = std::getenv("BH_TESTING_BYPASS_AMAX");
+      const bool  bypass_amax = (bypass_env != nullptr) && (std::string(bypass_env) == "1");
+#else
+      constexpr bool bypass_amax = false;
+#endif
+      if (bypass_amax) {
+        std::printf("bh_proto: event mode: BH_TESTING build with BH_TESTING_BYPASS_AMAX=1: the refusal pair_weight > "
+                    "a_max is SKIPPED (test-only binary entity_bh_testing.xc; never a production path)\n");
         std::fflush(stdout);
       } else {
         raise::ErrorIf(!(a <= a_max_band),

@@ -1,0 +1,104 @@
+# bh_proto input (step 5 round 2, F1, 2026-10-30): Codex 1's review probe "production-bypass-true" (review 2026-10-30-codex1-cpp-event-mode.md, finding F1): production placement, mode = event, f_max = 1.1e-3 with pair_weight = 1 (a_max = 0.148, refused) and the removed key test.bypass_amax = true. Expected: refused at the parser (unknown key); at 30c551f7 it ran to completion with 11 bounded events (exit 0).
+# bh_proto input (step 5, E8 run level): the per-event bound under on_bound = warn: same input; the run completes, n_bounded > 0 (the Gamma_p = 3 events, skipped), n_spawned > 0 (the Gamma_p = 6 events), identity exact, array identity printed
+# base: event_smoke.toml;
+# mono bath eps0 = 0.5, delta spectrum, pair_weight 1, f_max 0.01 (a_max = 1.34 at Gamma_p = 6),
+# lambda = R dt / a = 0.078 per step at Gamma_p = 6 (tau0 = 0.4; 0.11 at tau0 = 0.563 would be reported
+# under on_max_events = error), 200 steps, simulation.seed = 12345
+[simulation]
+  name    = "reject_event_bypass"
+  engine  = "srpic"
+  runtime = 100.0
+  seed    = 12345
+
+[grid]
+  resolution = [16]
+  extent     = [[0.0, 16.0]]
+  [grid.metric]
+    metric = "minkowski"
+  [grid.boundaries]
+    fields    = [["PERIODIC"]]
+    particles = [["PERIODIC"]]
+
+[scales]
+  larmor0    = 1.0
+  skindepth0 = 1.0
+
+[algorithms]
+  [algorithms.timestep]
+    CFL = 0.5
+  [algorithms.fieldsolver]
+    enable = false
+  [algorithms.deposit]
+    enable = false
+
+[particles]
+  ppc0        = 1.0
+  use_weights = true
+  [[particles.species]]
+    label                    = "ion"
+    mass                     = 1.0
+    charge                   = 1.0
+    maxnpart                 = 1e3
+    pusher                   = "Boris"
+    n_payloads_real          = 3
+    deposit                  = false
+    clear_interval           = 0
+    spatial_sorting_interval = 0
+  [[particles.species]]
+    label                    = "e-"
+    mass                     = 1.0
+    charge                   = -1.0
+    maxnpart                 = 2e4
+    pusher                   = "Boris"
+    n_payloads_real          = 3
+    deposit                  = false
+    clear_interval           = 0
+    spatial_sorting_interval = 0
+  [[particles.species]]
+    label                    = "e+"
+    mass                     = 1.0
+    charge                   = 1.0
+    maxnpart                 = 2e4
+    pusher                   = "Boris"
+    n_payloads_real          = 3
+    deposit                  = false
+    clear_interval           = 0
+    spatial_sorting_interval = 0
+
+[setup]
+  hadronic.enabled    = true
+  hadronic.placement = "production"
+  hadronic.species    = [1]
+  mode                = "event"
+  tau0                = 0.4
+  physical_mass_ratio = 1836.15
+  photon_field.type   = "mono"
+  photon_field.eps0   = 0.5
+  spectrum            = "delta"
+  pair_species        = [2, 3]
+  pair_weight         = 1.0
+  f_max               = 1.1e-3
+  gamma_p_typical     = 6.0
+  ions.K              = [3672.3, 9180.75]
+  ions.per_K          = 16
+  ions.direction      = "+x"
+  ledger.every        = 50
+  on_bound            = "warn"
+  test.bypass_amax    = true
+
+[output]
+  interval = 100000000
+  [output.fields]
+    enable = false
+  [output.particles]
+    enable = false
+  [output.spectra]
+    enable = false
+  [output.stats]
+    enable = false
+
+[checkpoint]
+  interval = 100000000
+
+[diagnostics]
+  interval = 100000000

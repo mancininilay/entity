@@ -418,14 +418,11 @@ int main(int argc, char** argv) {
     expect_reject("mode = event with pair_weight = 0", VALID + std::string("mode = \"event\"\npair_weight = 0.0\n"),
                   "pair_weight");
     expect_reject("on_bound invalid", VALID + std::string("on_bound = \"abort\"\n"), "on_bound");
-    expect_reject("test.bypass_amax not boolean", VALID + std::string("test.bypass_amax = 1\n"), "test.bypass_amax");
-    {
-      const auto s  = user::bhproto::parse_setup(parse_toml(VALID + std::string("test.bypass_amax = true\n")));
-      const auto d  = user::bhproto::parse_setup(parse_toml(VALID));
-      const bool ok = s.test_bypass_amax && !d.test_bypass_amax;
-      std::printf("%s: test.bypass_amax read (default false)\n", ok ? "PASS" : "FAIL");
-      ok ? ++n_pass : ++n_fail;
-    }
+    // round 2 (F1, 2026-10-30): the old test hook is no longer a key; an input carrying it is refused
+    expect_reject("test.bypass_amax removed (F1): refused as an unknown key",
+                  VALID + std::string("test.bypass_amax = true\n"), "test.bypass_amax");
+    expect_reject("test.bypass_amax = false also refused (F1)",
+                  VALID + std::string("mode = \"event\"\ntest.bypass_amax = false\n"), "test.bypass_amax");
     expect_reject("on_bound not a string", VALID + std::string("on_bound = 1\n"), "on_bound");
     // the restart predicate (contract section 3): refused only in the event mode with a non-zero payload
     {
