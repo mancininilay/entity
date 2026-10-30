@@ -210,8 +210,11 @@ ulp-energy / 2 = ulp(u) mu_d u / (2 gamma_d) = 4.9e-4 at Gamma_p = 6 against
 a <D> = 8.36, i.e. 5.8e-5 relative; measured 1.83e-5 (E1), 1.13e-5 (E8 ii,
 300 events, little averaging), 9.3e-6 (E8 iii, 31 events per ion: the
 fractional part drifts as the ions cool and the bias partly averages). With
-the restframe spectrum D varies from event to event, the rounding is
-random in sign and the closure is 7.5e-7 (the contract's "expected ~1e-7"
+the restframe spectrum D varies from event to event, the rounding was
+measured to average out and the closure is 7.5e-7 [round 2, revision 1.1:
+the "random in sign" claim is withdrawn as a property of the mode; the
+restframe value is a measurement of this run, not a guarantee] (the
+contract's "expected ~1e-7"
 is reached within an order of magnitude; 1e4 events, per-event 1e-4
 relative, sqrt(N) averaging gives 1e-6). In the double build the same
 quantity is 1e-14. The contract's argument "random in sign" (section 2 e)
@@ -244,9 +247,11 @@ term w_pair D_s - (stored pair energy - w_pair eps) it must be
 w (dK_applied - a D_s): implemented so; the identity residual is exactly
 0 in both builds. (2) Section 3's a_max orientation numbers are f_max K /
 <D> (section 2, stage 1). (3) The per-step condition <D> R dt <= f_max K of
-spec III.5 is not in the contract's per-ion algorithm and is not enforced
-by the kernel (the per-event bound is); its table-wide maximum is printed
-at startup (2.6e-2 for `event_smoke`).
+spec III.5 was not in the contract's per-ion algorithm and was not enforced
+by the kernel at 30c551f7 (the per-event bound was); its table-wide maximum
+is printed at startup (2.6e-2 for `event_smoke`) [superseded in round 2,
+revision 1.1 (F2): enforced by the kernel at the current state of every ion
+on every step, see the Round 2 section].
 
 **`on_bound` is unreachable inside the declared band (fact by
 construction).** The startup refusal admits a run only if a <= f_max K /
@@ -527,11 +532,12 @@ the sampler counters remains deferred as before.
 6. The test hook `test.bypass_amax` (default false, loud at startup) exists
    so that the `on_bound` host policy has a run-level test; without it the
    policy is unreachable for admitted inputs inside the band.
-7. The per-step condition of spec III.5 (<D> R dt <= f_max K) is not
-   enforced by the kernel (the contract's algorithm has only the per-event
-   bound); it is printed at startup. Recommendation: leave it to the
-   startup report (it is implied by lambda_max < 1 and the per-event bound
-   up to a factor <D>/D_max).
+7. The per-step condition of spec III.5 (<D> R dt <= f_max K) was not
+   enforced by the kernel at 30c551f7 (the contract's algorithm had only the
+   per-event bound); it was printed at startup. Recommendation at the time:
+   leave it to the startup report. [Rejected by Codex 1 (F2, the
+   production-accelerated counterexample) and by Nilay (revision 1.1):
+   enforced at the current state since round 2, see the Round 2 section.]
 8. **E3's registered prediction is wrong beyond a 2 % energy loss** (stage
    3 mechanism): the straggling variance along a cooling curve is pulled
    back by the drift's dependence on K, first order in (dlnI/dlnK) Delta
@@ -568,3 +574,199 @@ the sampler counters remains deferred as before.
 ## 5. Branch head
 
 Stage 1: `9a44ecb8`. Stage 2: `7be411a7`. Stages 3 and 4 (code): `bac7cafe`, single-build statistics `a5db13f6`. Final (this commit): see the Resources note `2026-10-29-claude1-event-mode-report.md`, which records the head hash.
+
+## 6. Round 2 (Claude 1, 2026-10-30): Codex 1's review resolved under contract revision 1.1
+
+Reference: the review `Resources/p2-hadronic/reviews/2026-10-30-codex1-cpp-event-mode.md`
+(HOLD at 30c551f7, findings F1 to F7), contract revision 1.1 (Nilay, 2026-10-30
+11:32), the brief `notes/2026-10-30-claude1-local-brief-step5-round2.md`. The
+condensed resolution log and verdict table are in the Resources report
+`notes/2026-10-29-claude1-event-mode-report.md` §6; this section is the stage
+log. Builds: `builds/event-single`, `builds/event-double` (Kokkos 5.0.1
+Serial+OpenMP, no MPI); logs `builds/log-event-*-round2-*`.
+
+### 6.0 Task 0: integration
+
+`dev/hadronic` 051bb896 -> 8e4ba0fb (fast-forward on the fork and in
+`entity-dev`, Codex 2 GREEN, standing go-ahead). Merge of `dev/hadronic` into
+this branch: **d770b2bd**. Conflicts: `pgens/bh_proto/bh_proto_params.h`
+(pair_weight documentation: both texts kept) and
+`tests/hadronic/bh_proto_params.cpp` (step-5 T23 block and the weights flag-rule
+block: both kept). `pgen.hpp` merged without conflict; `check_weights_flag`
+gains the event clause (`particles.use_weights = false` with `pair_weight != 1`
+and `mode = event` refused; `a = 1` admitted), three parser cases.
+
+### 6.1 F1, commit 9ee6fbaf
+
+`test.bypass_amax` removed from the documentation, the `Setup`, the key list
+and the parser: the key is refused as unknown (parser cases "removed (F1)" and
+"= false also refused"). Test-only facility: `tests/hadronic/CMakeLists.txt`
+builds `entity_bh_testing.xc` from `src/entity.cpp` (the translation unit that
+includes `pgen.hpp`) with `BH_TESTING=1`; `pgen.hpp` skips the a_max refusal
+only under `#ifdef BH_TESTING` and only when `BH_TESTING_BYPASS_AMAX=1` is in
+the environment, printing a banner at startup and a SKIPPED line. `event_e8.sh`
+takes the test binary as its fifth argument; it first runs `event_bound_error`
+and `event_bound_warn` (key removed) on the production binary and requires a
+non-zero exit with "exceeds a_max" in the log and no banner, then the two
+policy runs on the test binary with the variable exported, asserting banner and
+SKIPPED line. `reject_event_bypass.toml` = Codex 1's `production-bypass-true`
+input (production placement, the key present): exit 1, message names the key.
+Measured: parser 157/157, reject 35/35, event_e8 9 runs (later 11), both builds.
+
+### 6.2 F2, commit ae242b3a
+
+Kernel `event_branch`: ratio = coeff g I(Gamma_p) dt / (f_max K) at the current
+state before any draw. ratio > 1 (also a non-finite ratio): `n_bound_steps += 1`;
+`prm.bound_error` (host: `setup.on_bound == "error"`) -> `n_bound_flagged += 1`
+(F3 naming; at this commit still `n_bounded`), `sum_wK` updated, return (no
+RNG use, no recoil; the host aborts at the common point with code 3); else
+m = ceil(ratio), capped at `max_substeps` with the step flagged, `n_substeps +=
+m`. Chunk loop: dt_c = dt / m, R at the current Gamma_p, lambda = R dt_c / a,
+Poisson draw and cap per chunk, the per-event loop unchanged; a capacity failure
+or the lower edge stops the remaining chunks. m = 1 is the previous algorithm
+bit for bit (same expression, same arguments). `HadronicParams::bound_error`
+(default false = warn behaviour, the host sets it), `LossLedger::n_bound_steps`
+(+= and MPI list). Host messages name the condition; the information line
+"hazard sub-cycled (n_substeps this step, max_substeps)" under warn; the
+comment in `event_mode_report` replaced by the fact.
+
+Tests (kernel, `test_E8_current_state`, group e8): (a) Gamma_p0 = 6, delta,
+a = 1, f_max = 2e-3, coeff set so that ratio = 2.6 (lambda = 5.71 per step,
+cap 1000), N = 1e5, 20 launches (t = 10); reference: the same coefficient at
+dt / 3 with f_max = 0.01 (ratio 0.17, m = 1), 60 launches. The two runs follow
+the same law (the chunks of the first are the steps of the second; no event
+bounded in either): <K> 0.4696 s.e., Var K 0.677 s.e. (single; double 0.4688,
+0.678); n_substeps = 6e6 = 3 N x 20, n_bound_steps = 2e6, n_bounded = 0, no
+capped draw. (b) `bound_error = true`, 400 ions x 5 launches: 2000 flagged, 0
+events, 0 RNG, 0 ions changed. (c) `max_substeps = 2`: 2000 flagged,
+n_substeps = 4000, 400 ions recoiled, pairs created, identity and closure
+(delta single: 1.32e-5, the rounding class). Run level: `event_accel_error.toml`
+/ `event_accel_warn.toml` = Codex 1's `production-accelerated` input (16 ions at
+Gamma_p 2.4, E_x = 13220.28, dt = 0.5, one step, f_max 0.01, a = 1; admitted at
+startup: a_max 3.46, lambda 0.05; after the push Gamma_p = 6.0, ratio 6.003,
+lambda 65.9; at 30c551f7 exit 0 with 1002 pairs). Error: abort at step 0, code 3,
+the failure line names "R <D> dt > f_max K", ledger row written with 16 flagged,
+0 events. Warn: completes, 7 chunks per ion (n_substeps 112), >= 500 pairs,
+identity exact, the sub-cycling line printed. `bh_check --min_substeps`.
+
+### 6.3 F3, commit e008b721
+
+`n_events` in the event mode = drawn interactions: `L.n_events += n` after the
+cap in each chunk; `spawn_pair_vec` increments it only when `prm.mode !=
+Event`. New `n_attempted` (before each spawn call) and `n_unexecuted` (`n - e`
+at the lower-edge break, `n - e - 1` at a capacity failure). Flagged ion-steps
+move from `n_bounded` to the new `n_bound_flagged` (identity over events exact;
+the host policy acts on `n_bounded + n_bound_flagged`, FailRecord count the
+sum; deviation from the letter of revision 1.1 recorded for Nilay). Capacity
+message in the event mode: "no debt in the event mode: the ion keeps its energy
+and the interactions drawn for the failing ion-steps after the failure are not
+executed (n_unexecuted)". `check_E1` asserts n_events = n_spawned + n_bounded +
+n_dropped + n_unexecuted and n_attempted = n_spawned + n_dropped.
+
+Tests (`test_E8_counters`): (a) 10000 ions at Gamma_p 6, lambda 4, pair
+capacity 0, one launch: n_events 40098 (expected 40000 +- 200, 0.49 sigma),
+n_dropped 9830 (expected 9816.8 +- 13.4, 0.98 sigma), n_unexecuted 30268,
+n_attempted = n_dropped, identity exact, no ion changed, E_drag = 0. (b) 2000
+ions at Gamma_p = gamma_min + 0.003 (Delta Gamma_p per delta event 0.00205),
+lambda 4: 7921 drawn, 3775 spawned, 4146 unexecuted, the 1810 ions with two
+pairs below gamma_min and no other, identity exact. Both builds identical
+(same seeds, counters integer).
+
+### 6.4 F4, commit 671c6efd
+
+Ledger file: columns 46 to 51 appended (n_bound_steps, n_bound_flagged,
+n_attempted, n_unexecuted [cumulative, event mode], n_alive [snapshot, reduced
+over ranks], n_resolution [cumulative]); header documents them. Final summary
+line: every reducer counter including n_resolution, n_alive and the sampler
+counters (explicit zeros in every mode); the sampler line printed in every mode
+("sampler not used, counters 0" outside restframe). `bh_check`: LEDGER_COLS 51,
+the comparison reader accepts 15/43/45/51, LEDGER_ROW prints the new columns,
+options `--expect_identity`, `--expect_bound_flagged`, `--min_bound_steps`,
+`--min_unexecuted`, `--expect_alive`. `event_e8.sh`: identity on every completed
+run and on both error rows; flagged 16 and n_alive 16 on the accelerated probe;
+51 columns; the 24 counter names in the summary line of `event_smoke` with the
+sampler counters at 0; the sampler line in the delta mode. Positional readers
+(`sampler_overflow.sh` 44/45, `event_e8.sh` 32) unchanged. All 16 HADRONIC
+entries pass in both builds (3 cross-build entries skipped as before).
+
+### 6.5 F5 to F7, commits 5ded2a21, 637a6602, c10cf8b7
+
+`bh_event.cpp`: `verdict_exception` and the `delta_single` flag of `check_E1`
+(EXCEPTION rows, `n_exception` in the summary); `verdict_E2` takes the targets;
+`verdict_E3` on `var_fb` with the history row and the budgets (`Reference::
+var_fb_curv`: the feedback equation with the extra source (1/2) B''(K) V_meas,
+B = a coeff J E[D^2], B'' by centred differences h = 0.02 K; the Jensen share
+= (1/2) I'' V / I); `test_E2E3`: targets by Gamma_p0, the 0.65 diagnostic at
+Gamma_p0 = 3, the continuous mode on 1000 ions at dt and dt / 16 (records
+aligned, 16 x out_every), the plain-ODE verdict at dt / 16, the cross-mode and
+history diagnostics, the deterministic check (Var K <= 1e-20 K0^2; 2.5e-21
+measured at K ~ 9e3, two-pass summation rounding; c10cf8b7); `test_E7`: the
+support bound over the band (`arch::bh::event::a_max`, min 5.3648 at Gamma_p =
+6 for f_max = 0.04), the registered cases at f_max 0.04 asserted for both
+spectra with stop 0.4 and 100000 launches (637a6602: the plain ODE reaches
+Gamma_p = 3 at 95090 launches), diagnostics a = 10, 30 at f_max 0.1 labelled
+clipped law (a_max there 13.4 at Gamma_p 6, 25.8 at 3); `test_E4`: f_max 0.02
+at Gamma_p 10 (a_max 1.68), 0.01 at 3 (2.58). `main`: the Gamma_p0 = 3 group
+runs 130000 launches with stop 0.59 (reaches 0.6494).
+
+Measured (single | double; group times single: e2e3 3.0 min, e6 14 s, e7 16 min,
+e4 4 s, e2e3_g3 7 min; double e7 955 s):
+
+- E1 restframe 4.56e-7 | 3.63e-16 (pass); E1 delta 1.83e-5 EXCEPTION | 7.68e-15.
+- E5: 4.96e-7 / 4.76e-7 | 1.21e-15 / 2.01e-15; counts identical.
+- E2 G6: delta 0.88 / 2.26 / 1.28 s.e. | 0.89 / 2.28 / 1.30; restframe 2.15 /
+  1.06 / 8.60 | 2.11 / 1.09 / 8.93 (0.5 FAIL; Born-mean diagnostic -2.77 /
+  -2.49 / -1.42 s.e.).
+- E2 continuous dt / 16 vs plain ODE: G6 0.27 / 0.087 / 0.091 | 0.28 / 0.026 /
+  0.11; G3 0.030 / 0.094 | 0.12 / 0.050 (relative 3.7e-6 to 7.7e-6). Continuous
+  dt / 16 vs dt: 0.46 / 0.37 / 0.18 s.e. (G6).
+- Cross-mode (event - Jensen) vs continuous dt / 16: G6 -1.15 / -2.35 / -1.37
+  s.e. (raw -1.38 / -4.02 / -6.40) | -1.17 / -2.31 / -1.19; G3 -1.22 / +1.11
+  (raw -4.24 / -13.7) | -1.07 / +0.97. History row (event vs continuous at dt):
+  G6 -0.92 / -3.65 / -6.23 s.e. (the 0.5 row would fail as in revision 1.0).
+- E3 G6: delta 0.85 / 0.42 / 0.17 % | 0.84 / 0.41 / 0.17; restframe 0.17 /
+  0.018 / 0.72 % | 0.17 / 0.047 / 1.15 (tolerance 1.79 %); history no-feedback
+  6.8 / 32 / 89 % (delta), 5.8 / 23 / 90 % (restframe); curvature budget +3e-5
+  to +1.9e-3 relative, Jensen share 3.6e-5 to 1.5e-3; max over the window
+  (Delta K/K >= 1 %) 1.27 % delta (t = 112.5), 0.88 % restframe.
+- E2 G3: delta 1.19 / 1.01 s.e., 0.6 NOT REACHED (0.6494 after 130000 launches,
+  t = 65000), 0.65 diagnostic 0.68 s.e.; restframe 9.83 / 11.81 FAIL, 0.65:
+  5.68 (Born-mean diagnostic 0.14 / 1.06 / -1.73 s.e.) | double 1.19 / 1.02;
+  9.90 / 11.43; 0.65: 0.68 and 6.04.
+- E3 G3: at sigma_K/K = 0.005: delta 0.62 %, restframe 0.24 % (pass); the 0.01
+  point is never reached (sigma_K/K peaks below 0.01); last record (t = 65000,
+  Delta K/K = 0.3506): delta 2.26 % | 2.26, restframe 1.96 % | 2.64 FAIL;
+  curvature budget there +0.95 %, Jensen share 1.03 %; max over the window
+  2.52 / 2.60 % at t = 58000 to 64700.
+- E4: 10/10 calibrated AD both Gamma_p; 1098563 and 1099569 pairs; Gamma_p shift
+  1.32e-4 and 6.33e-5; both builds.
+- E6: 7/7 both builds; dt x 1 passes E2 (0.46 s.e.) and E3 (0.53 / 0.046 / 0.13
+  %); residuals 0.84 and 0.85 s.e.; slopes -0.0107 per unit dt (<K>), 4.05 (Var).
+- E7 registered (f_max 0.04): delta E2 <= 1.47 s.e. and E3 <= 0.67 % for a = 1,
+  2, 4; restframe E2 at 0.9 / 0.7 pass (<= 3.23 s.e.), at 0.5 FAIL 8.65 / 6.98 /
+  4.63 | 8.88 / 6.97 / 4.98; restframe E3 <= 1.19 %; 0 bounded events in all
+  six runs; <K>/K0 = 0.39998 reached (band covered). Diagnostics (f_max 0.1):
+  delta a = 10 within 1.51 s.e., a = 30 within 1.65; restframe a = 10 up to 3.69
+  s.e. (0 skipped), a = 30: 12.2 / 16.9 / 15.7 s.e. with skipped fraction
+  3.78e-3 (clipped law); Var/Var_fb 1.015 to 1.051, Var/Var_nofb 0.10 to 0.11.
+- Full ctest double: 115/121 pass, 3 skipped (cross-build entries), failures
+  `GLOBAL::param_container` (macOS baseline), `ARCHETYPES::bh_chain_a7w`
+  (retained registered A7), `bh_event_e2e3`, `bh_event_e2e3_g3`, `bh_event_e7`
+  (the rows above); 3090 s. Single: 115/121 pass, 3 skipped, failures `GLOBAL::param_container` and `METRICS::sr-cart-sph` (macOS baselines), `ARCHETYPES::bh_chain_a7w` (retained), `bh_event_e2e3`, `bh_event_e2e3_g3`, `bh_event_e7` (same rows as the double build, plus the delta single-build EXCEPTION rows); 3008 s.
+
+### 6.6 Withdrawn claims and open points
+
+Removed from the code comments: the kernel-enforcement sentence of
+`event_mode_report` (F2) and the "random in sign" phrase of the E_round comment
+(now "systematic in sign for a constant recoil"); marked withdrawn in sections
+2 and 3 above. Open for Nilay (Resources report §6.3): the 0.6 target at
+Gamma_p0 = 3 (t = 6.8e5 needed, 1.35e6 launches), the `n_bound_flagged`
+naming, the deep-window E3 failure at Gamma_p0 = 3 (next-order closure or a
+window bound), the restframe fit-vs-Born rows (E10), the MPI reduction of the
+new counters (not executed).
+
+## 7. Branch head after round 2
+
+Code head **c10cf8b7** (merge d770b2bd; F1 9ee6fbaf; F2 ae242b3a; F3 e008b721;
+F4 671c6efd; re-registrations 5ded2a21, 637a6602, c10cf8b7); this report's
+commit follows it.
