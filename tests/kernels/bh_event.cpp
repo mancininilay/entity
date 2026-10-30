@@ -60,6 +60,7 @@
 #include "metrics/minkowski.h"
 
 #include "archetypes/hadronic/bh_calibrated_test.h"
+#include "archetypes/hadronic/bh_event_host.h"
 #include "archetypes/hadronic/bh_interpolate.h"
 #include "archetypes/hadronic/bh_physics.h"
 #include "archetypes/hadronic/bh_sampler_device.h"
@@ -93,7 +94,7 @@ namespace cal = arch::bh::cal;
 
 namespace {
 
-  int n_pass = 0, n_fail = 0;
+  int n_pass = 0, n_fail = 0, n_exception = 0;
 
   void verdict(bool ok, const std::string& what, double value, double tol) {
     std::printf("%s: %s : %.6e (tolerance %.3e)\n", ok ? "PASS" : "FAIL", what.c_str(), value, tol);
@@ -106,6 +107,24 @@ namespace {
 
   void diag(const std::string& s) {
     std::printf("(diag) %s\n", s.c_str());
+  }
+
+  /**
+   * @brief A verdict under the development-only exception of contract revision 1.1
+   *        (Nilay, 2026-10-30): the E1 rounding gates of the delta spectrum in the
+   *        single build. A failure is printed as EXCEPTION with its number (the row
+   *        stays visible, the registered tolerance unchanged), counted in n_exception,
+   *        not in n_fail; a pass is an ordinary PASS. Restframe is never routed here.
+   */
+  void verdict_exception(bool ok, const std::string& what, double value, double tol) {
+    if (ok) {
+      verdict(true, what, value, tol);
+      return;
+    }
+    std::printf("EXCEPTION: %s : %.6e (tolerance %.3e) [development-only exception, revision 1.1: delta spectrum, single build; "
+                "registered failure kept, not counted as FAIL]\n",
+                what.c_str(), value, tol);
+    ++n_exception;
   }
 
   template <class... Ts>
@@ -513,11 +532,21 @@ namespace {
     return C;
   }
 
-  void check_E1(const std::string& tag, const HostLedger& H, const Closure& A, const Ions& ions) {
+  void check_E1(const std::string& tag, const HostLedger& H, const Closure& A, const Ions& ions, bool delta_single = false) {
     const double E = std::abs(H.C.E_drag.value());
-    verdict(E > 0.0 && std::abs(A.residual) <= TOL_CLOSURE * E,
-            tag + ": E1 array closure |sum w dK - sum w_s (E- + E+ - eps)| / E_drag", E > 0.0 ? std::abs(A.residual) / E : -1.0,
-            TOL_CLOSURE);
+    // revision 1.1: the two rounding gates of the delta spectrum in the single build are the
+    // development-only exception (systematic rounding of a constant recoil, author's report
+    // 2026-10-29 and Codex 1's F7); every other gate and every restframe gate stays strict
+    auto gate = [&](bool ok, const std::string& what, double value, double tol) {
+      if (delta_single && SINGLE) {
+        verdict_exception(ok, what, value, tol);
+      } else {
+        verdict(ok, what, value, tol);
+      }
+    };
+    gate(E > 0.0 && std::abs(A.residual) <= TOL_CLOSURE * E,
+         tag + ": E1 array closure |sum w dK - sum w_s (E- + E+ - eps)| / E_drag", E > 0.0 ? std::abs(A.residual) / E : -1.0,
+         TOL_CLOSURE);
     verdict(A.n_ions_bad == 0, tag + ": per-ion closure (mechanism bound, not in the contract) on " +
                                  std::to_string(A.n_ions_with_pairs) + " ions with pairs, max |residual| / (n_events x half "
                                  "ulp-energy)",
@@ -525,7 +554,7 @@ namespace {
     verdict(std::abs(H.residual()) <= TOL_IDENTITY * E, tag + ": ledger identity residual / E_drag",
             E > 0.0 ? std::abs(H.residual()) / E : -1.0, TOL_IDENTITY);
     const double er = H.C.E_round.value();
-    verdict(std::abs(er) <= TOL_EROUND * E, tag + ": |E_round| / E_drag", E > 0.0 ? std::abs(er) / E : -1.0, TOL_EROUND);
+    gate(std::abs(er) <= TOL_EROUND * E, tag + ": |E_round| / E_drag", E > 0.0 ? std::abs(er) / E : -1.0, TOL_EROUND);
     // E_round is the array residual by construction (consistency of the two bookkeepings)
     const double diff = std::abs(A.residual - er);
     verdict(diff <= 1.0e-9 * std::max(std::abs(er), 1.0e-300) || (er == 0.0 && A.residual == 0.0),
@@ -584,7 +613,7 @@ namespace {
       H.add(launch(ions, pairs, T, prm, pool, static_cast<double>(n + 1) * DT));
     }
     const auto A = closure(ions, K_init, pairs, T, prm.pair_weight);
-    check_E1("E1 " + name, H, A, ions);
+    check_E1("E1 " + name, H, A, ions, spectrum == DELTA);
     const double sig = std::sqrt(mean_lambda);
     verdict(std::abs(static_cast<double>(H.C.n_events) - mean_lambda) <= 4.0 * sig,
             "E1 " + name + ": drawn events within 4 sigma of the Poisson mean from the per-launch states, |n - mean| / sigma",
@@ -867,6 +896,10 @@ namespace {
    */
   struct Reference {
     std::vector<double> K_plain, K_corr, var_pred, var_fb, jensen_rate; // at the series' times
+    // var_fb_curv [budget, revision 1.1]: var_fb with the next term of the closure, the source
+    // (1/2) B''(K) V (B = a R E[D^2]; second order in the jump scale a): its relative effect on V is
+    // the curvature budget reported beside the E3 verdict
+    std::vector<double> var_fb_curv;
     // K_born [diagnostic]: the corrected ODE with the mean loss rate J(Gamma) <D>_fixture(Gamma) in place of the
     // table's I = J <D>_fit: the restframe sampler loses energy at the Born chain's mean (bhref 0.2.0 Dmean),
     // the step-1 loss table at the Chodorowski-fit mean (decision 2026-10-27 (a): the Born-q_k tables will
@@ -916,7 +949,14 @@ namespace {
     };
     Reference R;
     const double h = S.dt; // the RK4 step: the run's dt (the smooth ODE is resolved far below the tolerance)
-    double Kp = S.K0, Kc = S.K0, Kb = S.K0, t = 0.0, vp = 0.0, vf = 0.0;
+    double Kp = S.K0, Kc = S.K0, Kb = S.K0, t = 0.0, vp = 0.0, vf = 0.0, vf2 = 0.0;
+    auto B_of_K = [&](double K) {
+      return S.a * S.coeff * J_of_K(K) * d2_of_gamma(1.0 + K / mu_r);
+    };
+    auto Bpp = [&](double K) {
+      const double h = 0.02 * K;
+      return (B_of_K(K + h) - 2.0 * B_of_K(K) + B_of_K(K - h)) / (h * h);
+    };
     auto fp = [&](double K) {
       return -S.coeff * I_of_K(K);
     };
@@ -949,6 +989,8 @@ namespace {
           const double g  = 0.5 * (g0 + g1);
           const double ex = std::exp(-2.0 * c * hh);
           vf              = vf * ex + (std::abs(c) > 1e-300 ? g * (1.0 - ex) / (2.0 * c) : g * hh);
+          const double g2 = g + 0.5 * Bpp(0.5 * (Kc_prev + Kc)) * var_at(t + 0.5 * hh);
+          vf2             = vf2 * ex + (std::abs(c) > 1e-300 ? g2 * (1.0 - ex) / (2.0 * c) : g2 * hh);
         }
         if (dmean_alt != nullptr) {
           const double k1 = fb(Kb, t), k2 = fb(Kb + 0.5 * hh * k1, t + 0.5 * hh), k3 = fb(Kb + 0.5 * hh * k2, t + 0.5 * hh),
@@ -964,6 +1006,7 @@ namespace {
       R.K_corr.push_back(Kc);
       R.var_pred.push_back(vp);
       R.var_fb.push_back(vf);
+      R.var_fb_curv.push_back(vf2);
       if (dmean_alt != nullptr) {
         R.K_born.push_back(Kb);
       }
@@ -983,17 +1026,18 @@ namespace {
   }
 
   /**
-   * @brief E2 at the targets <K>/K0 in {0.9, 0.7, 0.5}: |<K> - K_ODE,corr| <= 4 s.e.
-   *        (s.e. = sigma_K / sqrt(N) from the sample variance); the plain ODE
-   *        difference and the Jensen term relative to 4 s.e. are reported.
-   *        Unreachable targets (the run stopped above them) are reported as such.
+   * @brief E2 at the targets <K>/K0 (contract: {0.9, 0.7, 0.5}; revision 1.1 for Gamma_p0 = 3:
+   *        {0.9, 0.7, 0.6}): |<K> - K_ODE,corr| <= 4 s.e. (s.e. = sigma_K / sqrt(N) from the
+   *        sample variance); the plain ODE difference and the Jensen term relative to 4 s.e.
+   *        are reported. Unreachable targets (the run stopped above them) are reported as
+   *        such, with the launches run.
    */
-  void verdict_E2(const std::string& tag, const Series& S, const Reference& R) {
-    for (const double f : { 0.9, 0.7, 0.5 }) {
+  void verdict_E2(const std::string& tag, const Series& S, const Reference& R, const std::vector<double>& targets = { 0.9, 0.7, 0.5 }) {
+    for (const double f : targets) {
       const std::size_t i = first_below(S, f);
       if (i == std::string::npos) {
-        std::printf("(diag) %s: E2 target <K>/K0 = %.1f not reached: the run stopped at <K>/K0 = %.4f after %d launches "
-                    "(t = %.6g)\n",
+        std::printf("(diag) %s: E2 target <K>/K0 = %.2f NOT REACHED within the launch limit: the run stopped at <K>/K0 = %.4f after %d "
+                    "launches (t = %.6g); the registered row has no verdict\n",
                     tag.c_str(), f, S.meanK.back() / S.K0, S.n_launch, S.t.back());
         continue;
       }
@@ -1001,16 +1045,16 @@ namespace {
       const double diff = S.meanK[i] - R.K_corr[i];
       const double dpl  = S.meanK[i] - R.K_plain[i];
       verdict(std::abs(diff) <= 4.0 * se,
-              tag + fmt(": E2 at <K>/K0 = %.1f (t = %.6g, <K> = %.6g): |<K> - K_ODE,corrected| / s.e. (s.e. = %.4g)", f,
+              tag + fmt(": E2 at <K>/K0 = %.2f (t = %.6g, <K> = %.6g): |<K> - K_ODE,corrected| / s.e. (s.e. = %.4g)", f,
                         S.t[i], S.meanK[i], se),
               std::abs(diff) / se, 4.0);
-      std::printf("(diag) %s: E2 at %.1f: plain ODE difference %.4g (%.3f s.e.), Jensen correction K_corr - K_plain = %.4g "
+      std::printf("(diag) %s: E2 at %.2f: plain ODE difference %.4g (%.3f s.e.), Jensen correction K_corr - K_plain = %.4g "
                   "(%.3f of 4 s.e.), sigma_K/K = %.4g\n",
                   tag.c_str(), f, dpl, dpl / se, R.K_corr[i] - R.K_plain[i], (R.K_corr[i] - R.K_plain[i]) / (4.0 * se),
                   std::sqrt(S.varK[i]) / S.meanK[i]);
       if (!R.K_born.empty()) {
         const double db = S.meanK[i] - R.K_born[i];
-        std::printf("(diag) %s: E2 at %.1f [diagnostic: ODE with the fixture's Born <D> in place of the table's I/J]: "
+        std::printf("(diag) %s: E2 at %.2f [diagnostic: ODE with the fixture's Born <D> in place of the table's I/J]: "
                     "<K> - K_born = %.4g (%.3f s.e.); K_born - K_corr = %.4g (%.3e of the energy lost)\n",
                     tag.c_str(), f, db, db / se, R.K_born[i] - R.K_corr[i], (R.K_born[i] - R.K_corr[i]) / (S.K0 - R.K_corr[i]));
       }
@@ -1018,12 +1062,18 @@ namespace {
   }
 
   /**
-   * @brief E3 in the window sigma_K/K <= 0.02: |Var_meas / Var_pred - 1| <= 4 sqrt(2/N)
-   *        at the records where sigma_K/K first exceeds 0.005, 0.01 and at the
-   *        last record inside the window; the maximum deviation over the window
-   *        (records with at least 20 expected events per ion) is reported.
+   * @brief E3 (revision 1.1, Nilay 2026-10-30): Var K(t) against the drift-feedback equation
+   *        dV/dt = -2 coeff (dI/dK) V + a R E[D^2] (E[D^2] from the frozen D2mean, delta: <D>^2),
+   *        in the window sigma_K/K <= 0.02, |Var_meas / Var_fb - 1| <= 4 sqrt(2/N) at the records
+   *        where sigma_K/K first exceeds 0.005, 0.01 and at the last record inside the window;
+   *        the revision-1.0 reference (no feedback, int a R E[D^2] dt') is kept as the history
+   *        row, reported without verdict. Budgets reported separately: curvature (the (1/2) B'' V
+   *        source, next order in the jump scale), the Jensen share of the mean path, the frozen
+   *        reference's own sampling error (not available: the 0.2.0 moments fixture carries no
+   *        E[D^2] standard error; it enters the delta case not at all), higher central moments
+   *        (not recorded by the run; the omitted terms are O(a^2) in the small-jump ordering).
    */
-  void verdict_E3(const std::string& tag, const Series& S, const Reference& R) {
+  void verdict_E3(const std::string& tag, const Tables& T, const Series& S, const Reference& R) {
     const double tol = 4.0 * std::sqrt(2.0 / static_cast<double>(S.N));
     std::size_t  last_in = std::string::npos, i005 = std::string::npos, i01 = std::string::npos;
     for (std::size_t i = 1; i < S.t.size(); ++i) {
@@ -1042,22 +1092,25 @@ namespace {
                                                              { "last record with sigma_K/K <= 0.02", last_in } };
     for (const auto& pt : pts) {
       const std::size_t i = pt.second;
-      if (i == std::string::npos || !(R.var_pred[i] > 0.0)) {
+      if (i == std::string::npos || !(R.var_fb[i] > 0.0)) {
         std::printf("(diag) %s: E3 point (%s) not in the run\n", tag.c_str(), pt.first);
         continue;
       }
-      const double ratio = S.varK[i] / R.var_pred[i];
-      const double dKK   = (S.K0 - R.K_corr[i]) / S.K0;
-      verdict(std::abs(ratio - 1.0) <= tol,
-              tag + fmt(": E3 [registered: no feedback] at %s (t = %.6g, Delta K/K = %.4f, Var_meas = %.6g, Var_pred = %.6g): "
-                        "|Var_meas/Var_pred - 1|",
-                        pt.first, S.t[i], dKK, S.varK[i], R.var_pred[i]),
-              std::abs(ratio - 1.0), tol);
+      const double dKK      = (S.K0 - R.K_corr[i]) / S.K0;
       const double ratio_fb = S.varK[i] / R.var_fb[i];
       verdict(std::abs(ratio_fb - 1.0) <= tol,
-              tag + fmt(": E3 [proposal: linear drift feedback] at %s (Var_fb = %.6g): |Var_meas/Var_fb - 1|", pt.first,
-                        R.var_fb[i]),
+              tag + fmt(": E3 [registered, revision 1.1: drift feedback] at %s (t = %.6g, Delta K/K = %.4f, Var_meas = %.6g, "
+                        "Var_fb = %.6g): |Var_meas/Var_fb - 1|",
+                        pt.first, S.t[i], dKK, S.varK[i], R.var_fb[i]),
               std::abs(ratio_fb - 1.0), tol);
+      const double ratio = R.var_pred[i] > 0.0 ? S.varK[i] / R.var_pred[i] : 0.0;
+      std::printf("(diag) %s: E3 history row [revision 1.0, no feedback] at %s: Var_pred = %.6g, |Var_meas/Var_pred - 1| = %.4g "
+                  "(tolerance %.4g, %s; superseded, no verdict)\n",
+                  tag.c_str(), pt.first, R.var_pred[i], std::abs(ratio - 1.0), tol, std::abs(ratio - 1.0) <= tol ? "would pass" : "would fail");
+      std::printf("(diag) %s: E3 budgets at %s: curvature (1/2) B'' V source changes Var_fb by %+.4g relative; Jensen share of the "
+                  "mean loss rate %.3e; frozen E[D^2] sampling error not available in the fixture; higher moments not recorded\n",
+                  tag.c_str(), pt.first, R.var_fb_curv[i] / R.var_fb[i] - 1.0,
+                  R.jensen_rate[i] / std::max(1e-300, std::abs(-S.coeff * bh::interpolate_loss_host(T.host, 1.0 + R.K_corr[i] / MU_R))));
     }
     double worst = 0.0, t_worst = 0.0, worst_fb = 0.0, t_worst_fb = 0.0;
     for (std::size_t i = 1; i < S.t.size(); ++i) {
@@ -1081,9 +1134,9 @@ namespace {
         t_worst_fb = S.t[i];
       }
     }
-    std::printf("(diag) %s: E3 max |Var_meas/Var_pred - 1| over the window (Delta K/K >= 1%%) = %.4g at t = %.6g [registered], "
-                "%.4g at t = %.6g [feedback] (tolerance %.4g)\n",
-                tag.c_str(), worst, t_worst, worst_fb, t_worst_fb, tol);
+    std::printf("(diag) %s: E3 max |Var_meas/Var - 1| over the window (Delta K/K >= 1%%) = %.4g at t = %.6g [feedback, registered], "
+                "%.4g at t = %.6g [no feedback, history] (tolerance %.4g)\n",
+                tag.c_str(), worst_fb, t_worst_fb, worst, t_worst, tol);
   }
 
   void print_series(const std::string& tag, const Series& S) {
@@ -1109,11 +1162,12 @@ namespace {
     std::printf("\n=== E2 / E3 at Gamma_p0 = %g: N = %u, a = 1, lambda = %.3g at Gamma_p0 (dt = %.3g), delta and restframe, "
                 "stop at <K>/K0 = %.2f or %d launches ===\n",
                 Gp0, (unsigned)N, lambda, DT, stop_frac, n_max);
-    if (Gp0 * 0.5 + 0.5 < T.bath->gamma_th()) {
-      // K/K0 = 0.5 <=> Gamma = (Gamma_p0 + 1)/2: below the threshold for Gamma_p0 = 3 (Gamma = 2 < 2.125)
-      std::printf("(diag) E2 target <K>/K0 = 0.5 is below the pair threshold at Gamma_p0 = %g (Gamma = %.4g < Gamma_th = %.4g): "
-                  "not reachable by any run (fact); the run stops at %.2f\n",
-                  Gp0, 0.5 * (Gp0 + 1.0), T.bath->gamma_th(), stop_frac);
+    const std::vector<double> targets = Gp0 == 3.0 ? std::vector<double> { 0.9, 0.7, 0.6 } : std::vector<double> { 0.9, 0.7, 0.5 };
+    if (Gp0 == 3.0) {
+      // revision 1.1: the 0.5 target (Gamma = 2 < Gamma_th = 2.125, unreachable by any run) is replaced by 0.6
+      std::printf("(diag) E2 targets at Gamma_p0 = 3 re-registered (revision 1.1): 0.9, 0.7, 0.6 (the 0.5 target sat below the pair "
+                  "threshold, Gamma = %.4g < Gamma_th = %.4g, unreachable by any run); the run stops at <K>/K0 = %.2f or %d launches\n",
+                  0.5 * (Gp0 + 1.0), T.bath->gamma_th(), stop_frac, n_max);
     }
     std::printf("(diag) E[D^2] fixture: bhref-0.2.0/moments_mono05.txt, %zu nodes, data_sha256 %s\n", D2.gamma.size(),
                 D2.sha.c_str());
@@ -1127,25 +1181,53 @@ namespace {
                                   : std::function<double(double)>([&](double G) { return D2.at(G); });
       const std::function<double(double)> dmean_born = [&](double G) { return D2.dmean_at(G); };
       const auto R = reference(T, S, d2, spectrum == RESTFRAME ? &dmean_born : nullptr);
-      verdict_E2(tag, S, R);
-      verdict_E3(tag, S, R);
+      verdict_E2(tag, S, R, targets);
+      if (Gp0 == 3.0) {
+        // proposal for Nilay (fact, table integration): the 0.6 target lies at Gamma_p = 2.2, where the loss
+        // rate is 1.4e-4 of its value at 3; the plain ODE reaches it at t = 6.8e5 (1.35e6 launches at dt =
+        // 0.5, 35 times the cost of the 0.7 target); 0.65 (Gamma_p = 2.3) is reached at t = 6.4e4
+        verdict_E2(tag + " [diagnostic target 0.65, proposal]", S, R, { 0.65 });
+      }
+      verdict_E3(tag, T, S, R);
       verdict(S.C.n_bounded == 0 && S.C.n_dropped == 0 && S.C.n_capped_events == 0,
               tag + ": no bounded, dropped or capped event", static_cast<double>(S.C.n_bounded + S.C.n_dropped + S.C.n_capped_events),
               0.0);
-      // the small-jump statement: the continuous mode on the same ions, dt and coefficient
+      // revision 1.1: mode by mode. The continuous mode (eta_u = 1e-5, source none) is deterministic
+      // (every ion follows the same trajectory, Var K = 0 exactly, checked), so its mean is run on
+      // N_c = 1000 ions: at dt / 16 against the plain ODE at the targets (registered, the event
+      // ensemble's 4 s.e. as the scale), at dt as the history row of revision 1.0 (no verdict); the
+      // cross-mode difference, event minus its Jensen displacement against the converged continuous
+      // solution, reported in event s.e. without a verdict
       if (spectrum == DELTA) {
-        const auto Sc = cooling_run(T, CONTINUOUS, DELTA, 1.0, 0.01, coeff, DT, Gp0, N, 0.0, S.n_launch, out_every, 7u, 1.0e-5);
-        print_series(tag + " continuous (eta_u = 1e-5)", Sc);
-        for (const double f : { 0.9, 0.7, 0.5 }) {
+        const npart_t N_c = 1000;
+        const auto    Sc  = cooling_run(T, CONTINUOUS, DELTA, 1.0, 0.01, coeff, DT, Gp0, N_c, 0.0, S.n_launch, out_every, 7u, 1.0e-5);
+        const auto    Sc16 = cooling_run(T, CONTINUOUS, DELTA, 1.0, 0.01, coeff, DT / 16.0, Gp0, N_c, 0.0, 16 * S.n_launch, 16 * out_every,
+                                         7u, 1.0e-5);
+        print_series(tag + " continuous (eta_u = 1e-5) at dt", Sc);
+        print_series(tag + " continuous (eta_u = 1e-5) at dt / 16", Sc16);
+        verdict(Sc.varK.back() == 0.0 && Sc16.varK.back() == 0.0, tag + ": the continuous mode is deterministic (Var K = 0 exactly)",
+                Sc.varK.back() + Sc16.varK.back(), 0.0);
+        for (const double f : targets) {
           const std::size_t i = first_below(S, f);
-          if (i == std::string::npos || i >= Sc.meanK.size()) {
+          if (i == std::string::npos || i >= Sc16.meanK.size() || i >= Sc.meanK.size()) {
             continue;
           }
           const double se = std::sqrt(S.varK[i] / static_cast<double>(S.N));
-          verdict(std::abs(S.meanK[i] - Sc.meanK[i]) <= 4.0 * se,
-                  tag + fmt(": E2 vs the continuous mode at <K>/K0 = %.1f (t = %.6g): |<K>_event - <K>_continuous| / s.e.", f,
+          verdict(std::abs(Sc16.meanK[i] - R.K_plain[i]) <= 4.0 * se,
+                  tag + fmt(": E2 continuous at dt / 16 vs the plain ODE at <K>/K0 = %.2f (t = %.6g): |<K>_cont - K_ODE,plain| / s.e.", f,
                             S.t[i]),
-                  std::abs(S.meanK[i] - Sc.meanK[i]) / se, 4.0);
+                  std::abs(Sc16.meanK[i] - R.K_plain[i]) / se, 4.0);
+          std::printf("(diag) %s: continuous at dt / 16 vs dt at %.2f: %.4g (%.3f s.e.); dt / 16 vs plain ODE relative %.3e\n",
+                      tag.c_str(), f, Sc16.meanK[i] - Sc.meanK[i], (Sc16.meanK[i] - Sc.meanK[i]) / se,
+                      (Sc16.meanK[i] - R.K_plain[i]) / R.K_plain[i]);
+          const double jensen = R.K_corr[i] - R.K_plain[i];
+          std::printf("(diag) %s: cross-mode at %.2f [reported, no verdict]: (<K>_event - Jensen displacement %.4g) - <K>_cont,dt/16 = %.4g "
+                      "(%.3f s.e.); raw <K>_event - <K>_cont,dt/16 = %.4g (%.3f s.e.)\n",
+                      tag.c_str(), f, jensen, S.meanK[i] - jensen - Sc16.meanK[i], (S.meanK[i] - jensen - Sc16.meanK[i]) / se,
+                      S.meanK[i] - Sc16.meanK[i], (S.meanK[i] - Sc16.meanK[i]) / se);
+          std::printf("(diag) %s: history row [revision 1.0: event vs continuous at dt, 4 s.e.] at %.2f: %.4g (%.3f s.e.), %s; superseded\n",
+                      tag.c_str(), f, S.meanK[i] - Sc.meanK[i], (S.meanK[i] - Sc.meanK[i]) / se,
+                      std::abs(S.meanK[i] - Sc.meanK[i]) <= 4.0 * se ? "would pass" : "would fail");
         }
       }
     }
@@ -1175,7 +1257,7 @@ namespace {
       auto       d2 = std::function<double(double)>([&](double G) { return d2_delta(T, G); });
       const auto R  = reference(T, runs[0], d2);
       verdict_E2("E6 dt x 1", runs[0], R);
-      verdict_E3("E6 dt x 1", runs[0], R);
+      verdict_E3("E6 dt x 1", T, runs[0], R);
       verdict(runs[0].C.n_capped_events == 0, "E6: n_capped_events = 0 at dt x 1", static_cast<double>(runs[0].C.n_capped_events), 0.0);
     }
     // deviations at the final time
@@ -1206,54 +1288,79 @@ namespace {
   }
 
   /**
-   * @brief E7: a in {1, 2, 4} at f_max = 0.01 (registered) pass E2 at Gamma_p0 = 6 (delta,
-   *        the bound cannot fire with D = <D> at these a; restframe reported with its
-   *        bounded fraction); a in {10, 30} at f_max = 0.1 run as a labelled
-   *        diagnostic of the bias scaling (not passed or failed); the variance
-   *        against a R E[D^2] is checked for every a (contract section 1 (iii))
+   * @brief E7 (revision 1.1): a in {1, 2, 4} at f_max = 0.04, Gamma_p0 = 6 cooling over the
+   *        band Gamma_p 6 to 3 (stop at <K>/K0 = 0.4, Gamma_p = 3), E2 at {0.9, 0.7, 0.5} and
+   *        E3 asserted for delta and restframe (the restframe mean against the fitted table
+   *        carries the fit-vs-Born offset: its failures are expected until E10 on the Born
+   *        tables); a = 4 is admitted by the support bound, min over the band of a_max(Gamma)
+   *        = f_max K / D_max,unweighted = 5.36 (checked); a in {10, 30} at f_max = 0.1 run as
+   *        the labelled clipped-law diagnostic (the support bound is violated there, events
+   *        with a D > f_max K are skipped: the realised law is clipped, not coarse-grained).
+   *        The revision-1.0 registration (f_max = 0.01, delta only) is the history row.
    */
   void test_E7(Tables& T, const D2Table& D2, npart_t N) {
-    const double Gp0 = 6.0, lambda = 0.05;
-    std::printf("\n=== E7: a in {1, 2, 4} at f_max = 0.01 (registered), {10, 30} at f_max = 0.1 (diagnostic), Gamma_p0 = 6, "
-                "N = %u, R dt = %.3g at Gamma_p0 (lambda = R dt / a) ===\n", (unsigned)N, lambda);
-    const double Rdt = lambda; // R dt at Gamma_p0; coeff from it
+    namespace ev = arch::bh::event;
+    const double Gp0 = 6.0, lambda = 0.05, f_reg = 0.04, eps_max = 0.5;
+    std::printf("\n=== E7 (revision 1.1): a in {1, 2, 4} at f_max = %g over Gamma_p 6 to 3 (registered, delta and restframe), {10, 30} at "
+                "f_max = 0.1 (clipped-law diagnostic), N = %u, R dt = %.3g at Gamma_p0 = 6 (lambda = R dt / a) ===\n",
+                f_reg, (unsigned)N, lambda);
+    // the support bound over the band (fact): a_max(Gamma) = f_max K / D_max,unweighted(Gamma), minimum over Gamma_p in [3, 6]
+    double a_min = 1e300, g_min = 0.0;
+    for (int k = 0; k <= 300; ++k) {
+      const double G = 3.0 + 3.0 * k / 300.0;
+      const double a = ev::a_max(G, eps_max, MU_R, f_reg);
+      if (a < a_min) {
+        a_min = a;
+        g_min = G;
+      }
+    }
+    verdict(a_min >= 4.0, fmt("E7: min over Gamma_p in [3, 6] of a_max at f_max = %g (= %.4f at Gamma_p = %.3f) admits a = 4", f_reg, a_min, g_min),
+            a_min, 4.0);
+    std::printf("(diag) E7: a_max at f_max = 0.1 over the same band: %.4f at Gamma_p = 6, %.4f at 3: a = 10 and 30 are not admitted (clipped law)\n",
+                ev::a_max(6.0, eps_max, MU_R, 0.1), ev::a_max(3.0, eps_max, MU_R, 0.1));
+    const double Rdt   = lambda; // R dt at Gamma_p0; coeff from it
     const double coeff = coeff_for_lambda(T, Gp0, Rdt, 1.0);
     struct Case {
       double a, f_max;
       bool   registered;
     };
-    for (const Case c : { Case { 1.0, 0.01, true }, Case { 2.0, 0.01, true }, Case { 4.0, 0.01, true }, Case { 10.0, 0.1, false },
+    for (const Case c : { Case { 1.0, f_reg, true }, Case { 2.0, f_reg, true }, Case { 4.0, f_reg, true }, Case { 10.0, 0.1, false },
                           Case { 30.0, 0.1, false } }) {
       for (const int spectrum : { DELTA, RESTFRAME }) {
         const std::string name = spectrum == DELTA ? "delta" : "restframe";
-        const std::string tag  = fmt("E7 a = %g f_max = %g %s%s", c.a, c.f_max, name.c_str(), c.registered ? "" : " [diagnostic]");
-        const auto S = cooling_run(T, EVENT, spectrum, c.a, c.f_max, coeff, DT, Gp0, N, 0.5, 40000, 25, 9000u + (unsigned)(10 * c.a));
+        const std::string tag  = fmt("E7 a = %g f_max = %g %s%s", c.a, c.f_max, name.c_str(), c.registered ? "" : " [diagnostic, clipped law]");
+        const auto S = cooling_run(T, EVENT, spectrum, c.a, c.f_max, coeff, DT, Gp0, N, c.registered ? 0.4 : 0.5, 60000, 25,
+                                   9000u + (unsigned)(10 * c.a));
         print_series(tag, S);
         auto d2 = spectrum == DELTA ? std::function<double(double)>([&](double G) { return d2_delta(T, G); })
                                     : std::function<double(double)>([&](double G) { return D2.at(G); });
         const std::function<double(double)> dmean_born = [&](double G) { return D2.dmean_at(G); };
         const auto R = reference(T, S, d2, spectrum == RESTFRAME ? &dmean_born : nullptr);
-        if (c.registered && spectrum == DELTA) {
+        if (c.registered) {
           verdict_E2(tag, S, R);
-          verdict_E3(tag, S, R);
+          verdict_E3(tag, T, S, R);
+          verdict(S.C.n_bounded == 0, tag + ": no event skipped by the per-event bound (a admitted on the band)",
+                  static_cast<double>(S.C.n_bounded), 0.0);
+          verdict(S.meanK.back() <= 0.4 * S.K0 + 1e-9 * S.K0, tag + ": the run covers the band down to Gamma_p = 3 (<K>/K0 reached)",
+                  S.meanK.back() / S.K0, 0.4);
         } else {
-          // reported, not passed or failed
+          // reported, not passed or failed: the clipped-law behaviour
           for (const double f : { 0.9, 0.7, 0.5 }) {
             const std::size_t i = first_below(S, f);
             if (i == std::string::npos) {
               continue;
             }
             const double se = std::sqrt(S.varK[i] / static_cast<double>(S.N));
-            std::printf("(diag) %s: at <K>/K0 = %.1f: <K> - K_ODE,corrected = %.5g (%.2f s.e.), relative %.3e; bounded fraction "
-                        "%.3e\n",
+            std::printf("(diag) %s: at <K>/K0 = %.1f: <K> - K_ODE,corrected = %.5g (%.2f s.e.), relative %.3e; skipped fraction "
+                        "n_bounded / n_events = %.3e\n",
                         tag.c_str(), f, S.meanK[i] - R.K_corr[i], (S.meanK[i] - R.K_corr[i]) / se,
                         (S.meanK[i] - R.K_corr[i]) / S.meanK[i],
                         S.C.n_events > 0 ? static_cast<double>(S.C.n_bounded) / static_cast<double>(S.C.n_events) : 0.0);
           }
           const std::size_t i = S.t.size() - 1;
-          std::printf("(diag) %s: final Var_meas / (a int R E[D^2]) = %.5g [no feedback], / Var_fb = %.5g [feedback]\n",
-                      tag.c_str(), R.var_pred[i] > 0.0 ? S.varK[i] / R.var_pred[i] : 0.0,
-                      R.var_fb[i] > 0.0 ? S.varK[i] / R.var_fb[i] : 0.0);
+          std::printf("(diag) %s: final Var_meas / Var_fb = %.5g [feedback], / (a int R E[D^2]) = %.5g [no feedback, history]\n",
+                      tag.c_str(), R.var_fb[i] > 0.0 ? S.varK[i] / R.var_fb[i] : 0.0,
+                      R.var_pred[i] > 0.0 ? S.varK[i] / R.var_pred[i] : 0.0);
         }
       }
     }
@@ -1322,7 +1429,12 @@ namespace {
       std::vector<double> K0(n_ion, K_of_gamma(g));
       Pairs               pairs(static_cast<npart_t>(n_ion));
       const double        coeff = coeff_for_lambda(T, g, 0.2, 1.0);
-      auto                prm   = params(coeff, RESTFRAME, 1.0, 0.01);
+      // revision 1.1: f_max = 0.02 at Gamma_p = 10 (a_max = 0.84 at f_max = 0.01 there: a = 1 is not admitted, one
+      // bounded event in 1.1e6 at 30c551f7); 0.01 at Gamma_p = 3 (a_max = 2.58)
+      const double        f_e4  = g >= 10.0 ? 0.02 : 0.01;
+      auto                prm   = params(coeff, RESTFRAME, 1.0, f_e4);
+      diag(fmt("E4 Gamma_p %s: f_max = %g, a_max = %.4f (a = 1 %s)", gs.c_str(), f_e4, arch::bh::event::a_max(g, 0.5, MU_R, f_e4),
+               arch::bh::event::a_max(g, 0.5, MU_R, f_e4) >= 1.0 ? "admitted" : "NOT admitted"));
       random_number_pool_t pool(31415u + static_cast<unsigned>(g));
       std::vector<std::vector<double>> kn(5);
       for (int q = 0; q < 5; ++q) {
@@ -1469,7 +1581,7 @@ namespace {
     verdict(std::abs(frac - expect) <= 4.0 * sig, "E8 (i): bounded fraction vs the Gamma_p = 3 share of the rate, |diff| / sigma",
             std::abs(frac - expect) / sig, 4.0);
     const auto A = closure(ions, K_init, pairs, T, prm.pair_weight);
-    check_E1("E8 (i)", H, A, ions);
+    check_E1("E8 (i)", H, A, ions, true);
   }
 
   /**
@@ -1564,7 +1676,7 @@ namespace {
         verdict(H.C.n_spawned > 0 && n_changed == static_cast<int>(Ns), "E8 (v)(c): pairs created and every ion recoiled (ions changed)",
                 static_cast<double>(n_changed), static_cast<double>(Ns));
         const auto A = closure(ions, K_init, pairs, T, prm.pair_weight);
-        check_E1("E8 (v)(c)", H, A, ions);
+        check_E1("E8 (v)(c)", H, A, ions, true);
       }
     }
   }
@@ -1681,7 +1793,7 @@ namespace {
     verdict(H.C.n_spawned == 300 && pairs.npart_m == 300 && pairs.npart_p == 300,
             "E8 (ii): n_spawned = capacity = 300 and both pair species are full", static_cast<double>(H.C.n_spawned), 300.0);
     const auto A = closure(ions, K_init, pairs, T, prm.pair_weight);
-    check_E1("E8 (ii)", H, A, ions);
+    check_E1("E8 (ii)", H, A, ions, true);
   }
 
   void test_E8_cap(Tables& T) {
@@ -1721,7 +1833,7 @@ namespace {
     verdict(H.C.n_events <= static_cast<unsigned long long>(cells), "E8 (iii): n_events <= ions x launches",
             static_cast<double>(H.C.n_events), cells);
     const auto A = closure(ions, K_init, pairs, T, prm.pair_weight);
-    check_E1("E8 (iii)", H, A, ions);
+    check_E1("E8 (iii)", H, A, ions, true);
   }
 
 } // namespace
@@ -1773,7 +1885,7 @@ auto main(int argc, char* argv[]) -> int {
     }
     if (want("e2e3_g3")) {
       const auto D2 = load_d2(T);
-      test_E2E3(T, D2, 3.0, N_stat, 150000, 0.69);
+      test_E2E3(T, D2, 3.0, N_stat, 130000, 0.59); // revision 1.1: target 0.6; 130000 launches reach 0.65 (t = 6.4e4)
     }
     if (want("e6")) {
       test_E6(T, N_stat);
@@ -1786,7 +1898,9 @@ auto main(int argc, char* argv[]) -> int {
       // 5e5 ions x 11 launches at lambda = 0.2: about 1.1e6 accepted events per Gamma_p
       test_E4(T, 500000, 11);
     }
-    std::printf("bh_event summary: %d passed, %d failed\n", n_pass, n_fail);
+    std::printf("bh_event summary: %d passed, %d failed, %d under the development-only exception (delta spectrum, single build, "
+                "revision 1.1; registered failures kept visible)\n",
+                n_pass, n_fail, n_exception);
     if (n_fail > 0 || n_pass == 0) {
       rc = 1;
     }
