@@ -10,6 +10,10 @@
 #   PERF_MODES    subset of "none poisson budget event" [all four]
 #   PERF_VARIANTS subset of "warm cold"                 [both]   warm: Gamma_p = 3; cold: Gamma_p = 2 (below the table)
 #   PERF_REPEATS  repeats per configuration             [3]
+#   PERF_REPEATS_TOP repeats at the LARGEST N of PERF_N  [PERF_REPEATS] (the F3 budget cut: 2 at 2^24 only)
+#   PERF_QK_SOURCE  qk_source of the engine runs         [born] (the production default; "fit" is the proposal of
+#                                                        round 2 §F3 that removes the ~7 s Born-table startup of every
+#                                                        process without changing the stage's work: Nilay decides)
 #   PERF_WARMUP   warm-up steps (multiple of PERF_DIAG) [100]
 #   PERF_MEASURED measured steps (multiple of PERF_DIAG)[500]
 #   PERF_DIAG     diagnostics interval in steps         [10]  (every PERF_DIAG-th step is a timing sample)
@@ -31,6 +35,10 @@ PERF_N="${PERF_N:-262144 1048576 4194304 16777216}"
 PERF_MODES="${PERF_MODES:-none poisson budget event}"
 PERF_VARIANTS="${PERF_VARIANTS:-warm cold}"
 PERF_REPEATS="${PERF_REPEATS:-3}"
+PERF_REPEATS_TOP="${PERF_REPEATS_TOP:-$PERF_REPEATS}"
+PERF_QK_SOURCE="${PERF_QK_SOURCE:-born}"
+case "$PERF_QK_SOURCE" in born|fit) ;; *) echo "FAIL: PERF_QK_SOURCE must be born or fit"; exit 1 ;; esac
+N_TOP=$(for n in $PERF_N; do echo $n; done | sort -n | tail -1)
 PERF_WARMUP="${PERF_WARMUP:-100}"
 PERF_MEASURED="${PERF_MEASURED:-500}"
 PERF_DIAG="${PERF_DIAG:-10}"
@@ -102,11 +110,12 @@ make_input() {
   maxpair=$(awk -v n="$N" 'BEGIN { printf "%.1f", n * 1.5 + 1024 }')
   modeblock="$INP/mode_$mode.toml"
   awk -v name="$name" -v runtime="$runtime" -v nion="$N" -v kion="$K" -v maxion="$maxion" -v maxpair="$maxpair" \
-      -v dep="$dep" -v had="$had" -v diag="$PERF_DIAG" -v ledger="$steps_total" -v gtyp="3.0" -v modefile="$modeblock" '
+      -v dep="$dep" -v had="$had" -v diag="$PERF_DIAG" -v ledger="$steps_total" -v gtyp="3.0" -v modefile="$modeblock" -v qk="$PERF_QK_SOURCE" '
     { line = $0
       gsub(/@NAME@/, name, line); gsub(/@RUNTIME@/, runtime, line); gsub(/@NION@/, nion, line); gsub(/@KION@/, kion, line)
       gsub(/@MAXNPART_ION@/, maxion, line); gsub(/@MAXNPART_PAIR@/, maxpair, line); gsub(/@DEPOSIT@/, dep, line)
       gsub(/@HADRONIC@/, had, line); gsub(/@DIAG@/, diag, line); gsub(/@LEDGER_EVERY@/, ledger, line); gsub(/@GAMMA_TYP@/, gtyp, line)
+      gsub(/@QK_SOURCE@/, qk, line)
       if (line ~ /@MODE_BLOCK@/) { while ((getline ml < modefile) > 0) print ml; close(modefile) } else { print line } }' \
       "$INP/perf_template.toml" > "$dir/input.toml"
 }
@@ -143,10 +152,11 @@ run_one() {
 }
 
 for N in $PERF_N; do
+  reps="$PERF_REPEATS"; [ "$N" = "$N_TOP" ] && reps="$PERF_REPEATS_TOP"
   for mode in $PERF_MODES; do
     for var in $PERF_VARIANTS; do
       rep=1
-      while [ $rep -le "$PERF_REPEATS" ]; do
+      while [ $rep -le "$reps" ]; do
         run_one "$mode" "$var" "$N" "$rep" false true m1
         rep=$((rep + 1))
       done
@@ -154,7 +164,7 @@ for N in $PERF_N; do
   done
   if [ "$PERF_M5" = "1" ]; then
     rep=1
-    while [ $rep -le "$PERF_REPEATS" ]; do
+    while [ $rep -le "$reps" ]; do
       run_one none warm "$N" "$rep" true false m5pic        # stock pusher + deposit, hadronic off
       run_one poisson warm "$N" "$rep" true true m5poisson  # pair-loaded population (a = 1, physical pair count), deposit on
       run_one budget warm "$N" "$rep" true true m5budget    # the contract's budget run with deposit on (few packets with t_latency = 0)

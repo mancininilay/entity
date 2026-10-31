@@ -29,8 +29,30 @@
 #   PERF_ROOT      run root (must NOT exist)              [~/ceph/entity-validation/p2-perf-<jobid>]
 #   PERF_N         ion counts                             [262144 1048576 4194304 16777216]
 #   PERF_N_M3      ion count for M3 (nsys/ncu) and M6     [4194304, fixed for this authorisation]
-#   PERF_REPEATS   [3]   PERF_WARMUP [100]   PERF_MEASURED [500]   PERF_DIAG [10]
+#   PERF_REPEATS   [3]   PERF_REPEATS_TOP [2: the F3 cut, repeats at 2^24 only]   PERF_WARMUP [50: the F3 cut]
+#   PERF_MEASURED  [500]  PERF_DIAG [1: every measured step is summed, F4]
+#   PERF_QK_SOURCE [born] the q_k source of the ENGINE timing runs (the production default). Every bh_proto process
+#                  builds the Born node table at startup (~5 s on 10 host threads on the Mac; Codex 1 measured 8 to
+#                  20 s under load): with ~140 engine processes that is the largest single item of the hour. "fit"
+#                  (the step-1 tables, same table layout, same kernel work, no startup build) is PROPOSED in the
+#                  round-2 report §F3 for the timing runs; the kernel-level groups (M3, M6) run on the Born tables in
+#                  either case (BH_QK_SOURCE=born, one table build per process). Nilay decides; the default stays born.
 #   DRY_RUN=1      print every step instead of executing (the local dry run handed to the referee)
+#
+# Step budgets (ceilings; the estimate and its basis are in the round-2 report §F3). Sum of the ceilings with
+# PERF_QK_SOURCE=born: 3630 s (the double-precision F8 step is the one at risk and the status file says so);
+# with PERF_QK_SOURCE=fit: 2970 s, margin 630 s. Priority order = execution order; a step that no longer fits
+# is SKIPPED and the job ends incomplete_coverage.
+#   0  checkout                                                                  120 s
+#   1  build single (entity.xc, bh_check, bh_perf, bh_reduction_timing, f8_tracers)      780 s
+#   2  M1 + M2 + M5 (+ the M5 restart runs on the end-loaded populations, F8)   1260 s (600 s with fit)
+#   3  M6 stride at PERF_N_M3 (event, none, poisson, budget; n = 1, 4, 16)        240 s
+#      M3 variants at PERF_N_M3 (matched work)                                   180 s
+#   4  M4 reducer vs atomics vs per-team, equal boundaries                        90 s
+#   5  profiles: nsys and ncu per configuration, with content assertions         300 s
+#   6  F8 single: FRAMEWORK::f8_tracers + the stock sort/deposit/checkpoint/spectra entries      90 s
+#   7  F8 double: build of the test targets (test-framework-f8_tracers.xc and the stock entries)  480 s
+#      + run                                                                      90 s
 #
 # Outcome (Codex 1's F2.2): every step is recorded in logs/steps.tsv (name, kind, budget, seconds, exit, class)
 #   and the job ends with logs/status.json and the exit code of its overall class:
@@ -48,7 +70,8 @@ ENTITY_COMMIT="${ENTITY_COMMIT:?set ENTITY_COMMIT to the merged head}"
 ENTITY_REPO="${ENTITY_REPO:-git@github.com:mancininilay/entity.git}"
 PERF_N="${PERF_N:-262144 1048576 4194304 16777216}"
 PERF_N_M3="${PERF_N_M3:-4194304}"
-export PERF_REPEATS="${PERF_REPEATS:-3}" PERF_WARMUP="${PERF_WARMUP:-100}" PERF_MEASURED="${PERF_MEASURED:-500}" PERF_DIAG="${PERF_DIAG:-10}"
+export PERF_REPEATS="${PERF_REPEATS:-3}" PERF_REPEATS_TOP="${PERF_REPEATS_TOP:-2}" PERF_WARMUP="${PERF_WARMUP:-50}" PERF_MEASURED="${PERF_MEASURED:-500}" PERF_DIAG="${PERF_DIAG:-1}"
+export PERF_QK_SOURCE="${PERF_QK_SOURCE:-born}"
 JOB="${SLURM_JOB_ID:-dryrun-$$}"
 ROOT="${PERF_ROOT:-$HOME/ceph/entity-validation/p2-perf-$JOB}"
 SRC="$ROOT/src"; BLD="$ROOT/build-single"; BLD2="$ROOT/build-double"; OUT="$ROOT/out"; LOG="$ROOT/logs"
@@ -163,9 +186,16 @@ fi
 #      build command's success AND the inventory of every binary the later steps need
 ENTITY_CMAKE=(-G Ninja -DCMAKE_BUILD_TYPE=Release -DTESTS=ON -Dpgen=bh_proto -Dmpi=ON -Doutput=ON -Dgpu_aware_mpi=OFF
               -DKokkos_DIR="${Kokkos_DIR:-/unset}" -Dadios2_DIR="${adios2_DIR:-/unset}")
-SINGLE_TARGETS="entity.xc bh_check test-kernels-bh_perf.xc test-kernels-bh_reduction_timing.xc"
-SINGLE_BINARIES=("$BLD/src/entity.xc" "$BLD/tests/hadronic/bh_check" "$BLD/tests/kernels/test-kernels-bh_perf.xc" "$BLD/tests/kernels/test-kernels-bh_reduction_timing.xc")
-run step1-build gate 900 bash -c "cmake -S '$SRC' -B '$BLD' ${ENTITY_CMAKE[*]} -Dprecision=single && cmake --build '$BLD' -j ${SLURM_CPUS_PER_TASK:-8} --target $SINGLE_TARGETS"
+# F8 (Codex 2 §F8, Codex 1 F3): the tracer executable tests/framework/f8_tracers.cpp (sort, next-step deposition, split,
+# checkpoint round trip, 1D/2D/3D, enumerated assertions) plus the stock entries that exist in a flat-deposit build
+# (particles_sort, deposit, checkpoint-data, checkpoint-extents, spectra, injectors_global_weights, reduced_stats_weights;
+# sort_by_key and deposit_tiled exist only with tiled_deposit=ON, which is not this build: see the report's proposal)
+F8_TARGETS="test-framework-f8_tracers.xc test-framework-particles_sort.xc test-kernels-deposit.xc test-framework-checkpoint-data.xc test-framework-checkpoint-extents.xc test-framework-spectra.xc test-kernels-injectors_global_weights.xc test-kernels-reduced_stats_weights.xc"
+F8_REGEX='FRAMEWORK::f8_tracers|FRAMEWORK::particles_sort|KERNELS::deposit$|FRAMEWORK::checkpoint-data|FRAMEWORK::checkpoint-extents|FRAMEWORK::spectra|KERNELS::injectors_global_weights|KERNELS::reduced_stats_weights'
+F8_EXPECTED=8
+SINGLE_TARGETS="entity.xc bh_check test-kernels-bh_perf.xc test-kernels-bh_reduction_timing.xc $F8_TARGETS"
+SINGLE_BINARIES=("$BLD/src/entity.xc" "$BLD/tests/hadronic/bh_check" "$BLD/tests/kernels/test-kernels-bh_perf.xc" "$BLD/tests/kernels/test-kernels-bh_reduction_timing.xc" "$BLD/tests/framework/test-framework-f8_tracers.xc")
+run step1-build gate 780 bash -c "cmake -S '$SRC' -B '$BLD' ${ENTITY_CMAKE[*]} -Dprecision=single && cmake --build '$BLD' -j ${SLURM_CPUS_PER_TASK:-8} --target $SINGLE_TARGETS"
 rc=$?
 if [ "$DRY_RUN" != "1" ] && [ "$GATE_OK" -eq 1 ]; then
   if [ $rc -ne 0 ] || ! require_files step1-build "${SINGLE_BINARIES[@]}"; then
@@ -180,15 +210,16 @@ WRAP
 chmod +x "$ROOT/entity-1rank.sh"
 
 # ---- step 2: M1, M2, M5 through the engine (Entity's timers)
-run step2-m1-m2-m5 sci 1200 env PERF_N="$PERF_N" PERF_M5=1 PERF_LABEL="a100-$JOB-$ENTITY_COMMIT" OMP_NUM_THREADS=1 \
+STEP2_BUDGET=1260; [ "$PERF_QK_SOURCE" = "fit" ] && STEP2_BUDGET=600
+run step2-m1-m2-m5 sci "$STEP2_BUDGET" env PERF_N="$PERF_N" PERF_M5=1 PERF_LABEL="a100-$JOB-$ENTITY_COMMIT" OMP_NUM_THREADS=1 \
   bash "$SRC/tests/hadronic/perf/perf_driver.sh" "$ROOT/entity-1rank.sh" "$BLD/tests/hadronic/bh_check" "$SRC/tests/hadronic/perf/inputs" "$OUT/m1"
 
 # ---- step 3: M6 stride and M3 variants at the kernel level
-run step3-stride sci 180 env BH_PERF_N="$PERF_N_M3" OMP_NUM_THREADS=1 mpirun -n 1 "$BLD/tests/kernels/test-kernels-bh_perf.xc" stride
-run step3-variants sci 180 env BH_PERF_N="$PERF_N_M3" OMP_NUM_THREADS=1 mpirun -n 1 "$BLD/tests/kernels/test-kernels-bh_perf.xc" variants
+run step3-stride sci 240 env BH_PERF_N="$PERF_N_M3" BH_QK_SOURCE=born OMP_NUM_THREADS=1 mpirun -n 1 "$BLD/tests/kernels/test-kernels-bh_perf.xc" stride
+run step3-variants sci 180 env BH_PERF_N="$PERF_N_M3" BH_QK_SOURCE=born OMP_NUM_THREADS=1 mpirun -n 1 "$BLD/tests/kernels/test-kernels-bh_perf.xc" variants
 
 # ---- step 4: M4 reducer vs atomics vs per-team scratch at the contract's N
-run step4-reduction sci 120 env BH_REDUCTION_N="$PERF_N_M3" OMP_NUM_THREADS=1 mpirun -n 1 "$BLD/tests/kernels/test-kernels-bh_reduction_timing.xc"
+run step4-reduction sci 90 env BH_REDUCTION_N="$PERF_N_M3" OMP_NUM_THREADS=1 mpirun -n 1 "$BLD/tests/kernels/test-kernels-bh_reduction_timing.xc"
 
 # ---- step 5: profiles for M3 (the variants binary: production kernel vs the two variants, labelled launches)
 run step5-nsys infra 180 env BH_PERF_N="$PERF_N_M3" OMP_NUM_THREADS=1 nsys profile --trace=cuda,nvtx --stats=true -o "$OUT/nsys-variants" \
@@ -196,10 +227,26 @@ run step5-nsys infra 180 env BH_PERF_N="$PERF_N_M3" OMP_NUM_THREADS=1 nsys profi
 run step5-ncu infra 240 env BH_PERF_N="$PERF_N_M3" OMP_NUM_THREADS=1 ncu --launch-skip 20 --launch-count 12 --kernel-name regex:bh_perf --set basic \
   -o "$OUT/ncu-variants" "$BLD/tests/kernels/test-kernels-bh_perf.xc" variants
 
-# ---- step 6: Codex 2's F8 GPU tracers, single precision (the stock sort, deposit, checkpoint and spectra entries)
-run step6-f8-single sci 240 bash -c "cd '$BLD' && ctest -R 'particles_sort|sort_by_key|deposit|checkpoint|spectra|injectors_global_weights|reduced_stats_weights' --output-on-failure --timeout 200 -j 1"
+# ---- step 6: Codex 2's F8 GPU tracers, single precision: the tracer executable and the stock entries; the selection
+#      must be non-empty and complete (F8_EXPECTED entries run), else the step is an infrastructure failure
+f8_ctest() { # f8_ctest <build dir>
+  cd "$1" && ctest -R "$F8_REGEX" --output-on-failure --timeout 80 -j 1; local rc=$?
+  local n; n=$(ctest -N -R "$F8_REGEX" | grep -c "Test #")
+  if [ "$n" -ne "$F8_EXPECTED" ]; then echo "F8 selection gate: $n entries selected, expected $F8_EXPECTED"; return 3; fi
+  [ $rc -eq 0 ] || echo "FAIL: F8 ctest exit $rc"
+  return $rc
+}
+export -f f8_ctest; export F8_REGEX F8_EXPECTED
+run step6-f8-single sci 90 bash -c "f8_ctest '$BLD'"
 
-# ---- step 7: F8 in double precision (test targets only), if the time allows
-run step7-f8-double sci 840 bash -c "cmake -S '$SRC' -B '$BLD2' ${ENTITY_CMAKE[*]} -Dprecision=double && cmake --build '$BLD2' -j ${SLURM_CPUS_PER_TASK:-8} --target test-framework-particles_sort.xc test-framework-sort_by_key.xc test-kernels-deposit.xc test-kernels-deposit_tiled.xc test-framework-checkpoint-data.xc test-framework-spectra.xc test-kernels-injectors_global_weights.xc test-kernels-reduced_stats_weights.xc && cd '$BLD2' && ctest -R 'particles_sort|sort_by_key|deposit|checkpoint|spectra|injectors_global_weights|reduced_stats_weights' --output-on-failure --timeout 200 -j 1"
+# ---- step 7: F8 in double precision: the test targets only (the libraries they need are the bulk of the build), then
+#      the same entries; the step runs last so that the registered measurements come first, and it is SKIPPED (status
+#      incomplete_coverage) if the hour does not hold it
+run step7-f8-double-build infra 480 bash -c "cmake -S '$SRC' -B '$BLD2' ${ENTITY_CMAKE[*]} -Dprecision=double && cmake --build '$BLD2' -j ${SLURM_CPUS_PER_TASK:-8} --target $F8_TARGETS"
+if [ "$DRY_RUN" = "1" ] || [ -x "$BLD2/tests/framework/test-framework-f8_tracers.xc" ]; then
+  run step7-f8-double sci 90 bash -c "f8_ctest '$BLD2'"
+else
+  say "step7-f8-double BLOCKED: the double build did not produce the tracer executable"; record step7-f8-double sci 90 0 "-" blocked
+fi
 
 finish
