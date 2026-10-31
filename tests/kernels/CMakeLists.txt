@@ -104,6 +104,10 @@ foreach(grp e10 e10_g3)
   add_test(NAME "KERNELS::bh_event_${grp}_born" COMMAND test-kernels-bh_event.xc ${grp})
   set_tests_properties("KERNELS::bh_event_${grp}_born" PROPERTIES ENVIRONMENT "BH_QK_SOURCE=born" TIMEOUT 7200)
 endforeach()
+# [fork:hadronic/P2 step 8, Codex 1's closure C6] E7 on the Born tables: a in {1, 2, 4} at f_max = 0.04 over Gamma_p 6 -> 3,
+# E2 (restframe and delta) and E3 registered verdicts; the a = 10, 30 clipped-law diagnostics as in the fit entry
+add_test(NAME "KERNELS::bh_event_e7_born" COMMAND test-kernels-bh_event.xc e7)
+set_tests_properties("KERNELS::bh_event_e7_born" PROPERTIES ENVIRONMENT "BH_QK_SOURCE=born" TIMEOUT 7200)
 
 if("${pgen}" STREQUAL "rec_mix")
   gen_test(rec_mix_segments)
