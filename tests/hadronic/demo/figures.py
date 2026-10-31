@@ -91,7 +91,7 @@ def fig1():
             for cfg in CFGS:
                 r = load(f'demo_g{g}_{cfg}_{prec}')
                 if r is None: continue
-                t, mK, vK, mKe, n = blocks(r); tt = t
+                t, mKs, vK, mK, n = blocks(r); tt = t   # mK: K_eff = K - delta, the energy the ledger has charged
                 mode = cfg.split('_')[0]; spec = cfg.split('_')[1] if '_' in cfg else None
                 if mode == 'event':
                     R = event_ref(g, spec, prec, r); kref = np.concatenate([[K0], R['K_corr']]); se = np.sqrt(vK / n)
@@ -110,7 +110,10 @@ def fig1():
                     i = int(np.argmax(mK / K0 <= f)) if (mK / K0 <= f).any() else None
                     if i: num('1', f'Gamma_p0={g} {cfg} {prec}: E2 z at <K>/K0={f} (t={t[i]:g}) vs {lab}', z[i], f'demo_g{g}_{cfg}_{prec}', '{:+.2f}')
                 num('1', f'Gamma_p0={g} {cfg} {prec}: max |z| over the run', np.nanmax(np.abs(z[1:])), f'demo_g{g}_{cfg}_{prec}', '{:.2f}')
-                num('1', f'Gamma_p0={g} {cfg} {prec}: <K>/K0 at the end (t={t[-1]:g})', mK[-1] / K0, f'demo_g{g}_{cfg}_{prec}', '{:.5f}')
+                num('1', f'Gamma_p0={g} {cfg} {prec}: <K_eff>/K0 at the end (t={t[-1]:g})', mK[-1] / K0, f'demo_g{g}_{cfg}_{prec}', '{:.5f}')
+                if mode != 'event':
+                    num('1', f'Gamma_p0={g} {cfg} {prec}: (K_eff - plain ODE)/K0 at the end (deterministic: the explicit drag step at dt = 0.5)', (mK[-1] - kref[-1]) / K0, f'demo_g{g}_{cfg}_{prec}', '{:+.2e}')
+                    num('1', f'Gamma_p0={g} {cfg} {prec}: max (stored K - K_eff)/K0 (the pending payload; all ions identical)', float(np.max(mKs - mK)) / K0, f'demo_g{g}_{cfg}_{prec}', '{:.2e}')
         if tt is not None:
             kp = plain_cached(g, tt[1:]); ax.plot(tt[1:] / 1e3, kp / K0, 'k:', lw=1, label='plain ODE (Born table)')
         for f in targets: ax.axhline(f, color='k', lw=0.5, alpha=0.4)
@@ -126,13 +129,18 @@ def fig1():
                                 Line2D([], [], ls='', marker='x', color='k', ms=3, label='single'),
                                 Line2D([], [], ls='', marker='o', mfc='none', color='k', ms=3, label='open: delta spectrum')],
                        ncol=3, loc='lower left', fontsize=6.5)
-    fig.suptitle('Figure 1. Cooling: every mode against its own mean equation (E2, T5); 4 s.e. band', y=1.0)
+    fig.suptitle('Figure 1. Cooling: every mode against its own mean equation (E2, T5); 4 s.e. band')
     save(fig, 'fig1_cooling', """
 Figure 1. Cooling curves <K(t)>/K0 of 10^5 ions at Gamma_p0 = 6 and 3 for every mode (continuous none, poisson, budget;
 event; delta and restframe spectra), bh_proto through entity.xc on the merged head e7ba238c, Born loss tables, single (x)
 and double (o) precision. Residual panel: event mode against the Jensen-corrected ODE on the Born table with the run's own
 Var K (the registered E2/E10 statement, 4 s.e. of the sample mean); continuous modes against the plain ODE (RK4 at dt/16)
-in units of the event run's s.e. at the same time (the registered continuous E2 scale). Delta spectrum: open markers.
+in units of the event run's s.e. at the same time. The registered continuous E2 runs the continuous mode at dt/16 with this
+scale; the demonstration runs it at the production dt = 0.5 (and eta_u = 1e-4), where the explicit drag step leaves a
+smooth deterministic offset (the revision-1.0 history row, no verdict). All curves use K_eff = K - delta,
+the energy the ledger has charged (the stored K of the continuous modes lags by the pending payload, up to eta_u K, applied
+to all ions at once). The continuous modes share one trajectory (none, poisson and budget differ only in what the paid
+energy becomes). Delta spectrum: open markers.
 Tolerance: 4 s.e. at the targets 0.9/0.7/0.5 (Gamma_p0 = 6) and 0.9/0.7/0.65 (Gamma_p0 = 3). Numbers: numbers.md, figure 1.""")
 
 # ------------------------------------------------------------------ figure 2: straggling (E3)
@@ -162,6 +170,9 @@ def fig2():
                     num('2', f'Gamma_p0={g} event {spec} {prec}: E3 max |V/V_fb - 1| over the registered domain', np.max(np.abs(rel[dom])) * 100,
                         f'demo_g{g}_event_{spec}_{prec}', '{:.3f} %')
                 num('2', f'Gamma_p0={g} event {spec} {prec}: sigma_K/K at the end', sig[-1], f'demo_g{g}_event_{spec}_{prec}', '{:.4f}')
+                if (~dom).any():
+                    num('2', f'Gamma_p0={g} event {spec} {prec}: max |V/V_fb - 1| outside the registered domain (not a registered statement); largest curvature budget there',
+                        f'{np.max(np.abs(rel[~dom])) * 100:.3f} %; {np.max(np.abs(curv[~dom])) * 100:.3f} %', f'demo_g{g}_event_{spec}_{prec}')
             rc = load(f'demo_g{g}_poisson_{spec}_double')
             if rc is not None:
                 num('2', f'Gamma_p0={g} continuous poisson {spec} double: max Var K / K0^2 (deterministic: rounding only)',
@@ -192,7 +203,9 @@ prediction dV/dt = -2 tau0 (dI/dK) V + a R E[D^2] (E[D^2] from the frozen bhref 
 delta), computed along the Jensen-corrected mean. Middle: relative deviation in % (o double, x single); red points lie
 outside the registered domain of revision 1.1.1 (sigma_K/K <= 0.02, curvature budget <= 0.6 %, Delta K/K >= 1 %).
 Tolerance: 4 sqrt(2/N) = {tol*100:.3f} % (E3). Bottom: the K distribution at three times (event restframe and delta,
-double); the grey lines are the continuous-mode runs, where all ions share one K (Var K at rounding level).
+double); the grey lines are the continuous-mode runs, where all ions share one K (Var K at rounding level). The delta
+histograms are combs: with a deterministic loss <D>(K) per event every ion sits on the same jump lattice
+K_(i+1) = K_i - <D>(K_i), and the bins between lattice points stay empty.
 Numbers: numbers.md, figure 2.""")
 
 # ------------------------------------------------------------------ figure 3: pair spectra (E4, A10)
@@ -250,6 +263,7 @@ Anderson-Darling family) and A10; the chi2/ndf here is a display statistic. Numb
 
 # ------------------------------------------------------------------ figure 4: pairs per unit paid energy (A12, T10)
 BLAG = {}
+YIELD = {}   # (src, spec, g) -> (whole-run N / continuum - 1, expected), filled by figure 4
 def budget_model(g):
     if g not in BLAG: BLAG[g] = budget_lag.model(OUT, float(g))
     return BLAG[g]
@@ -340,7 +354,7 @@ def fig4():
                 else:
                     num('4', f'{src} {spec} Gamma_p0={g} (double): max |N/Q * <D> - 1| over the bins (%), max |z|' + (' [cumulative from Gamma_p0]' if src == 'poisson' else ''),
                         f'{np.nanmax(np.abs(dev[ok])):.3f} %, {np.nanmax(np.abs(zz[ok])):.2f}', r['name'])
-                WR.append((src, spec, g) + whole_run_yield(src, spec, g, r))
+                WR.append((src, spec, g) + whole_run_yield(src, spec, g, r)); YIELD[(src, spec, g)] = WR[-1][3:]
                 # energy yield: sum w (E- + E+) / Q vs 1 + eps/<D>
                 wE = np.cumsum(z['Gbin_wE'][::-1])[::-1] if src == 'poisson' else z['Gbin_wE']
                 ey = wE / np.where(Q > 0, Q, np.nan); eref = 1 + 0.5 * refv
@@ -478,6 +492,12 @@ def fig6():
         if rd is not None:
             t2, mK2, _, mKe2, _ = blocks(rd)
             num('6', 'staircase: max |K_eff(single) - K_eff(double)| / K0 over the records', float(np.max(np.abs(mKe - mKe2))) / K0, 'stair_g6_none_{single,double}', '{:.2e}')
+    for g in (6, 3):
+        a_, b_ = load(f'demo_g{g}_none_single'), load(f'demo_g{g}_none_double')
+        if a_ is not None and b_ is not None:
+            _, ms, _, mes, _ = blocks(a_); _, md, _, med, _ = blocks(b_); K0g = MU_R * (g - 1)
+            num('6', f'Gamma_p0={g} continuous (none) single vs double: max |stored K_s - K_d| / K0; max |K_eff,s - K_eff,d| / K0 over the records',
+                f'{np.max(np.abs(ms - md)) / K0g:.2e}; {np.max(np.abs(mes - med)) / K0g:.2e}', f'demo_g{g}_none_{{single,double}}')
     ax.set_xlabel(r'$t$ [$l/c$]'); ax.set_ylabel(r'$K - K_0$ [$m_e c^2$]'); ax.set_title(r'one ion, $\Gamma_p = 6$, $\lambda = 5\times10^{-5}$'); ax.legend(fontsize=6.5)
     # ulp-energy ratio dK_step / dK_ulp versus Gamma_p, single and double, at the demo tau0 and at the staircase tau0
     T = table('double'); G = np.linspace(2.2, 10, 300); K = MU_R * (G - 1); u = np.sqrt(K * (K + 2)); gd = np.sqrt(1 + u**2)
@@ -545,10 +565,10 @@ def fig7():
             if rp is not None:
                 Lp = rp['z']['ledger']
                 num('7', f'Gamma_p0={g} {spec}: macro-pairs poisson / budget at the end (what the weights buy)', Lp[-1, 24] / max(L[-1, 24], 1), r['name'] + ' vs ' + rp['name'], '{:.2f}')
-                axp.plot(Lp[:, 1], Lp[:, 24] / N_ION, ls, color=COL['poisson'], lw=0.8, alpha=0.6, label=f'poisson $\\Gamma_{{p0}}$={g} {spec}' if spec == 'restframe' else None)
+                axp.plot(Lp[:, 1], Lp[:, 24] / N_ION, ls, color=COL['poisson'] if g == 6 else '#17becf', lw=0.8, alpha=0.6, label=f'poisson $\\Gamma_{{p0}}$={g} {spec}' if spec == 'restframe' else None)
     axw.set_xscale('log'); axw.set_xlabel(r'$w_{pair} / w_{ion}$'); axw.set_ylabel('fraction of packets'); axw.legend(fontsize=6.5); axw.set_title('budget pair weights')
-    axp.set_yscale('log'); axp.set_xscale('log'); axp.set_xlabel('t'); axp.set_ylabel('macro-pairs per ion'); axp.legend(fontsize=6); axp.set_title('pairs created (budget vs poisson)')
-    axd.set_xscale('log'); axd.set_xlabel('t'); axd.set_ylabel(r'outstanding debt / $(N_{ion} K_0)$'); axd.set_title('energy owed to pairs not yet emitted')
+    axp.set_yscale('log'); axp.set_xscale('log'); axp.set_xlabel(r'$t$ [$l/c$]'); axp.set_ylabel('macro-pairs per ion'); axp.legend(fontsize=6); axp.set_title('pairs created (budget vs poisson)')
+    axd.set_xscale('log'); axd.set_xlabel(r'$t$ [$l/c$]'); axd.set_ylabel(r'outstanding debt / $(N_{ion} K_0)$'); axd.set_title('energy owed to pairs not yet emitted')
     fig.suptitle('Figure 7. What variable weights cost and what they buy (budget source, T18-lite)')
     save(fig, 'fig7_weights', """
 Figure 7. The budget source (t_latency = 0, r_th = min(10 <D>, 0.02 K), double precision): left, the distribution of the
@@ -576,15 +596,18 @@ def fig8(status_rows):
                 r = load(f'demo_g{g}_{cfg}_{prec}')
                 if r: L = r['z']['ledger']; rmax = max(rmax, float(np.max(np.abs(L[:, 22]) / np.maximum(np.abs(L[:, 2]), 1e-300))))
         cost = perf.get(mode)
+        yv = YIELD.get((mode, cfg.split('_')[1] if '_' in cfg else None, 6))
         rows.append([cfg.replace('_', ' '), f'{cost:.0f}' if cost else '-', 'pending',
                      f"{lf6.get('n_spawned', 0)/N_ION:.1f}" if lf6 else '-', f"{lf6.get('n_rng', 0)/N_ION:.0f}" if lf6 else '-',
-                     f'{rmax:.1e}', f"{lf6.get('E_stochastic', 0)/max(lf6.get('E_drag', 1), 1e-300):+.1e}" if lf6 else '-'])
+                     f'{rmax:.1e}', f"{lf6.get('E_stochastic', 0)/max(lf6.get('E_drag', 1), 1e-300):+.1e}" if lf6 else '-',
+                     (f'{yv[0]*100:+.3f} % ({yv[1]*100:+.3f} %)' if yv else ('no pairs' if mode == 'none' else '-'))])
         if cost: num('8', f'{mode}: Mac CPU smoke cost (ns per ion-step, 2^16 ions, delta spectrum, perf_smoke on 5e1da1d5)', cost, PERF)
         if lf6: num('8', f'{cfg}: macro-pairs per ion, RNG draws per ion (Gamma_p0 = 6, double)', f"{lf6.get('n_spawned', 0)/N_ION:.2f}, {lf6.get('n_rng', 0)/N_ION:.1f}", f'demo_g6_{cfg}_double')
     fig = plt.figure(figsize=(12, 6.6))
     ax = fig.add_axes([0.01, 0.60, 0.98, 0.35]); ax.axis('off')
     tb = ax.table(cellText=rows, colLabels=['mode', 'Mac CPU smoke\nns / ion-step', 'A100\nns / ion-step', 'macro-pairs\nper ion (G6)',
-                                             'RNG draws\nper ion (G6)', 'max |identity|\n/ E_drag (28 runs)', 'E_stochastic\n/ E_drag (G6)'],
+                                             'RNG draws\nper ion (G6)', 'max |identity|\n/ E_drag (28 runs)', 'E_stochastic\n/ E_drag (G6)',
+                                             'pair number vs physical\n(G6, expected)'],
                   loc='upper center', cellLoc='center')
     tb.auto_set_font_size(False); tb.set_fontsize(8); tb.scale(1, 1.55)
     ax2 = fig.add_axes([0.01, 0.0, 0.98, 0.56]); ax2.axis('off')
@@ -596,7 +619,9 @@ def fig8(status_rows):
 Figure 8. Top: per mode, the stage cost per ion-step from the Mac CPU smoke of the scaling harness (OpenMP, 2^16 ions,
 delta spectrum, rebased head 5e1da1d5; a smoke of the mechanics, not a performance measurement; the A100 column is filled
 when the scaling job returns), macro-pairs and RNG draws per ion over the Gamma_p0 = 6 demonstration run, the largest
-ledger-identity residual over all rows of the 28 runs, and E_stochastic / E_drag. Bottom: the registered tests and their
+ledger-identity residual over all rows of the 28 runs, E_stochastic / E_drag, and the whole-run pair number against the
+continuum integral of dK/<D> over the paid interval with each mode's expected offset in brackets (figure 4: poisson none;
+budget the emission lag; event the finite jump). Bottom: the registered tests and their
 status on the merged head, with the source of each verdict. Numbers: numbers.md, figure 8.""")
 
 def status_table():
