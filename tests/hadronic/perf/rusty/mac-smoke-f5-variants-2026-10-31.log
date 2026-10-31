@@ -1,0 +1,37 @@
+Kokkos::OpenMP::initialize WARNING: OMP_PROC_BIND environment variable not set
+  In general, for best performance with OpenMP 4.0 or better set OMP_PROC_BIND=spread and OMP_PLACES=threads
+  For best performance with OpenMP 3.1 set OMP_PROC_BIND=true
+  For unit testing set OMP_PROC_BIND=false
+
+bh_perf: real_t = float, Kokkos default execution space = OpenMP
+
+=== M3 variants: production kernel vs (i) constants in place of the lookup, (ii) float tables with linear interpolation; N = 65536 at Gamma_p0 = 3, lambda = 0.05, 20 warm-up and 100 timed launches, medians; MATCHED WORK (the ion state restored and the RNG pool re-seeded before every launch, identically for every kernel) ===
+PERF BUILD (BH_PERF_VARIANT): the variant kernels are measurement code; none of their numbers is a physics result, and this program writes no output file. Timed interval: parallel_reduce (kernel + ledger reduction) and fence; pairs.finish() (spawn-counter readback) timed separately; the production stage's post-step is not included.
+(perf) M3 BH_PERF_N = 65536
+(diag) M3 variant (i) constants at Gamma_p = 3: I = 0.0653592, J = 0.0127188, <D> = 5.13877, eps = 0.5; variant (ii) float grid: 466 nodes over [2.130004, 91.8102]
+PASS: M3 continuous production: ledger identity residual / E_drag over the timed launches : 0.000000e+00 (tolerance 1.000e-12)
+PASS: M3 continuous production: worst per-launch ledger identity residual / E_drag (warm-up included) : 0.000000e+00 (tolerance 1.000e-12)
+PASS: M3 continuous (i) constants: ledger identity residual / E_drag over the timed launches : 0.000000e+00 (tolerance 1.000e-12)
+PASS: M3 continuous (i) constants: worst per-launch ledger identity residual / E_drag (warm-up included) : 0.000000e+00 (tolerance 1.000e-12)
+PASS: M3 continuous (ii) float lerp: ledger identity residual / E_drag over the timed launches : 0.000000e+00 (tolerance 1.000e-12)
+PASS: M3 continuous (ii) float lerp: worst per-launch ledger identity residual / E_drag (warm-up included) : 0.000000e+00 (tolerance 1.000e-12)
+PASS: M3 event production: ledger identity residual / E_drag over the timed launches : 6.729836e-18 (tolerance 1.000e-12)
+PASS: M3 event production: worst per-launch ledger identity residual / E_drag (warm-up included) : 1.107245e-16 (tolerance 1.000e-12)
+PASS: M3 event (i) constants: ledger identity residual / E_drag over the timed launches : 2.261182e-17 (tolerance 1.000e-12)
+PASS: M3 event (i) constants: worst per-launch ledger identity residual / E_drag (warm-up included) : 1.107227e-16 (tolerance 1.000e-12)
+PASS: M3 event (ii) float lerp: ledger identity residual / E_drag over the timed launches : 5.760276e-18 (tolerance 1.000e-12)
+PASS: M3 event (ii) float lerp: worst per-launch ledger identity residual / E_drag (warm-up included) : 1.081187e-16 (tolerance 1.000e-12)
+(perf) M3 mode       kernel              median ms       min ms     ns/ion       <K>/K0     identity     events    spawned  finish ms
+(perf) M3 continuous production             2.7803       1.0791     42.423     1.000000     0.00e+00          0          0     0.0016
+(perf) M3 continuous (i) constants          3.8558       0.5233     58.835     1.000000     0.00e+00          0          0     0.0019
+(perf) M3 continuous (ii) float lerp        3.4722       0.7308     52.981     1.000000     0.00e+00          0          0     0.0020
+(perf) M3 event      production             5.3867       2.1850     82.194     0.999930     6.73e-18     328748     328748     0.0018
+(perf) M3 event      (i) constants          3.6277       1.0069     55.354     0.999930     2.26e-17     328748     328748     0.0017
+(perf) M3 event      (ii) float lerp        4.0072       1.3393     61.145     0.999927     5.76e-18     338089     338089     0.0020
+(perf) M3 continuous (i) constants: residual work mismatch vs production under matched states: events +0.000e+00 relative, spawned +0.000e+00 relative
+(perf) M3 continuous (ii) float lerp: residual work mismatch vs production under matched states: events +0.000e+00 relative, spawned +0.000e+00 relative
+(perf) M3 event (i) constants: residual work mismatch vs production under matched states: events +0.000e+00 relative, spawned +0.000e+00 relative
+(perf) M3 event (ii) float lerp: residual work mismatch vs production under matched states: events +2.841e-02 relative, spawned +2.841e-02 relative
+(perf) M3 continuous: lookup fraction (production - constants) / production = -0.387; float-lerp saving (production - float) / production = -0.249 [controlled: matched ion states and RNG streams per launch; limitation: the constants variant removes the lookup's memory traffic AND its arithmetic together, and the float variant changes the interpolation coordinate with the precision; harness variants, not physics]
+(perf) M3 event: lookup fraction (production - constants) / production = 0.327; float-lerp saving (production - float) / production = 0.256 [controlled: matched ion states and RNG streams per launch; limitation: the constants variant removes the lookup's memory traffic AND its arithmetic together, and the float variant changes the interpolation coordinate with the precision; harness variants, not physics]
+bh_perf summary: 12 passed, 0 failed
