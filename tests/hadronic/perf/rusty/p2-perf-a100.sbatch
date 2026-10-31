@@ -31,21 +31,20 @@
 #   PERF_N_M3      ion count for M3 (nsys/ncu) and M6     [4194304, fixed for this authorisation]
 #   PERF_REPEATS   [3]   PERF_REPEATS_TOP [2: the F3 cut, repeats at 2^24 only]   PERF_WARMUP [50: the F3 cut]
 #   PERF_MEASURED  [500]  PERF_DIAG [1: every measured step is summed, F4]
-#   PERF_QK_SOURCE [born] the q_k source of the ENGINE timing runs (the production default). Every bh_proto process
-#                  builds the Born node table at startup (~5 s on 10 host threads on the Mac; Codex 1 measured 8 to
-#                  20 s under load): with ~140 engine processes that is the largest single item of the hour. "fit"
-#                  (the step-1 tables, same table layout, same kernel work, no startup build) is PROPOSED in the
-#                  round-2 report §F3 for the timing runs; the kernel-level groups (M3, M6) run on the Born tables in
-#                  either case (BH_QK_SOURCE=born, one table build per process). Nilay decides; the default stays born.
+#   PERF_QK_SOURCE [fit] the q_k source of the ENGINE timing runs. DECIDED by Nilay on 2026-10-31 ("fit for engine
+#                  runs", decisions.md): the step-1 tables for the 143 engine processes of step 2, because every
+#                  bh_proto process would otherwise build the Born node table at startup (6.5 s on 10 Mac threads,
+#                  8 to 20 s under load), the largest single item of the hour, while the table layout and the
+#                  kernel work per step are identical. The kernel-level groups (M3, M6, the profiles) run on the
+#                  Born tables (BH_QK_SOURCE=born, one table build per process). "born" remains selectable.
 #   DRY_RUN=1      print every step instead of executing (the local dry run handed to the referee)
 #
-# Step budgets (ceilings; the estimate and its basis are in the round-2 report §F3). Sum of the ceilings with
-# PERF_QK_SOURCE=born: 3630 s (the double-precision F8 step is the one at risk and the status file says so);
-# with PERF_QK_SOURCE=fit: 2970 s, margin 630 s. Priority order = execution order; a step that no longer fits
-# is SKIPPED and the job ends incomplete_coverage.
+# Step budgets (ceilings; the estimate and its basis are in the round-2 report §7.3). Sum of the ceilings with the
+# decided PERF_QK_SOURCE=fit: 3020 s, margin 580 s (with born: 3680 s, the double-precision F8 step at risk).
+# Priority order = execution order; a step that no longer fits is SKIPPED and the job ends incomplete_coverage.
 #   0  checkout                                                                  120 s
 #   1  build single (entity.xc, bh_check, bh_perf, bh_reduction_timing, f8_tracers)      780 s
-#   2  M1 + M2 + M5 (+ the M5 restart runs on the end-loaded populations, F8)   1260 s (600 s with fit)
+#   2  M1 + M2 + M5 (+ the M5 restart runs on the end-loaded populations, F8)    600 s (fit; 1260 s with born)
 #   3  M6 stride at PERF_N_M3 (event, none, poisson, budget; n = 1, 4, 16)        240 s
 #      M3 variants at PERF_N_M3 (matched work)                                   180 s
 #   4  M4 reducer vs atomics vs per-team, equal boundaries                        90 s
@@ -72,7 +71,7 @@ ENTITY_REPO="${ENTITY_REPO:-git@github.com:mancininilay/entity.git}"
 PERF_N="${PERF_N:-262144 1048576 4194304 16777216}"
 PERF_N_M3="${PERF_N_M3:-4194304}"
 export PERF_REPEATS="${PERF_REPEATS:-3}" PERF_REPEATS_TOP="${PERF_REPEATS_TOP:-2}" PERF_WARMUP="${PERF_WARMUP:-50}" PERF_MEASURED="${PERF_MEASURED:-500}" PERF_DIAG="${PERF_DIAG:-1}"
-export PERF_QK_SOURCE="${PERF_QK_SOURCE:-born}"
+export PERF_QK_SOURCE="${PERF_QK_SOURCE:-fit}"
 JOB="${SLURM_JOB_ID:-dryrun-$$}"
 ROOT="${PERF_ROOT:-$HOME/ceph/entity-validation/p2-perf-$JOB}"
 SRC="$ROOT/src"; BLD="$ROOT/build-single"; BLD2="$ROOT/build-double"; OUT="$ROOT/out"; LOG="$ROOT/logs"
