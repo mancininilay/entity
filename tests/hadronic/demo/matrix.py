@@ -32,7 +32,7 @@ print()
 for (b, exe), h in sorted(exes.items()):
     print(f'- {b}: `{os.path.relpath(exe, os.path.join(OUT, ".."))}` sha256 `{h}`')
 for k, e in M.get('_superseded', {}).items():
-    print(f"- superseded: `{k}` ({e.get('status')}), kept in `superseded/`")
+    print(f"- superseded: `{k}`: {e.get('status')}")
 tabs = sorted({(M[k].get('build'), M[k].get('table_sha256')) for k in M if not k.startswith('_') and M[k].get('table_sha256')})
 for b, h in tabs:
     print(f'- loss/pair table written by the {b} build (`hadronic_table_{b}.txt`): sha256 `{h}`')
