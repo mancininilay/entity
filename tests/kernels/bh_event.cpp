@@ -104,7 +104,22 @@ namespace cal = arch::bh::cal;
 
 namespace {
 
-  int n_pass = 0, n_fail = 0, n_exception = 0;
+  int n_pass = 0, n_fail = 0, n_exception = 0, n_history = 0;
+
+  bool born_mode();
+
+  /**
+   * @brief A history row (Codex 1's closure C10, 2026-10-31): the restframe E2 comparison on the FITTED step-1
+   *        loss tables, superseded by decision 2026-10-27 (a) (the Born recoil in the tables); the registered
+   *        counterpart is E10 on the Born tables (KERNELS::bh_event_e10_born, e10_g3_born). Printed with its number
+   *        and its historical tolerance, counted in n_history, never a failure.
+   */
+  void verdict_history(bool ok, const std::string& what, double value, double tol) {
+    std::printf("HISTORY %s: %s : %.6e (historical tolerance %.3e) [history: fitted step-1 tables, superseded by decision 2026-10-27 (a); "
+                "the registered counterpart is E10 on the Born tables]\n",
+                ok ? "met" : "exceeded", what.c_str(), value, tol);
+    ++n_history;
+  }
 
   void verdict(bool ok, const std::string& what, double value, double tol) {
     std::printf("%s: %s : %.6e (tolerance %.3e)\n", ok ? "PASS" : "FAIL", what.c_str(), value, tol);
@@ -1069,10 +1084,17 @@ namespace {
       const double se   = std::sqrt(S.varK[i] / static_cast<double>(S.N));
       const double diff = S.meanK[i] - R.K_corr[i];
       const double dpl  = S.meanK[i] - R.K_plain[i];
-      verdict(std::abs(diff) <= 4.0 * se,
-              tag + fmt(": E2 at <K>/K0 = %.2f (t = %.6g, <K> = %.6g): |<K> - K_ODE,corrected| / s.e. (s.e. = %.4g)", f,
-                        S.t[i], S.meanK[i], se),
-              std::abs(diff) / se, 4.0);
+      if (!born_mode() && tag.find("restframe") != std::string::npos) {
+        verdict_history(std::abs(diff) <= 4.0 * se,
+                        tag + fmt(": E2 at <K>/K0 = %.2f (t = %.6g, <K> = %.6g): |<K> - K_ODE,corrected| / s.e. (s.e. = %.4g)", f, S.t[i],
+                                  S.meanK[i], se),
+                        std::abs(diff) / se, 4.0);
+      } else {
+        verdict(std::abs(diff) <= 4.0 * se,
+                tag + fmt(": E2 at <K>/K0 = %.2f (t = %.6g, <K> = %.6g): |<K> - K_ODE,corrected| / s.e. (s.e. = %.4g)", f,
+                          S.t[i], S.meanK[i], se),
+                std::abs(diff) / se, 4.0);
+      }
       std::printf("(diag) %s: E2 at %.2f: plain ODE difference %.4g (%.3f s.e.), Jensen correction K_corr - K_plain = %.4g "
                   "(%.3f of 4 s.e.), sigma_K/K = %.4g\n",
                   tag.c_str(), f, dpl, dpl / se, R.K_corr[i] - R.K_plain[i], (R.K_corr[i] - R.K_plain[i]) / (4.0 * se),
@@ -1222,6 +1244,11 @@ namespace {
     }
     std::printf("(diag) E[D^2] fixture: bhref-0.2.0/moments_mono05.txt, %zu nodes, data_sha256 %s\n", D2.gamma.size(),
                 D2.sha.c_str());
+    if (!born_mode()) {
+      std::printf("HISTORY: the restframe E2 rows of this group run on the FITTED step-1 loss tables (qk_source = fit), superseded by "
+                  "decision 2026-10-27 (a); they are printed as history rows, not verdicts; the registered counterpart is E10 on the "
+                  "Born tables (bh_event_e10_born, e10_g3_born)\n");
+    }
     const int out_every = 25;
     for (const int spectrum : spectra) {
       const std::string name = spectrum == DELTA ? "delta" : "restframe";
@@ -1965,8 +1992,9 @@ auto main(int argc, char* argv[]) -> int {
       test_E4(T, 500000, 11);
     }
     std::printf("bh_event summary: %d passed, %d failed, %d under the development-only exception (delta spectrum, single build, "
-                "revision 1.1; registered failures kept visible)\n",
-                n_pass, n_fail, n_exception);
+                "revision 1.1; registered failures kept visible), %d history rows (restframe E2 on the fitted tables, superseded "
+                "2026-10-27 (a); the registered counterpart is E10 on the Born tables)\n",
+                n_pass, n_fail, n_exception, n_history);
     if (n_fail > 0 || n_pass == 0) {
       rc = 1;
     }

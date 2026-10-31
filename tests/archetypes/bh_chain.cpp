@@ -63,31 +63,49 @@ namespace {
 
   int g_pass_contract = 0, g_fail_contract = 0;
   int g_pass_impl = 0, g_fail_impl = 0;
+  int g_history_met = 0, g_history_exceeded = 0;
 
   enum Kind {
     CONTRACT,
-    IMPL
+    IMPL,
+    HISTORY // a row of the fitted step-1 tables superseded by decision 2026-10-27 (a): printed with its number and
+            // its historical criterion, counted apart, never a failure of the program (the registered test is the
+            // Born counterpart); Codex 1's closure C10, 2026-10-31
   };
+
+  const char* HISTORY_LABEL = "[history: fitted step-1 tables, superseded by decision 2026-10-27 (a); the registered test is the "
+                              "Born counterpart (_born entry)]";
 
   void tally(Kind k, bool ok) {
     if (k == CONTRACT) {
       ok ? ++g_pass_contract : ++g_fail_contract;
-    } else {
+    } else if (k == IMPL) {
       ok ? ++g_pass_impl : ++g_fail_impl;
+    } else {
+      ok ? ++g_history_met : ++g_history_exceeded;
     }
   }
 
   bool check_abs_k(Kind k, const std::string& name, double measured, double tol,
                    const std::string& what = "max |rel. dev.|") {
     const bool ok = std::isfinite(measured) && std::abs(measured) <= tol;
-    std::printf("[%s] %s%s: %s = %.6e (tol %.3e)\n", ok ? "PASS" : "FAIL", k == IMPL ? "(impl) " : "",
-                name.c_str(), what.c_str(), measured, tol);
+    if (k == HISTORY) {
+      std::printf("[HISTORY %s] %s: %s = %.6e (historical criterion %.3e) %s\n", ok ? "met" : "exceeded", name.c_str(), what.c_str(),
+                  measured, tol, HISTORY_LABEL);
+    } else {
+      std::printf("[%s] %s%s: %s = %.6e (tol %.3e)\n", ok ? "PASS" : "FAIL", k == IMPL ? "(impl) " : "", name.c_str(), what.c_str(),
+                  measured, tol);
+    }
     tally(k, ok);
     return ok;
   }
 
   bool check_true_k(Kind k, const std::string& name, bool ok, const std::string& what) {
-    std::printf("[%s] %s%s: %s\n", ok ? "PASS" : "FAIL", k == IMPL ? "(impl) " : "", name.c_str(), what.c_str());
+    if (k == HISTORY) {
+      std::printf("[HISTORY %s] %s: %s %s\n", ok ? "met" : "exceeded", name.c_str(), what.c_str(), HISTORY_LABEL);
+    } else {
+      std::printf("[%s] %s%s: %s\n", ok ? "PASS" : "FAIL", k == IMPL ? "(impl) " : "", name.c_str(), what.c_str());
+    }
     tally(k, ok);
     return ok;
   }
@@ -525,6 +543,10 @@ namespace {
     const rf::SampledChainD SD(cum, [&](double k) { return qk_tab(k); }, 8);
     std::printf("\n== A7 [smoke test, selected points]: the weighted chain, E_p[1/D] <D> = 1 at Gamma_p in {1.05 Gamma_th, 3, 10} "
                 "(the all-node weighted test is the a7wall group) ==\n");
+    if (!born_mode()) {
+      std::printf("HISTORY ENTRY: the comparison against the fitted step-1 I/J is history, superseded by decision 2026-10-27 (a) (the Born "
+                  "recoil in the loss tables); it is printed with its numbers and counted apart; the registered test is bh_chain_a7w_born\n");
+    }
     bool all_exact_N = true;
     double worst_exact = 0.0, worst_chain = 0.0;
     for (std::size_t b = 0; b < setups.size(); ++b) {
@@ -581,9 +603,10 @@ namespace {
     check_true("A7 [smoke test, selected points]: exactly N = 1e6 accepted weighted draws at every selected point (the "
                "attempts cap never reduced N)",
                all_exact_N, all_exact_N ? "N_acc = 1e6 at every point" : "a point stopped at the attempts cap with N_acc < 1e6");
-    check_abs("A7 [smoke test, selected points; the all-node weighted test is the a7wall group]: E_p[1/D] (I/J) = 1 within 4 "
-              "s.e., weighted chain, Gamma_p in {1.05 Gamma_th, 3, 10}, five baths",
-              worst_exact, 4.0, "max |dev| / s.e.");
+    check_abs_k(born_mode() ? CONTRACT : HISTORY,
+                std::string("A7 [smoke test, selected points; the all-node weighted test is the a7wall group]: E_p[1/D] (") +
+                  (born_mode() ? "I_Born/J" : "I_fit/J") + ") = 1 within 4 s.e., weighted chain, Gamma_p in {1.05 Gamma_th, 3, 10}, five baths",
+                worst_exact, 4.0, "max |dev| / s.e.");
     impl_abs("A7 [smoke]: E_p[1/D] <D>_sampled = 1 within 4 s.e. (<D> of the density the unweighted chain samples)", worst_chain,
              4.0, "max |dev| / s.e.");
   }
@@ -602,6 +625,10 @@ namespace {
   void test_A7_weighted_all(const std::vector<BathSetup>& setups) {
     std::printf("\n== A7 [all nodes, weighted chain]: E_p[1/D] (I/J) = 1 within 4 s.e. at every rate-table node, exactly N = "
                 "1e6 accepted draws per node ==\n");
+    if (!born_mode()) {
+      std::printf("HISTORY ENTRY: the comparison against the fitted step-1 I/J is history, superseded by decision 2026-10-27 (a); the "
+                  "exact-N (resource) row stays a verdict; the registered test is bh_chain_a7wall_born\n");
+    }
     const std::size_t N_target = 1000000, attempts_cap = 4000000000ULL;
     struct Res {
       double      Einv { 0.0 }, se { 0.0 }, minD { 1.0e300 };
@@ -740,13 +767,15 @@ namespace {
       check_abs("A7 [all nodes, weighted; frozen bhref 0.3.0 reference]: max |mean(1/D) - 1/Dmean_frozen| / s.e. over the nodes",
                 worst_frozen, 4.0, "max |dev| / s.e.");
     } else {
-      check_true("A7 [all nodes, weighted]: |mean(1/D) - 1/(I/J)| <= 4 s.e. at every rate-table node of the five baths (N = 1e6 "
-                 "accepted), the step-1 fit tables (the fit-vs-Born offset is expected to fail this at the deep nodes; history)",
-                 total_fail == 0 && total_aborted == 0,
-                 std::to_string(total_fail) + " of " + std::to_string(total_nodes) + " nodes fail");
-      check_abs("A7 [all nodes, weighted]: max |mean(1/D) - 1/(I/J)| / s.e. over the nodes (bath " + worst_bath + ", Gamma " +
-                  std::to_string(worst_gamma) + ")",
-                worst_exact, 4.0, "max |dev| / s.e.");
+      check_true_k(HISTORY,
+                   "A7 [all nodes, weighted]: |mean(1/D) - 1/(I_fit/J)| <= 4 s.e. at every rate-table node of the five baths (N = 1e6 "
+                   "accepted), the fitted step-1 tables",
+                   total_fail == 0 && total_aborted == 0,
+                   std::to_string(total_fail) + " of " + std::to_string(total_nodes) + " nodes beyond 4 s.e. (the fit-vs-Born offset)");
+      check_abs_k(HISTORY,
+                  "A7 [all nodes, weighted]: max |mean(1/D) - 1/(I_fit/J)| / s.e. over the nodes (bath " + worst_bath + ", Gamma " +
+                    std::to_string(worst_gamma) + ")",
+                  worst_exact, 4.0, "max |dev| / s.e.");
     }
   }
 
@@ -965,8 +994,8 @@ auto main(int argc, char* argv[]) -> int {
     }
 
     std::printf("\nbh_chain summary: contract items %d passed, %d failed; implementation-chosen checks %d passed, %d "
-                "failed; %.0f s\n",
-                g_pass_contract, g_fail_contract, g_pass_impl, g_fail_impl, seconds_since(t_start));
+                "failed; history rows (fitted tables, superseded 2026-10-27 (a)) %d met, %d exceeded (not failures); %.0f s\n",
+                g_pass_contract, g_fail_contract, g_pass_impl, g_fail_impl, g_history_met, g_history_exceeded, seconds_since(t_start));
     return (g_fail_contract + g_fail_impl) == 0 ? 0 : 1;
   } catch (const std::exception& e) {
     std::fprintf(stderr, "bh_chain: exception: %s\n", e.what());

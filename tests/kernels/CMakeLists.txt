@@ -96,6 +96,9 @@ set_tests_properties("KERNELS::bh_event_e1" "KERNELS::bh_event_e5" "KERNELS::bh_
 # stage 3 statistics (N = 1e5 ions each; BH_EVENT_N in the environment reduces N for a development loop)
 set_tests_properties("KERNELS::bh_event_e2e3" "KERNELS::bh_event_e2e3_g3" "KERNELS::bh_event_e6" "KERNELS::bh_event_e7"
                      "KERNELS::bh_event_e4" PROPERTIES TIMEOUT 7200)
+# [fork:hadronic/P2 step 6, closure C10] on the fitted step-1 tables the restframe E2 rows of these groups are history (decision
+# 2026-10-27 (a)), printed as HISTORY rows and counted apart; the registered counterparts are the _born E10 entries
+set_tests_properties("KERNELS::bh_event_e2e3" "KERNELS::bh_event_e2e3_g3" "KERNELS::bh_event_e7" PROPERTIES LABELS "history-fit-tables")
 # [fork:hadronic/P2 step 6 integration] E10 (event contract revision 1.1): E2 restframe on the Born loss tables
 foreach(grp e10 e10_g3)
   add_test(NAME "KERNELS::bh_event_${grp}_born" COMMAND test-kernels-bh_event.xc ${grp})

@@ -68,6 +68,9 @@ set_tests_properties("ARCHETYPES::bh_chain_a9" PROPERTIES TIMEOUT 3600)
 # [fork:hadronic/P2 step 6 round 2, Codex 1 F2] the weighted chain at every node with exact N = 1e6: ~2e10
 # proposals, the long group (run separately, log kept)
 set_tests_properties("ARCHETYPES::bh_chain_a7wall" PROPERTIES TIMEOUT 86400)
+# [fork:hadronic/P2 step 6, closure C10] the weighted chain against the FITTED step-1 tables is history (decision 2026-10-27 (a)):
+# the entries print their rows as [HISTORY met|exceeded], counted apart, and carry the ctest label; the registered tests are _born
+set_tests_properties("ARCHETYPES::bh_chain_a7w" "ARCHETYPES::bh_chain_a7wall" PROPERTIES LABELS "history-fit-tables")
 # [fork:hadronic/P2 step 6] the same against the Born rate tables (contract 1.5: A5-numerical in the budget
 # group, A7 at 4 s.e. with no floor); the step-1 suite on the Born tables likewise
 foreach(grp budget a7w a7wall a7)

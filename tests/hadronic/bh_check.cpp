@@ -539,21 +539,60 @@ namespace {
     }
     verdict(same, "T8: identical checksum lines (every ion array, the six field arrays) across the three runs",
             static_cast<double>(la.size()), 0.0);
+    // Explicit ledger validation (step 6 integration, Codex 1's closure C7.1, 2026-10-31): the ledger of a run whose
+    // stage is active but has nothing to do (tau0 = 0, or every ion below the table) must show NO transfer and NO
+    // activity (every E_*, P_*, n_* counter exactly zero) while its SNAPSHOT columns take their expected values:
+    // n_alive = the alive ions the kernel processed (0 when the stage is inactive, the ion count when active),
+    // debt_outstanding = pending_outstanding = 0 (no loss can accrue), npart_minus = npart_plus = 0 (no pairs),
+    // sum_wK = the ions' energy (not checked here, carried as before). Expected n_alive values are given by the
+    // caller (--alive_b, --alive_c), computed independently from the inputs (ions.K x ions.per_K; the stage of the
+    // tau0 = 0 run never launches the kernel). Every row of the file is checked.
+    constexpr std::size_t C_DEBT = 20, C_PEND = 21, C_SUMWK = 39, C_NPM = 41, C_NPP = 42, C_NALIVE = 49; // 0-based, 51 columns
     for (const char* which : { "ledger_b", "ledger_c" }) {
-      const auto rows = read_ledger(str(a, which));
-      double     maxabs = 0.0;
+      const std::string key_alive = std::string("alive_") + which[7]; // alive_b / alive_c
+      const double      exp_alive = a.count(key_alive) ? num(a, key_alive) : -1.0;
+      const auto        rows      = read_ledger(str(a, which));
+      double            maxabs = 0.0, max_debt = 0.0, max_pend = 0.0, max_npart = 0.0, worst_alive = 0.0;
+      bool              cols_ok = !rows.empty();
+      std::size_t       bad_col = 0;
       for (const auto& r : rows) {
-        const std::size_t sum_wK_col = (r.cols.size() >= 43) ? 39 : r.cols.size() - 1;
-        for (std::size_t c = 2; c < r.cols.size(); ++c) { // all but step, time, sum_wK
-          if (c == sum_wK_col) {
+        if (r.cols.size() != 51) {
+          cols_ok = false;
+          continue;
+        }
+        for (std::size_t c = 2; c < r.cols.size(); ++c) { // transfer and activity columns: all but step, time and the snapshots
+          if (c == C_SUMWK || c == C_DEBT || c == C_PEND || c == C_NPM || c == C_NPP || c == C_NALIVE) {
             continue;
           }
-          maxabs = std::max(maxabs, std::abs(r.cols[c]));
+          if (std::abs(r.cols[c]) > maxabs) {
+            maxabs  = std::abs(r.cols[c]);
+            bad_col = c;
+          }
         }
+        max_debt    = std::max(max_debt, std::abs(r.cols[C_DEBT]));
+        max_pend    = std::max(max_pend, std::abs(r.cols[C_PEND]));
+        max_npart   = std::max(max_npart, std::max(std::abs(r.cols[C_NPM]), std::abs(r.cols[C_NPP])));
+        worst_alive = std::max(worst_alive, std::abs(r.cols[C_NALIVE] - exp_alive));
+        std::printf("(diag) %s step %.0f: n_alive %.0f (expected %.0f), debt_outstanding %.17g, pending_outstanding %.17g, npart %.0f/%.0f, "
+                    "sum_wK %.17g\n",
+                    which, r.cols[0], r.cols[C_NALIVE], exp_alive, r.cols[C_DEBT], r.cols[C_PEND], r.cols[C_NPM], r.cols[C_NPP],
+                    r.cols[C_SUMWK]);
       }
-      verdict(!rows.empty() && maxabs == 0.0,
-              std::string("T8: ledger identically zero (") + which + ", every column but step, time, sum_wK)",
+      verdict(cols_ok, std::string("T8: ") + which + ": " + std::to_string(rows.size()) + " rows of 51 columns",
+              static_cast<double>(rows.size()), 0.0);
+      verdict(cols_ok && maxabs == 0.0,
+              std::string("T8: ") + which + ": every transfer and activity column exactly zero (E_*, P_*, n_events ... n_resolution; "
+                                           "worst column index " + std::to_string(bad_col) + ", 0-based)",
               maxabs, 0.0);
+      verdict(cols_ok && exp_alive >= 0.0 && worst_alive == 0.0,
+              std::string("T8: ") + which + ": snapshot n_alive equals the independently computed value " + std::to_string((long long)exp_alive) +
+                " in every row",
+              worst_alive, 0.0);
+      verdict(cols_ok && max_debt == 0.0 && max_pend == 0.0,
+              std::string("T8: ") + which + ": snapshots debt_outstanding and pending_outstanding exactly zero (no loss can accrue)",
+              std::max(max_debt, max_pend), 0.0);
+      verdict(cols_ok && max_npart == 0.0, std::string("T8: ") + which + ": snapshots npart_minus and npart_plus exactly zero (no pairs)",
+              max_npart, 0.0);
     }
     return 0;
   }
