@@ -191,8 +191,7 @@ ENTITY_CMAKE=(-G Ninja -DCMAKE_BUILD_TYPE=Release -DTESTS=ON -Dpgen=bh_proto -Dm
 # (particles_sort, deposit, checkpoint-data, checkpoint-extents, spectra, injectors_global_weights, reduced_stats_weights;
 # sort_by_key and deposit_tiled exist only with tiled_deposit=ON, which is not this build: see the report's proposal)
 F8_TARGETS="test-framework-f8_tracers.xc test-framework-particles_sort.xc test-kernels-deposit.xc test-framework-checkpoint-data.xc test-framework-checkpoint-extents.xc test-framework-spectra.xc test-kernels-injectors_global_weights.xc test-kernels-reduced_stats_weights.xc"
-F8_REGEX='FRAMEWORK::f8_tracers|FRAMEWORK::particles_sort|KERNELS::deposit$|FRAMEWORK::checkpoint-data|FRAMEWORK::checkpoint-extents|FRAMEWORK::spectra|KERNELS::injectors_global_weights|KERNELS::reduced_stats_weights'
-F8_EXPECTED=8
+F8_NAMES="FRAMEWORK::f8_tracers FRAMEWORK::particles_sort KERNELS::deposit FRAMEWORK::checkpoint-data FRAMEWORK::checkpoint-extents FRAMEWORK::spectra KERNELS::injectors_global_weights KERNELS::reduced_stats_weights"
 SINGLE_TARGETS="entity.xc bh_check test-kernels-bh_perf.xc test-kernels-bh_reduction_timing.xc $F8_TARGETS"
 SINGLE_BINARIES=("$BLD/src/entity.xc" "$BLD/tests/hadronic/bh_check" "$BLD/tests/kernels/test-kernels-bh_perf.xc" "$BLD/tests/kernels/test-kernels-bh_reduction_timing.xc" "$BLD/tests/framework/test-framework-f8_tracers.xc")
 run step1-build gate 780 bash -c "cmake -S '$SRC' -B '$BLD' ${ENTITY_CMAKE[*]} -Dprecision=single && cmake --build '$BLD' -j ${SLURM_CPUS_PER_TASK:-8} --target $SINGLE_TARGETS"
@@ -229,14 +228,19 @@ run step5-ncu infra 240 env BH_PERF_N="$PERF_N_M3" OMP_NUM_THREADS=1 ncu --launc
 
 # ---- step 6: Codex 2's F8 GPU tracers, single precision: the tracer executable and the stock entries; the selection
 #      must be non-empty and complete (F8_EXPECTED entries run), else the step is an infrastructure failure
-f8_ctest() { # f8_ctest <build dir>
-  cd "$1" && ctest -R "$F8_REGEX" --output-on-failure --timeout 80 -j 1; local rc=$?
-  local n; n=$(ctest -N -R "$F8_REGEX" | grep -c "Test #")
-  if [ "$n" -ne "$F8_EXPECTED" ]; then echo "F8 selection gate: $n entries selected, expected $F8_EXPECTED"; return 3; fi
-  [ $rc -eq 0 ] || echo "FAIL: F8 ctest exit $rc"
+f8_ctest() { # f8_ctest <build dir>: every named entry must exist (exact name) and is run on its own; the step fails on a
+             # missing entry (selection gate, exit 3) and on any failed entry (FAIL line, exit 1)
+  cd "$1" || return 2
+  local name rc=0 n_run=0 n_fail=0
+  for name in $F8_NAMES; do
+    if ! ctest -N | grep -Eq "Test +#[0-9]+: ${name}\$"; then echo "F8 selection gate: entry $name is not registered in $1"; return 3; fi
+    if ctest -R "^${name}\$" --output-on-failure --timeout 80; then n_run=$((n_run + 1)); else n_run=$((n_run + 1)); n_fail=$((n_fail + 1)); echo "FAIL: F8 entry $name"; fi
+  done
+  echo "F8: $n_run entries run, $n_fail failed"
+  [ $n_fail -eq 0 ] || rc=1
   return $rc
 }
-export -f f8_ctest; export F8_REGEX F8_EXPECTED
+export -f f8_ctest; export F8_NAMES
 run step6-f8-single sci 90 bash -c "f8_ctest '$BLD'"
 
 # ---- step 7: F8 in double precision: the test targets only (the libraries they need are the bulk of the build), then
