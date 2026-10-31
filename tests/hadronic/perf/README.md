@@ -22,12 +22,20 @@ reduction + fence), `bh_perf_finish_readback` and `bh_perf_restore_and_reseed` (
 which the kernel time and the reduction-plus-readback tail are the CUDA kernel rows and the gap to the range end;
 (b) ncu on 12 launches after the 20 warm-up launches (`--kernel-name-base demangled --kernel-name regex:BetheHeitler`,
 the Kokkos CUDA function names carry the functor type), for the kernel's own metrics (`--set basic`). The RNG pool's
-share cannot be ranged inside the kernel: it is bounded from above by `bh_perf rngpool`, a kernel that only acquires a
-pool state, draws once and releases it over the same N threads (its time per thread against the production kernel's
-ns per ion). The lookup fraction is (production − constants) / production under matched work, with the stated
+share cannot be ranged inside the kernel; `bh_perf rngpool`, a kernel that only acquires a pool state, draws once and
+releases it over the same N threads, gives an ISOLATED PROXY of its cost (its time per thread beside the production
+kernel's ns per ion), not a bound on the in-kernel share (Codex 1's C4): occupancy, contention for pool states, the
+number of draws, the overlap with memory traffic and the production critical path differ, so the isolated cost can be
+larger or smaller than the marginal cost inside the production kernel. The lookup fraction is (production − constants) / production under matched work, with the stated
 limitation that the constants variant removes the lookup's memory traffic and arithmetic together and the float
-variant changes the interpolation coordinate with the precision. The job asserts `BH_PERF_N = 4194304` in every
-profiled log and that each profile holds the expected ranges and launches.
+variant changes the interpolation coordinate with the precision. The job fixes N at 4194304 for M3, M4, M6 and the
+profiles (C4): it refuses to start (exit 6) on any other `PERF_N_M3`, explicit or inherited through `--export=ALL`;
+`bh_perf` refuses an invalid `BH_PERF_N` (exit 2) instead of falling back to its default; `rusty/profile_check.py`
+asserts in every profiled run's own log `BH_PERF_N = 4194304`, the configuration filter and one configuration of 120
+launches, in the nsys report the three ranges of the configuration and no other configuration's launch range, and in
+the ncu raw page at least 12 UNIQUE launch IDs (a launch with many metric rows counts once), all of the
+configuration's functor type. Its negative controls on synthetic profiler output (one launch with 24 metric rows,
+wrong N, wrong kernel type, another configuration's range) are in `HADRONIC::perf_job_selftest`.
 
 Driver notes (facts found on the Mac smoke, 2026-10-30): Entity's `Custom` timer also wraps the generator's
 post-step, whose ledger row and per-ion text dump are O(N) host passes; the driver therefore writes the ledger row

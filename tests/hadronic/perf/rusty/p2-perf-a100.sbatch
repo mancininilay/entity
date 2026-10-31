@@ -28,15 +28,20 @@
 #   ENTITY_REPO    fork URL                               [git@github.com:mancininilay/entity.git]
 #   PERF_ROOT      run root (must NOT exist)              [~/ceph/entity-validation/p2-perf-<jobid>]
 #   PERF_N         ion counts                             [262144 1048576 4194304 16777216]
-#   PERF_N_M3      ion count for M3 (nsys/ncu) and M6     [4194304, fixed for this authorisation]
+#   PERF_N_M3      ion count for M3 (nsys/ncu), M4, M6    FIXED at 4194304 by this authorisation (Codex 1's F6/C4): any
+#                  other value, explicit or inherited from the submitting shell through --export=ALL, makes the job
+#                  refuse to start (exit 6, before the run root exists); the steps use the constant PERF_N_FIXED
 #   PERF_REPEATS   [3]   PERF_REPEATS_TOP [2: the F3 cut, repeats at 2^24 only]   PERF_WARMUP [50: the F3 cut]
 #   PERF_MEASURED  [500]  PERF_DIAG [1: every measured step is summed, F4]
 #   PERF_QK_SOURCE [fit] the q_k source of the ENGINE timing runs. DECIDED by Nilay on 2026-10-31 ("fit for engine
 #                  runs", decisions.md): the step-1 tables for the 143 engine processes of step 2, because every
 #                  bh_proto process would otherwise build the Born node table at startup (6.5 s on 10 Mac threads,
-#                  8 to 20 s under load), the largest single item of the hour, while the table layout and the
-#                  kernel work per step are identical. The kernel-level groups (M3, M6, the profiles) run on the
-#                  Born tables (BH_QK_SOURCE=born, one table build per process). "born" remains selectable.
+#                  8 to 20 s under load), the largest single item of the hour, while the code path and the table
+#                  layout are the same. Label of these rows (Codex 1's C4): "engine runs on the step-1 (fit) tables:
+#                  same code and layout as Born; the dynamic work (events, spawns, substeps) follows the table values,
+#                  so equal stage cost is expected, not identical by construction". The kernel-level groups (M3, M6,
+#                  the profiles) run on the Born tables (BH_QK_SOURCE=born, one table build per process). "born"
+#                  remains selectable.
 #   DRY_RUN=1      print every step instead of executing (the local dry run handed to the referee)
 #   PERF_SELFTEST=1  run the script's own negative controls (no checkout, build or measurement) and exit 0 when every
 #                  control gives its expected class (registered as HADRONIC::perf_job_selftest)
@@ -47,8 +52,8 @@
 #   0  checkout                                                                  120 s
 #   1  build single (entity.xc, bh_check, bh_perf, bh_reduction_timing, the eight F8 executables)     780 s
 #   2  M1 + M2 + M5 (+ the M5 restart runs on the end-loaded populations, F8)    600 s (fit; 1260 s with born)
-#   3  M6 stride at PERF_N_M3 (event, none, poisson, budget; n = 1, 4, 16)        240 s
-#      M3 variants at PERF_N_M3 (matched work)                                   180 s
+#   3  M6 stride at PERF_N_FIXED (event, none, poisson, budget; n = 1, 4, 16)     240 s
+#      M3 variants at PERF_N_FIXED (matched work)                                180 s
 #   4  M4 reducer vs atomics vs per-team, equal boundaries                        90 s
 #   5  profiles: nsys + ncu per configuration (event: production, const, float; continuous: production)
 #      with content assertions, and the RNG-pool measurement                     350 s
@@ -65,7 +70,8 @@
 #     infrastructure_failure    checkout/build gate, incomplete binary inventory, timeout (124), kill (137), exception
 #                               (2, signals), missing binary (126/127), a CTest entry Not Run / Timeout / Exception,
 #                               an MPI launcher failure, missing or malformed timer data, missing profile content,
-#                               a refused configuration: any non-zero exit other than (1 + a "FAIL: " line)       exit 20
+#                               any non-zero exit other than (1 + a "FAIL: " line)                         exit 20
+#     (refused before start: an existing run root, exit 5; PERF_N_M3 != 4194304, exit 6; no status.json then)
 #     incomplete_coverage       a step was SKIPPED for lack of time or BLOCKED by a failed gate            exit 30
 #   Precedence of the overall class: infrastructure > incomplete > scientific > complete; the three flags are
 #   written separately so nothing is hidden: a step classed infrastructure_failure whose log ALSO carries "FAIL: "
@@ -75,13 +81,16 @@ set -uo pipefail
 DRY_RUN="${DRY_RUN:-0}"
 ENTITY_REPO="${ENTITY_REPO:-git@github.com:mancininilay/entity.git}"
 PERF_N="${PERF_N:-262144 1048576 4194304 16777216}"
-PERF_N_M3="${PERF_N_M3:-4194304}"
+PERF_N_FIXED=4194304   # M3, M4, M6 and the profiles at the authorised N (Codex 1's F6/C4); PERF_N_M3 may only repeat it
+readonly PERF_N_FIXED
+PERF_N_M3="${PERF_N_M3:-$PERF_N_FIXED}"
 export PERF_REPEATS="${PERF_REPEATS:-3}" PERF_REPEATS_TOP="${PERF_REPEATS_TOP:-2}" PERF_WARMUP="${PERF_WARMUP:-50}" PERF_MEASURED="${PERF_MEASURED:-500}" PERF_DIAG="${PERF_DIAG:-1}"
 export PERF_QK_SOURCE="${PERF_QK_SOURCE:-fit}"
 JOB="${SLURM_JOB_ID:-dryrun-$$}"
 ROOT="${PERF_ROOT:-$HOME/ceph/entity-validation/p2-perf-$JOB}"
 SRC="$ROOT/src"; BLD="$ROOT/build-single"; BLD2="$ROOT/build-double"; OUT="$ROOT/out"; LOG="$ROOT/logs"
 F8_TOOL="$SRC/tests/hadronic/perf/rusty/f8_ctest.py"
+PROFILE_TOOL="$SRC/tests/hadronic/perf/rusty/profile_check.py"
 T_START=$(date +%s)
 BUDGET_S=$((60 * 60))
 GATE_OK=0          # 1 once the checkout and the single build gate passed
@@ -177,11 +186,35 @@ finish() {
   exit $OVERALL_RC
 }
 
+# profile_one <mode> <kernel>: nsys and ncu of ONE (mode, kernel) configuration (`bh_perf variants --mode M --kernel K` runs
+# that configuration's 20 + 100 launches alone) at the FIXED N, every profile checked for content by profile_check.py
+# (Codex 1's F6/C4): the program's own log of each profiled run must say BH_PERF_N = PERF_N_FIXED (the constant, never
+# the overridable variable), the configuration filter (M, K) and one configuration of 120 launches; the nsys nvtx_sum
+# report must hold the restore/reseed and finish-readback ranges and the launch range of (M, K) and no other
+# configuration's; the ncu raw page must hold at least 12 UNIQUE launch IDs (not metric rows), every one of the
+# configuration's functor type. Returns 4 (infrastructure) when any content check fails, else the profilers' exit code.
+profile_one() {
+  local m="$1" k="$2" tag="m3-$1-$2" rc=0
+  env BH_PERF_N="$PERF_N_FIXED" BH_QK_SOURCE=born OMP_NUM_THREADS=1 nsys profile --trace=cuda,nvtx --force-overwrite=true -o "$OUT/nsys-$tag" \
+    "$BLD/tests/kernels/test-kernels-bh_perf.xc" variants --mode "$m" --kernel "$k" > "$OUT/nsys-$tag.log" 2>&1 || rc=$?
+  python3 "$PROFILE_TOOL" log "$OUT/nsys-$tag.log" --n "$PERF_N_FIXED" --mode "$m" --kernel "$k" || return 4
+  nsys stats --report nvtx_sum --format csv -o "$OUT/nsys-$tag" "$OUT/nsys-$tag.nsys-rep" > "$OUT/nsys-$tag-stats.log" 2>&1 || rc=$?
+  python3 "$PROFILE_TOOL" nsys "$OUT/nsys-$tag"_nvtx_sum.csv --mode "$m" --kernel "$k" || return 4
+  env BH_PERF_N="$PERF_N_FIXED" BH_QK_SOURCE=born OMP_NUM_THREADS=1 ncu --kernel-name-base demangled --kernel-name regex:BetheHeitler \
+    --launch-skip 20 --launch-count 12 --set basic --force-overwrite -o "$OUT/ncu-$tag" \
+    "$BLD/tests/kernels/test-kernels-bh_perf.xc" variants --mode "$m" --kernel "$k" > "$OUT/ncu-$tag.log" 2>&1 || rc=$?
+  python3 "$PROFILE_TOOL" log "$OUT/ncu-$tag.log" --n "$PERF_N_FIXED" --mode "$m" --kernel "$k" || return 4
+  ncu --import "$OUT/ncu-$tag.ncu-rep" --csv --page raw > "$OUT/ncu-$tag-raw.csv" 2> "$OUT/ncu-$tag-import.log" || rc=$?
+  python3 "$PROFILE_TOOL" ncu "$OUT/ncu-$tag-raw.csv" --kernel "$k" --min 12 || return 4
+  echo "profile $tag: content verified (fixed N $PERF_N_FIXED, configuration ($m, $k), unique launches counted)"
+  return $rc
+}
+
 # ---- PERF_SELFTEST=1: the negative controls of Codex 1's F2.2 and C1 on this script's own functions and on the F8 tool
 #      (no checkout, build or measurement; the CTest controls are real CTest invocations on generated test files, the
 #      launchers are mocks). Every control has an expected class; the self-test exits 0 only when all of them match.
 if [ "${PERF_SELFTEST:-0}" = "1" ]; then
-  HERE="$(cd "$(dirname "$0")" && pwd)"; F8_TOOL="$HERE/f8_ctest.py"
+  HERE="$(cd "$(dirname "$0")" && pwd)"; F8_TOOL="$HERE/f8_ctest.py"; PROFILE_TOOL="$HERE/profile_check.py"
   TMPBASE="${TMPDIR:-/tmp}"; TMPBASE="${TMPBASE%/}"   # no doubled slash: CTest normalises the paths it reports
   ROOT="${PERF_ROOT:-$(mktemp -d "$TMPBASE/p2perf-selftest.XXXXXX")/root}"; LOG="$ROOT/logs"; OUT="$ROOT/out"; MOCK="$ROOT/mock"
   mkdir -p "$LOG" "$OUT" "$OUT/m1" "$MOCK"; : > "$LOG/steps.tsv"; : > "$LOG/commit.txt"
@@ -238,6 +271,71 @@ if [ "${PERF_SELFTEST:-0}" = "1" ]; then
   ctest_dir "$ROOT/probe-f8-unregistered" KERNELS::something_else /bin/sh -c 'exit 0'
   run probe-f8-unregistered sci 60 python3 "$F8_TOOL" --build "$ROOT/probe-f8-unregistered" --dest "$ROOT/probe-f8-unregistered/plan" --launcher "$MOCK/mpirun -n 1" FRAMEWORK::f8_tracers
   echo "probe-f8-unregistered returned $?"
+  # C4: the profile content checks on SYNTHETIC profiler output (mock nsys / ncu / bh_perf, NOT CUDA profiles): Codex 1's
+  # one-launch / 24-metric-row control and wrong-N control, a wrong kernel type, another configuration's range, and a
+  # correct synthetic profile; then the PERF_N_M3 refusal of the script itself, the override inherited from the environment
+  mkdir -p "$MOCK/bld/tests/kernels" "$MOCK/bin"
+  cat > "$MOCK/bld/tests/kernels/test-kernels-bh_perf.xc" <<'PROG'
+#!/bin/bash
+# mock bh_perf (self-test only): the lines the profile checks read; MOCK_PRINTED_N replaces the printed N
+m=""; k=""; while [ $# -gt 0 ]; do case "$1" in --mode) m="$2"; shift ;; --kernel) k="$2"; shift ;; esac; shift; done
+echo "bh_perf: BH_PERF_N = ${MOCK_PRINTED_N:-$BH_PERF_N} (synthetic)"
+echo "bh_perf: configuration filter: mode '$m', kernel '$k'"
+echo "(perf) M3 launches per configuration: 20 warm-up + 100 timed = 120 parallel_reduce launches of the kernel, 1 configurations selected (synthetic)"
+PROG
+  cat > "$MOCK/bin/nsys" <<'NSYS'
+#!/bin/bash
+# mock nsys (self-test only): "profile ... -o X prog args" runs prog and writes X.nsys-rep; "stats ... -o X rep" writes X_nvtx_sum.csv
+cmd="$1"; shift; o=""
+if [ "$cmd" = "profile" ]; then
+  while [ $# -gt 0 ]; do case "$1" in -o) o="$2"; shift 2 ;; --*) shift ;; *) break ;; esac; done
+  echo synthetic > "$o.nsys-rep"; exec "$@"
+fi
+while [ $# -gt 0 ]; do [ "$1" = "-o" ] && o="$2"; shift; done
+cp "$MOCK_NVTX_CSV" "${o}_nvtx_sum.csv"
+NSYS
+  cat > "$MOCK/bin/ncu" <<'NCU'
+#!/bin/bash
+# mock ncu (self-test only): "--import rep --csv --page raw" prints MOCK_NCU_CSV; otherwise "... -o X prog args" runs prog
+case " $* " in *" --import "*) cat "$MOCK_NCU_CSV"; exit 0 ;; esac
+o=""
+while [ $# -gt 0 ]; do case "$1" in -o) o="$2"; shift 2 ;; --kernel-name-base|--kernel-name|--launch-skip|--launch-count|--set) shift 2 ;; --*) shift ;; *) break ;; esac; done
+echo synthetic > "$o.ncu-rep"; exec "$@"
+NCU
+  chmod +x "$MOCK/bld/tests/kernels/test-kernels-bh_perf.xc" "$MOCK/bin/nsys" "$MOCK/bin/ncu"
+  # synthetic reports: nvtx_sum with the production event ranges (and a variant of it with a const range), ncu raw pages
+  printf '"Time (%%)","Total Time (ns)","Instances","Range"\n"60.0","1000","120",":bh_perf_production_event"\n"20.0","300","120",":bh_perf_restore_and_reseed"\n"20.0","300","120",":bh_perf_finish_readback"\n' > "$MOCK/nvtx-ok.csv"
+  { cat "$MOCK/nvtx-ok.csv"; printf '"1.0","10","120",":bh_perf_variant_const_event"\n'; } > "$MOCK/nvtx-other.csv"
+  KP='void Kokkos::Impl::cuda_parallel_launch_local_memory<Kokkos::Impl::ParallelReduce<Kokkos::Impl::CombinedFunctorReducer<kernel::hadronic::BetheHeitler_kernel<metric::Minkowski<(Dimension)1>>, Kokkos::Impl::FunctorAnalysis<>::Reducer, void>, Kokkos::RangePolicy<>, Kokkos::Cuda>>(T1)'
+  KC='void Kokkos::Impl::cuda_parallel_launch_local_memory<Kokkos::Impl::ParallelReduce<Kokkos::Impl::CombinedFunctorReducer<kernel::hadronic_perf::BetheHeitler_kernel_variant<metric::Minkowski<(Dimension)1>, kernel::hadronic_perf::PerfTablesConst>, void>, Kokkos::Cuda>>(T1)'
+  { echo '"ID","Process ID","Process Name","Host Name","Kernel Name","Metric Name","Metric Value"'; i=0
+    while [ $i -lt 12 ]; do for mm in a b c; do echo "\"$i\",\"1\",\"bh_perf\",\"h\",\"$KP\",\"$mm\",\"1\""; done; i=$((i + 1)); done; } > "$MOCK/ncu-ok.csv"
+  { echo '"ID","Process ID","Process Name","Host Name","Kernel Name","Metric Name","Metric Value"'; i=0
+    while [ $i -lt 24 ]; do echo "\"0\",\"1\",\"bh_perf\",\"h\",\"$KP\",\"metric$i\",\"1\""; i=$((i + 1)); done; } > "$MOCK/ncu-one-launch.csv"
+  { echo '"ID","Process ID","Process Name","Host Name","Kernel Name","Metric Name","Metric Value"'; i=0
+    while [ $i -lt 12 ]; do echo "\"$i\",\"1\",\"bh_perf\",\"h\",\"$KC\",\"a\",\"1\""; i=$((i + 1)); done; } > "$MOCK/ncu-wrong-kernel.csv"
+  prof_probe() { # prof_probe <probe> <nvtx csv> <ncu csv> [MOCK_PRINTED_N]: profile_one (the job's function) on mock profilers
+    local p="$1" save_out="$OUT" save_path="$PATH" prc
+    mkdir -p "$ROOT/$p"
+    export OUT="$ROOT/$p" BLD="$MOCK/bld" MOCK_NVTX_CSV="$2" MOCK_NCU_CSV="$3" MOCK_PRINTED_N="${4:-}" PERF_N_FIXED PROFILE_TOOL
+    export -f profile_one
+    export PATH="$MOCK/bin:$save_path"
+    run "$p" infra 60 bash -c "profile_one event production"; prc=$?
+    export PATH="$save_path"; OUT="$save_out"
+    echo "$p returned $prc"
+  }
+  prof_probe probe-prof-ok "$MOCK/nvtx-ok.csv" "$MOCK/ncu-ok.csv"
+  prof_probe probe-prof-one-launch-24-rows "$MOCK/nvtx-ok.csv" "$MOCK/ncu-one-launch.csv"
+  prof_probe probe-prof-wrong-n "$MOCK/nvtx-ok.csv" "$MOCK/ncu-ok.csv" 65536
+  prof_probe probe-prof-wrong-kernel "$MOCK/nvtx-ok.csv" "$MOCK/ncu-wrong-kernel.csv"
+  prof_probe probe-prof-other-range "$MOCK/nvtx-other.csv" "$MOCK/ncu-ok.csv"
+  # C4: the script refuses PERF_N_M3 != 4194304 before creating its run root, also when the value is only inherited from the
+  # environment (what sbatch --export=ALL forwards); the fixed value itself is accepted (dry run)
+  env -u PERF_SELFTEST PERF_N_M3=65536 DRY_RUN=1 ENTITY_COMMIT=selftest PERF_ROOT="$ROOT/guard-65536" bash "$0" > "$LOG/guard-65536.log" 2>&1
+  expect_rc "PERF_N_M3=65536 inherited from the environment: refusal" $? 6
+  expect_rc "PERF_N_M3=65536: no run root created" "$([ -e "$ROOT/guard-65536" ] && echo exists || echo absent)" absent
+  env -u PERF_SELFTEST PERF_N_M3=4194304 DRY_RUN=1 ENTITY_COMMIT=selftest PERF_ROOT="$ROOT/guard-fixed" bash "$0" > "$LOG/guard-fixed.log" 2>&1
+  expect_rc "PERF_N_M3=4194304 (the fixed value): dry run" $? 0
   # the launcher plan: the direct command prefixed by the launcher, the two-rank command left as it is
   N_CHECK=$((N_CHECK + 1))
   if grep -q "\[=\[$MOCK/mpirun\]=\] \[=\[-n\]=\] \[=\[1\]=\] \[=\[/bin/sh\]=\]" "$ROOT/probe-f8-pass/plan/CTestTestfile.cmake" \
@@ -273,6 +371,11 @@ probe-f8-assertion scientific_check_failure
 probe-f8-stock-fail scientific_check_failure
 probe-f8-mpi-slots infrastructure_failure
 probe-f8-unregistered infrastructure_failure
+probe-prof-ok ok
+probe-prof-one-launch-24-rows infrastructure_failure
+probe-prof-wrong-n infrastructure_failure
+probe-prof-wrong-kernel infrastructure_failure
+probe-prof-other-range infrastructure_failure
 EXPECT
   DRY_RUN=1
   write_status
@@ -287,6 +390,13 @@ EXPECT
 fi
 
 ENTITY_COMMIT="${ENTITY_COMMIT:?set ENTITY_COMMIT to the merged head}"
+
+# ---- the fixed N of this authorisation (Codex 1's F6/C4): refuse to start on any other PERF_N_M3, explicit or inherited
+#      through --export=ALL, before anything is created or run
+if [ "$PERF_N_M3" != "$PERF_N_FIXED" ]; then
+  echo "configuration refused: PERF_N_M3 = '$PERF_N_M3', but this authorisation fixes $PERF_N_FIXED for M3, M4, M6 and the profiles (unset it or set it to $PERF_N_FIXED)"
+  exit 6
+fi
 
 # ---- the run root: exclusive creation (Codex 1's F2.3: an existing root would let the driver overwrite CSVs)
 if [ -e "$ROOT" ]; then echo "run root $ROOT exists: refusing to reuse it (fresh root per job)"; exit 5; fi
@@ -342,43 +452,25 @@ run step2-m1-m2-m5 sci "$STEP2_BUDGET" env PERF_N="$PERF_N" PERF_M5=1 PERF_LABEL
   bash "$SRC/tests/hadronic/perf/perf_driver.sh" "$ROOT/entity-1rank.sh" "$BLD/tests/hadronic/bh_check" "$SRC/tests/hadronic/perf/inputs" "$OUT/m1"
 
 # ---- step 3: M6 stride and M3 variants at the kernel level
-run step3-stride sci 240 env BH_PERF_N="$PERF_N_M3" BH_QK_SOURCE=born OMP_NUM_THREADS=1 mpirun -n 1 "$BLD/tests/kernels/test-kernels-bh_perf.xc" stride
-run step3-variants sci 180 env BH_PERF_N="$PERF_N_M3" BH_QK_SOURCE=born OMP_NUM_THREADS=1 mpirun -n 1 "$BLD/tests/kernels/test-kernels-bh_perf.xc" variants
+run step3-stride sci 240 env BH_PERF_N="$PERF_N_FIXED" BH_QK_SOURCE=born OMP_NUM_THREADS=1 mpirun -n 1 "$BLD/tests/kernels/test-kernels-bh_perf.xc" stride
+run step3-variants sci 180 env BH_PERF_N="$PERF_N_FIXED" BH_QK_SOURCE=born OMP_NUM_THREADS=1 mpirun -n 1 "$BLD/tests/kernels/test-kernels-bh_perf.xc" variants
 
 # ---- step 4: M4 reducer vs atomics vs per-team scratch at the contract's N
-run step4-reduction sci 90 env BH_REDUCTION_N="$PERF_N_M3" OMP_NUM_THREADS=1 mpirun -n 1 "$BLD/tests/kernels/test-kernels-bh_reduction_timing.xc"
+run step4-reduction sci 90 env BH_REDUCTION_N="$PERF_N_FIXED" OMP_NUM_THREADS=1 mpirun -n 1 "$BLD/tests/kernels/test-kernels-bh_reduction_timing.xc"
 
 # ---- step 5: profiles for M3 (Codex 1 F6): one capture window PER CONFIGURATION (`bh_perf variants --mode M --kernel K`
-#      runs that configuration's 20 + 100 launches alone), N fixed at PERF_N_M3 and asserted from the program's own
-#      "BH_PERF_N =" line, every profile checked for content: nsys must contain the NVTX ranges of the launch, the finish
-#      readback and the restore/reseed phases (nvtx_sum report) and ncu must have captured the requested kernels (CUDA
-#      function names of the Kokkos launches contain the functor type: regex BetheHeitler on the demangled name;
-#      --kernel-name-base demangled). The RNG-pool share is measured in isolation (`bh_perf rngpool`, the attribution
-#      method of the README). The step is an infrastructure failure when a profile lacks the expected content.
-profile_one() { # profile_one <mode> <kernel>
-  local m="$1" k="$2" tag="m3-$1-$2" rc=0 n
-  env BH_PERF_N="$PERF_N_M3" BH_QK_SOURCE=born OMP_NUM_THREADS=1 nsys profile --trace=cuda,nvtx --force-overwrite=true -o "$OUT/nsys-$tag" \
-    "$BLD/tests/kernels/test-kernels-bh_perf.xc" variants --mode "$m" --kernel "$k" > "$OUT/nsys-$tag.log" 2>&1 || rc=$?
-  grep -q "BH_PERF_N = $PERF_N_M3 " "$OUT/nsys-$tag.log" || { echo "profile $tag: BH_PERF_N is not $PERF_N_M3"; return 4; }
-  nsys stats --report nvtx_sum --format csv -o "$OUT/nsys-$tag" "$OUT/nsys-$tag.nsys-rep" > "$OUT/nsys-$tag-stats.log" 2>&1 || rc=$?
-  for r in bh_perf_restore_and_reseed bh_perf_finish_readback; do
-    grep -q "$r" "$OUT/nsys-$tag"_nvtx_sum.csv 2>/dev/null || { echo "profile $tag: NVTX range $r missing from the nsys report"; return 4; }
-  done
-  grep -q "bh_perf_.*_$m\|bh_perf_production_$m\|bh_perf_variant_${k}_$m" "$OUT/nsys-$tag"_nvtx_sum.csv || { echo "profile $tag: the launch range of ($m, $k) is missing"; return 4; }
-  env BH_PERF_N="$PERF_N_M3" BH_QK_SOURCE=born OMP_NUM_THREADS=1 ncu --kernel-name-base demangled --kernel-name regex:BetheHeitler \
-    --launch-skip 20 --launch-count 12 --set basic --force-overwrite -o "$OUT/ncu-$tag" \
-    "$BLD/tests/kernels/test-kernels-bh_perf.xc" variants --mode "$m" --kernel "$k" > "$OUT/ncu-$tag.log" 2>&1 || rc=$?
-  n=$(ncu --import "$OUT/ncu-$tag.ncu-rep" --csv --page raw 2>/dev/null | tail -n +2 | grep -c "BetheHeitler")
-  [ "$n" -ge 12 ] || { echo "profile $tag: ncu captured $n BetheHeitler kernel launches, expected 12"; return 4; }
-  echo "profile $tag: nsys ranges present, ncu captured $n launches"
-  return $rc
-}
-export -f profile_one; export OUT BLD PERF_N_M3
+#      runs that configuration's 20 + 100 launches alone), N fixed at PERF_N_FIXED and asserted from the program's own
+#      "BH_PERF_N =" line, every profile checked for content by profile_one / profile_check.py (above): the configuration,
+#      the NVTX ranges, at least 12 UNIQUE ncu launch IDs of the configuration's functor type (CUDA function names of the
+#      Kokkos launches contain the functor type: regex BetheHeitler on the demangled name). The RNG-pool cost is measured
+#      by an isolated benchmark (`bh_perf rngpool`: an isolated proxy, not a bound on the in-kernel share; README). The
+#      step is an infrastructure failure when a profile lacks the expected content.
+export -f profile_one; export OUT BLD PERF_N_FIXED PROFILE_TOOL
 run step5-profile-event-production infra 100 bash -c "profile_one event production"
 run step5-profile-event-const infra 70 bash -c "profile_one event const"
 run step5-profile-event-float infra 70 bash -c "profile_one event float"
 run step5-profile-continuous-production infra 70 bash -c "profile_one continuous production"
-run step5-rngpool sci 40 env BH_PERF_N="$PERF_N_M3" OMP_NUM_THREADS=1 mpirun -n 1 "$BLD/tests/kernels/test-kernels-bh_perf.xc" rngpool
+run step5-rngpool sci 40 env BH_PERF_N="$PERF_N_FIXED" OMP_NUM_THREADS=1 mpirun -n 1 "$BLD/tests/kernels/test-kernels-bh_perf.xc" rngpool
 
 # ---- step 6: Codex 2's F8 GPU tracers, single precision (Codex 1's C1): tests/hadronic/perf/rusty/f8_ctest.py runs the
 #      eight named entries one by one through Rusty's validated launcher plan (the direct commands, f8_tracers among them,

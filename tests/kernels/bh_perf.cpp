@@ -331,11 +331,13 @@ namespace {
   }
 
   /* ------------------------------------------------------------------------ */
-  /* F6: the RNG-pool share, measured in isolation                              */
+  /* F6: the RNG-pool cost, measured by an isolated benchmark                   */
   /* ------------------------------------------------------------------------ */
-  // the only RNG work of the production kernel per ion is get_state / one or a few draws / free_state; this kernel does
-  // exactly that (one draw, written to an array so that it is not optimised away) over N threads: its time is an
-  // upper bound of the pool's share of the stage at equal thread count (attribution method of the README)
+  // the RNG work of the production kernel per ion is get_state / one or a few draws / free_state; this kernel does that
+  // (one draw, written to an array so that it is not optimised away) over N threads. Its time is an ISOLATED PROXY, not a
+  // bound on the pool's marginal share inside the production kernel (Codex 1's C4): occupancy, contention for pool
+  // states, the number of draws, the overlap with memory traffic and the production kernel's critical path all differ, so
+  // the isolated cost can be larger or smaller than the in-kernel share (attribution method of the README)
   struct RngPoolOnly {
     random_number_pool_t pool;
     array_t<real_t*>     out;
@@ -350,7 +352,7 @@ namespace {
   void test_rngpool(npart_t N) {
     const int warm = 20, measured = 100;
     std::printf("\n=== M3 attribution: RNG pool acquire / one draw / release over N = %u threads, %d warm-up and %d timed launches "
-                "(an upper bound of the pool's share of the stage) ===\n",
+                "(an isolated proxy of the pool's cost, not a bound on its in-kernel share) ===\n",
                 (unsigned)N, warm, measured);
     array_t<real_t*>    out { "rng_out", N };
     std::vector<double> t;
@@ -627,10 +629,13 @@ auto main(int argc, char* argv[]) -> int {
     };
     npart_t N = 65536;
     if (const char* env = std::getenv("BH_PERF_N")) {
-      const long v = std::atol(env);
-      if (v > 0 && v <= 100000000L) {
-        N = static_cast<npart_t>(v);
+      // an invalid value is refused (exit 2), never replaced silently by the default (Codex 1's C4: the job asserts N)
+      char*      end = nullptr;
+      const long v   = std::strtol(env, &end, 10);
+      if (end == env || *end != '\0' || v <= 0 || v > 100000000L) {
+        throw std::runtime_error(std::string("BH_PERF_N = '") + env + "' is not an ion count in [1, 1e8]");
       }
+      N = static_cast<npart_t>(v);
     }
     std::printf("bh_perf: BH_PERF_N = %u (the A100 authorisation fixes 4194304 for M3 and M6; the job asserts this line)\n", (unsigned)N);
     if (want("stride")) {

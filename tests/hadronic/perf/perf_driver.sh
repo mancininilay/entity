@@ -14,9 +14,11 @@
 #   PERF_VARIANTS subset of "warm cold"                 [both]   warm: Gamma_p = 3; cold: Gamma_p = 2 (below the table)
 #   PERF_REPEATS  repeats per configuration             [3]
 #   PERF_REPEATS_TOP repeats at the LARGEST N of PERF_N  [PERF_REPEATS] (the F3 budget cut: 2 at 2^24 only)
-#   PERF_QK_SOURCE  qk_source of the engine runs         [born] (the production default; "fit" is the proposal of
-#                                                        round 2 §F3 that removes the ~7 s Born-table startup of every
-#                                                        process without changing the stage's work: Nilay decides)
+#   PERF_QK_SOURCE  qk_source of the engine runs         [born] (the production default). The A100 job sets "fit"
+#                                                        (Nilay's decision of 2026-10-31): no ~7 s Born-table startup
+#                                                        per process; same code path and table layout, the dynamic work
+#                                                        following the table values (equal cost expected, not identical
+#                                                        by construction: Codex 1's C4)
 #   PERF_WARMUP   warm-up steps (multiple of PERF_DIAG) [100]
 #   PERF_MEASURED measured steps (multiple of PERF_DIAG)[500]
 #   PERF_DIAG     diagnostics interval in steps         [1]   (round 2, Codex 1 F4: every measured step is a sample;
