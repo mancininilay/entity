@@ -586,7 +586,7 @@ def fig8(status_rows):
             f = l.split(',')
             m = re.match(r'm1_(\w+)_warm_(\d+)', f[1])
             if m: perf[m[1]] = float(f[4])
-    rows = []
+    rows = []; seen = set()
     for cfg in CFGS:
         mode = cfg.split('_')[0]; r6 = load(f'demo_g6_{cfg}_double'); r3 = load(f'demo_g3_{cfg}_double')
         lf6 = r6['j']['log'].get('ledger_final', {}) if r6 else {}
@@ -601,7 +601,8 @@ def fig8(status_rows):
                      f"{lf6.get('n_spawned', 0)/N_ION:.1f}" if lf6 else '-', f"{lf6.get('n_rng', 0)/N_ION:.0f}" if lf6 else '-',
                      f'{rmax:.1e}', f"{lf6.get('E_stochastic', 0)/max(lf6.get('E_drag', 1), 1e-300):+.1e}" if lf6 else '-',
                      (f'{yv[0]*100:+.3f} % ({yv[1]*100:+.3f} %)' if yv else ('no pairs' if mode == 'none' else '-'))])
-        if cost: num('8', f'{mode}: Mac CPU smoke cost (ns per ion-step, 2^16 ions, delta spectrum, perf_smoke on 5e1da1d5)', cost, PERF)
+        if cost and mode not in seen:
+            seen.add(mode); num('8', f'{mode}: Mac CPU smoke cost (ns per ion-step, 2^16 ions, delta spectrum, perf_smoke on 5e1da1d5)', cost, os.path.basename(PERF))
         if lf6: num('8', f'{cfg}: macro-pairs per ion, RNG draws per ion (Gamma_p0 = 6, double)', f"{lf6.get('n_spawned', 0)/N_ION:.2f}, {lf6.get('n_rng', 0)/N_ION:.1f}", f'demo_g6_{cfg}_double')
     fig = plt.figure(figsize=(12, 6.6))
     ax = fig.add_axes([0.01, 0.60, 0.98, 0.35]); ax.axis('off')
