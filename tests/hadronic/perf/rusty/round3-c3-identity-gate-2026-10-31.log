@@ -1,0 +1,82 @@
+UpdateCTestConfiguration  from :/Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/builds/perf-single/DartConfiguration.tcl
+Test project /Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/builds/perf-single
+Constructing a list of tests
+Done constructing a list of tests
+Updating test list for fixtures
+Added 0 tests to meet fixture requirements
+Checking test dependency graph...
+Checking test dependency graph end
+test 94
+    Start 94: KERNELS::bh_perf_variants
+Test command: /Users/mancininilay/Desktop/Life/PhD/Research/P1.3\ &\ P2/Entity\ Local\ Experiments/worktrees/builds/perf-single/tests/kernels/test-kernels-bh_perf.xc "variants"
+Working Directory: /Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/builds/perf-single/tests/kernels
+Environment variables: 
+ BH_PERF_N=65536
+ BH_QK_SOURCE=born
+Test timeout computed to be: 3600
+bh_perf: real_t = float, Kokkos default execution space = OpenMP
+bh_perf: BH_PERF_N = 65536 (the A100 authorisation fixes 4194304 for M3 and M6; the job asserts this line)
+=== M3 variants: production kernel vs (i) constants in place of the lookup, (ii) float tables with linear interpolation; N = 65536 at Gamma_p0 = 3, lambda = 0.05, 20 warm-up and 100 timed launches, medians; MATCHED WORK (the ion state restored and the RNG pool re-seeded before every launch, identically for every kernel) ===
+PERF BUILD (BH_PERF_VARIANT): the variant kernels are measurement code; none of their numbers is a physics result, and this program writes no output file. Timed interval: parallel_reduce (kernel + ledger reduction) and fence; pairs.finish() (spawn-counter readback) timed separately; the production stage's post-step is not included.
+(perf) M3 BH_PERF_N = 65536
+(diag) M3 variant (i) constants at Gamma_p = 3: I = 0.0653592, J = 0.0127188, <D> = 5.13877, eps = 0.5; variant (ii) float grid: 466 nodes over [2.130004, 91.8102]
+PASS: M3 continuous production: ledger identity residual / E_drag over the timed launches : 0.000000e+00 (tolerance 1.000e-12)
+PASS: M3 continuous production: worst per-launch ledger identity residual / E_drag (warm-up included; non-finite -> +inf) : 0.000000e+00 (tolerance 1.000e-12)
+PASS: M3 continuous production: every launch's identity residual finite (120 of 120 launches checked, warm-up included; 0 non-finite) : 0.000000e+00 (tolerance 0.000e+00)
+PASS: M3 continuous (i) constants: ledger identity residual / E_drag over the timed launches : 0.000000e+00 (tolerance 1.000e-12)
+PASS: M3 continuous (i) constants: worst per-launch ledger identity residual / E_drag (warm-up included; non-finite -> +inf) : 0.000000e+00 (tolerance 1.000e-12)
+PASS: M3 continuous (i) constants: every launch's identity residual finite (120 of 120 launches checked, warm-up included; 0 non-finite) : 0.000000e+00 (tolerance 0.000e+00)
+PASS: M3 continuous (ii) float lerp: ledger identity residual / E_drag over the timed launches : 0.000000e+00 (tolerance 1.000e-12)
+PASS: M3 continuous (ii) float lerp: worst per-launch ledger identity residual / E_drag (warm-up included; non-finite -> +inf) : 0.000000e+00 (tolerance 1.000e-12)
+PASS: M3 continuous (ii) float lerp: every launch's identity residual finite (120 of 120 launches checked, warm-up included; 0 non-finite) : 0.000000e+00 (tolerance 0.000e+00)
+PASS: M3 event production: ledger identity residual / E_drag over the timed launches : 6.729836e-18 (tolerance 1.000e-12)
+PASS: M3 event production: worst per-launch ledger identity residual / E_drag (warm-up included; non-finite -> +inf) : 1.107245e-16 (tolerance 1.000e-12)
+PASS: M3 event production: every launch's identity residual finite (120 of 120 launches checked, warm-up included; 0 non-finite) : 0.000000e+00 (tolerance 0.000e+00)
+PASS: M3 event (i) constants: ledger identity residual / E_drag over the timed launches : 2.261182e-17 (tolerance 1.000e-12)
+PASS: M3 event (i) constants: worst per-launch ledger identity residual / E_drag (warm-up included; non-finite -> +inf) : 1.107227e-16 (tolerance 1.000e-12)
+PASS: M3 event (i) constants: every launch's identity residual finite (120 of 120 launches checked, warm-up included; 0 non-finite) : 0.000000e+00 (tolerance 0.000e+00)
+PASS: M3 event (ii) float lerp: ledger identity residual / E_drag over the timed launches : 5.760276e-18 (tolerance 1.000e-12)
+PASS: M3 event (ii) float lerp: worst per-launch ledger identity residual / E_drag (warm-up included; non-finite -> +inf) : 1.081187e-16 (tolerance 1.000e-12)
+PASS: M3 event (ii) float lerp: every launch's identity residual finite (120 of 120 launches checked, warm-up included; 0 non-finite) : 0.000000e+00 (tolerance 0.000e+00)
+(perf) M3 launches per configuration: 20 warm-up + 100 timed = 120 parallel_reduce launches of the kernel, 6 configurations selected (profiler capture windows are per configuration)
+(perf) M3 mode       kernel              median ms       min ms     ns/ion       <K>/K0     identity     events    spawned  finish ms
+(perf) M3 continuous production             1.0136       0.5202     15.467     1.000000     0.00e+00          0          0     0.0010
+(perf) M3 continuous (i) constants          0.4241       0.3039      6.471     1.000000     0.00e+00          0          0     0.0008
+(perf) M3 continuous (ii) float lerp        0.6287       0.3771      9.594     1.000000     0.00e+00          0          0     0.0009
+(perf) M3 event      production             2.0918       1.1795     31.919     0.999930     6.73e-18     328748     328748     0.0010
+(perf) M3 event      (i) constants          0.8692       0.6010     13.264     0.999930     2.26e-17     328748     328748     0.0010
+(perf) M3 event      (ii) float lerp        1.0960       0.7460     16.724     0.999927     5.76e-18     338089     338089     0.0008
+(perf) M3 continuous (i) constants: residual work mismatch vs production under matched states: events +0.000e+00 relative, spawned +0.000e+00 relative
+(perf) M3 continuous (ii) float lerp: residual work mismatch vs production under matched states: events +0.000e+00 relative, spawned +0.000e+00 relative
+(perf) M3 event (i) constants: residual work mismatch vs production under matched states: events +0.000e+00 relative, spawned +0.000e+00 relative
+(perf) M3 event (ii) float lerp: residual work mismatch vs production under matched states: events +2.841e-02 relative, spawned +2.841e-02 relative
+(perf) M3 continuous: lookup fraction (production - constants) / production = 0.582; float-lerp saving (production - float) / production = 0.380 [controlled: matched ion states and RNG streams per launch; limitation: the constants variant removes the lookup's memory traffic AND its arithmetic together, and the float variant changes the interpolation coordinate with the precision; harness variants, not physics]
+(perf) M3 event: lookup fraction (production - constants) / production = 0.584; float-lerp saving (production - float) / production = 0.476 [controlled: matched ion states and RNG streams per launch; limitation: the constants variant removes the lookup's memory traffic AND its arithmetic together, and the float variant changes the interpolation coordinate with the precision; harness variants, not physics]
+bh_perf summary: 18 passed, 0 failed
+1/2 Test #94: KERNELS::bh_perf_variants ........   Passed    7.09 sec
+test 96
+    Start 96: KERNELS::bh_perf_identity_gate
+Test command: /Users/mancininilay/Desktop/Life/PhD/Research/P1.3\ &\ P2/Entity\ Local\ Experiments/worktrees/builds/perf-single/tests/kernels/test-kernels-bh_perf.xc "identity_gate_control"
+Working Directory: /Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/builds/perf-single/tests/kernels
+Environment variables: 
+ BH_PERF_N=65536
+ BH_QK_SOURCE=born
+Test timeout computed to be: 3600
+bh_perf: real_t = float, Kokkos default execution space = OpenMP
+bh_perf: BH_PERF_N = 65536 (the A100 authorisation fixes 4194304 for M3 and M6; the job asserts this line)
+=== C3 identity-gate control: production event kernel, N = 4096, 4 warm-up + 6 timed launches; ledgers tampered on the host after readback (a control of the gate, not a physics run) ===
+(diag) C3 control 'no tampering': aggregate 7.437e-17, worst launch 0.000e+00, 10 of 10 launches, 0 non-finite -> gate passes
+PASS: C3 identity gate on 'no tampering' passes : 1.000000e+00 (tolerance 1.000e+00)
+(diag) C3 control 'NaN in warm-up launch 0's E_round': aggregate 7.437e-17, worst launch inf, 10 of 10 launches, 1 non-finite -> gate fails
+PASS: C3 identity gate on 'NaN in warm-up launch 0's E_round' fails : 0.000000e+00 (tolerance 0.000e+00)
+(diag) C3 control 'NaN in timed launch 7's E_round': aggregate nan, worst launch inf, 10 of 10 launches, 1 non-finite -> gate fails
+PASS: C3 identity gate on 'NaN in timed launch 7's E_round' fails : 0.000000e+00 (tolerance 0.000e+00)
+(diag) C3 control '+inf in warm-up launch 2's E_drag': aggregate 7.437e-17, worst launch inf, 10 of 10 launches, 1 non-finite -> gate fails
+PASS: C3 identity gate on '+inf in warm-up launch 2's E_drag' fails : 0.000000e+00 (tolerance 0.000e+00)
+bh_perf summary: 4 passed, 0 failed
+2/2 Test #96: KERNELS::bh_perf_identity_gate ...   Passed    6.07 sec
+The following tests passed:
+	KERNELS::bh_perf_variants
+	KERNELS::bh_perf_identity_gate
+100% tests passed out of 2
+Total Test time (real) =  13.16 sec

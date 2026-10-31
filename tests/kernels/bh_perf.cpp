@@ -12,7 +12,10 @@
  *           random stream on every launch; the residual work mismatch (events drawn and
  *           pairs spawned per variant against the production kernel) is printed; the
  *           ledger identity (1e-12 x E_drag) is a verdict for EVERY row, warm-up launches
- *           included. Timed interval: the parallel_reduce (kernel + ledger reduction, the
+ *           included (round 3, Codex 1's C3: a non-finite launch residual becomes a failing
+ *           +inf sentinel BEFORE the maximum, which std::max would otherwise drop, and a
+ *           validity flag requires every launch, warm-up included, to have a finite
+ *           residual; `identity_gate_control` checks the gate on injected NaNs). Timed interval: the parallel_reduce (kernel + ledger reduction, the
  *           host-returning reducer) and the fence; pairs.finish() (the spawn-counter
  *           readback) is timed separately and reported; the production stage adds the
  *           post-step (ledger accumulation) which is not part of this kernel measurement.
@@ -88,7 +91,44 @@ namespace {
     std::string kernel, mode;
     double      median_s, min_s, ns_per_ion, meanK_over_K0, identity_rel, identity_worst_launch, finish_median_s;
     unsigned long long events, spawned;
+    int         n_launches, n_nonfinite; // every launch, warm-up included (C3)
   };
+
+  // C3 (Codex 1's closure, 2026-10-31): the worst per-launch identity residual over EVERY launch, warm-up included. A
+  // non-finite residual is promoted to a failing sentinel (+inf) BEFORE the maximum: std::max(worst, NaN) returns worst,
+  // so a NaN would otherwise vanish; the non-finite launches are also counted for the validity flag.
+  struct LaunchIdentity {
+    double worst { 0.0 };
+    int    n_launches { 0 }, n_nonfinite { 0 };
+
+    void add(double residual) {
+      ++n_launches;
+      if (!std::isfinite(residual)) {
+        ++n_nonfinite;
+        residual = std::numeric_limits<double>::infinity();
+      }
+      worst = std::max(worst, residual);
+    }
+  };
+
+  // the identity gate of an M3 row: the measured-launch aggregate, the worst launch and the validity flag (every launch
+  // of the row counted and finite); a NaN fails each comparison it enters
+  bool identity_gate_ok(const VariantRow& r, int expected_launches) {
+    return r.identity_rel <= 1.0e-12 && r.identity_worst_launch <= 1.0e-12 && r.n_nonfinite == 0 && r.n_launches == expected_launches;
+  }
+
+  void identity_gate_verdicts(const VariantRow& r, int expected_launches) {
+    verdict(r.identity_rel <= 1.0e-12, fmt("M3 %s %s: ledger identity residual / E_drag over the timed launches", r.mode.c_str(), r.kernel.c_str()),
+            r.identity_rel, 1.0e-12);
+    verdict(r.identity_worst_launch <= 1.0e-12,
+            fmt("M3 %s %s: worst per-launch ledger identity residual / E_drag (warm-up included; non-finite -> +inf)", r.mode.c_str(),
+                r.kernel.c_str()),
+            r.identity_worst_launch, 1.0e-12);
+    verdict(r.n_nonfinite == 0 && r.n_launches == expected_launches,
+            fmt("M3 %s %s: every launch's identity residual finite (%d of %d launches checked, warm-up included; %d non-finite)",
+                r.mode.c_str(), r.kernel.c_str(), r.n_launches, expected_launches, r.n_nonfinite),
+            static_cast<double>(r.n_nonfinite), 0.0);
+  }
 
   // the ion state restored before every launch (matched work, F5): momenta and the three payload slots
   struct IonSnapshot {
@@ -115,12 +155,17 @@ namespace {
     }
   };
 
+  // tamper: identity_gate_control only (a command-line group, never reachable from the environment): alters the host copy
+  // of a launch's ledger after its readback, before the gate sees it
+  using LedgerTamper = std::function<void(int, kh::LossLedger&)>;
+
   template <class KernelT>
   VariantRow run_variant(const char* name, const char* label, Tables& T, KernelT& kern, Ions& ions, Pairs& pairs,
-                         const IonSnapshot& snap, unsigned seed_base, int mode, int warm, int measured) {
+                         const IonSnapshot& snap, unsigned seed_base, int mode, int warm, int measured,
+                         const LedgerTamper& tamper = LedgerTamper {}) {
     std::vector<double> t, tf;
     kh::LossLedger      L, C;
-    double              worst_identity = 0.0;
+    LaunchIdentity      launch_identity;
     for (int l = 0; l < warm + measured; ++l) {
       // matched work: the same ion states and the same random stream on every launch, for every kernel
       BH_PERF_RANGE_PUSH("bh_perf_restore_and_reseed");
@@ -136,7 +181,10 @@ namespace {
       pairs.finish(targ); // the spawn-counter readback (deep_copy device -> host)
       const double f = std::chrono::duration<double>(std::chrono::steady_clock::now() - f0).count();
       BH_PERF_RANGE_POP();
-      worst_identity = std::max(worst_identity, identity_residual_rel(L)); // every launch, warm-up included
+      if (tamper) {
+        tamper(l, L);
+      }
+      launch_identity.add(identity_residual_rel(L)); // every launch, warm-up included; non-finite -> failing sentinel
       if (l >= warm) {
         t.push_back(s);
         tf.push_back(f);
@@ -161,7 +209,9 @@ namespace {
     (void)K0s;
     r.meanK_over_K0         = m / static_cast<double>(ions.n); // filled by the caller relative to K0
     r.identity_rel          = identity_residual_rel(C);
-    r.identity_worst_launch = worst_identity;
+    r.identity_worst_launch = launch_identity.worst;
+    r.n_launches            = launch_identity.n_launches;
+    r.n_nonfinite           = launch_identity.n_nonfinite;
     r.events                = C.n_events;
     r.spawned               = C.n_spawned;
     (void)T;
@@ -208,11 +258,7 @@ namespace {
       using KF = khp::BetheHeitler_kernel_variant<Minkowski<Dim::_1D>, khp::PerfTablesFloat>;
       auto gate = [&](VariantRow& r) {
         r.meanK_over_K0 /= K0v[0];
-        verdict(r.identity_rel <= 1.0e-12, fmt("M3 %s %s: ledger identity residual / E_drag over the timed launches", r.mode.c_str(), r.kernel.c_str()),
-                r.identity_rel, 1.0e-12);
-        verdict(r.identity_worst_launch <= 1.0e-12,
-                fmt("M3 %s %s: worst per-launch ledger identity residual / E_drag (warm-up included)", r.mode.c_str(), r.kernel.c_str()),
-                r.identity_worst_launch, 1.0e-12);
+        identity_gate_verdicts(r, warm + measured);
       };
       if (selected(mname, "production")) {
         KP kern { ions.arr, ions.mu_d, T.dev, prm, pairs.targets(), pool };
@@ -333,6 +379,52 @@ namespace {
     std::printf("(perf) M3 rngpool: median %.4f ms, min %.4f ms, %.3f ns per thread (checksum %.6g)\n", 1.0e3 * t[t.size() / 2],
                 1.0e3 * t.front(), 1.0e9 * t[t.size() / 2] / static_cast<double>(N), checksum);
     verdict(std::isfinite(checksum), "M3 rngpool: the draws are finite", checksum, 0.0);
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* C3: the identity gate's negative controls (command-line group only)        */
+  /* ------------------------------------------------------------------------ */
+  // the production event kernel at a small N, 4 warm-up + 6 timed launches, with the gate evaluated on: no tampering
+  // (must pass); a NaN in ONE warm-up ledger's E_round (Codex 1's control: must fail through the sentinel and the
+  // validity flag, the measured aggregate staying finite); a NaN in one timed ledger (must fail the aggregate too); an
+  // infinite E_drag in one warm-up ledger (must fail). PASS lines here mean the GATE behaved as registered.
+  void test_identity_gate_control(Tables& T) {
+    const npart_t N = 4096;
+    const int     warm = 4, measured = 6;
+    std::printf("\n=== C3 identity-gate control: production event kernel, N = %u, %d warm-up + %d timed launches; ledgers tampered on the "
+                "host after readback (a control of the gate, not a physics run) ===\n",
+                (unsigned)N, warm, measured);
+    const double Gp0 = 3.0, coeff = coeff_for_lambda(T, Gp0, 0.05, 1.0);
+    Ions                ions(N, 1.0);
+    std::vector<double> K0v(N, K_of_gamma(Gp0));
+    ions.set_all(K0v);
+    const IonSnapshot snap(ions);
+    Pairs             pairs(static_cast<npart_t>(200000));
+    auto              prm = params(coeff, DELTA, 1.0, 0.01, 8);
+    prm.mode              = EVENT;
+    random_number_pool_t pool(4242u);
+    using KP = kh::BetheHeitler_kernel<Minkowski<Dim::_1D>>;
+    KP         kern { ions.arr, ions.mu_d, T.dev, prm, pairs.targets(), pool };
+    const auto nan = std::numeric_limits<double>::quiet_NaN();
+    struct Case {
+      const char*  what;
+      LedgerTamper tamper;
+      bool         expect_ok;
+    };
+    const std::vector<Case> cases = {
+      { "no tampering", LedgerTamper {}, true },
+      { "NaN in warm-up launch 0's E_round", [nan](int l, kh::LossLedger& L) { if (l == 0) { L.E_round.add(nan); } }, false },
+      { "NaN in timed launch 7's E_round", [nan](int l, kh::LossLedger& L) { if (l == 7) { L.E_round.add(nan); } }, false },
+      { "+inf in warm-up launch 2's E_drag",
+        [](int l, kh::LossLedger& L) { if (l == 2) { L.E_drag.add(std::numeric_limits<double>::infinity()); } }, false },
+    };
+    for (const auto& c : cases) {
+      auto r = run_variant("production", "bh_perf_identity_gate_control", T, kern, ions, pairs, snap, 5150u, EVENT, warm, measured, c.tamper);
+      const bool ok = identity_gate_ok(r, warm + measured);
+      std::printf("(diag) C3 control '%s': aggregate %.3e, worst launch %.3e, %d of %d launches, %d non-finite -> gate %s\n", c.what, r.identity_rel,
+                  r.identity_worst_launch, r.n_launches, warm + measured, r.n_nonfinite, ok ? "passes" : "fails");
+      verdict(ok == c.expect_ok, fmt("C3 identity gate on '%s' %s", c.what, c.expect_ok ? "passes" : "fails"), ok ? 1.0 : 0.0, c.expect_ok ? 1.0 : 0.0);
+    }
   }
 
   struct StrideRow {
@@ -549,6 +641,10 @@ auto main(int argc, char* argv[]) -> int {
     }
     if (want("rngpool")) {
       test_rngpool(N);
+    }
+    // the C3 control runs only when named (not part of the default "all groups")
+    if (std::find(groups.begin(), groups.end(), std::string("identity_gate_control")) != groups.end()) {
+      test_identity_gate_control(T);
     }
     std::printf("bh_perf summary: %d passed, %d failed\n", n_pass, n_fail);
     if (n_fail > 0 || n_pass == 0) {

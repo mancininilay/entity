@@ -104,8 +104,10 @@ target_include_directories(test-kernels-bh_perf.xc PRIVATE ${CMAKE_CURRENT_SOURC
 add_test(NAME "KERNELS::bh_perf_stride" COMMAND test-kernels-bh_perf.xc stride)
 add_test(NAME "KERNELS::bh_perf_variants" COMMAND test-kernels-bh_perf.xc variants)
 add_test(NAME "KERNELS::bh_perf_rngpool" COMMAND test-kernels-bh_perf.xc rngpool)
-set_tests_properties("KERNELS::bh_perf_stride" "KERNELS::bh_perf_variants" "KERNELS::bh_perf_rngpool" PROPERTIES TIMEOUT 3600
-                     ENVIRONMENT "BH_PERF_N=65536;BH_QK_SOURCE=born")
+# round 3 (Codex 1's C3): the M3 identity gate on injected non-finite ledgers (warm-up and timed launches)
+add_test(NAME "KERNELS::bh_perf_identity_gate" COMMAND test-kernels-bh_perf.xc identity_gate_control)
+set_tests_properties("KERNELS::bh_perf_stride" "KERNELS::bh_perf_variants" "KERNELS::bh_perf_rngpool" "KERNELS::bh_perf_identity_gate"
+                     PROPERTIES TIMEOUT 3600 ENVIRONMENT "BH_PERF_N=65536;BH_QK_SOURCE=born")
 # the production build does not compile the variants in; the generated kernel copy is current
 add_test(NAME "KERNELS::bh_perf_isolation"
          COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/perf/check_perf_isolation.sh ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR})
