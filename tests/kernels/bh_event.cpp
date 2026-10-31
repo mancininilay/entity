@@ -1253,7 +1253,18 @@ namespace {
     for (const int spectrum : spectra) {
       const std::string name = spectrum == DELTA ? "delta" : "restframe";
       const std::string tag  = prefix + fmt("G%g %s", Gp0, name.c_str());
-      const auto S = cooling_run(T, EVENT, spectrum, 1.0, 0.01, coeff, DT, Gp0, N, stop_frac, n_max, out_every, 1000u + (unsigned)Gp0);
+      // R4 diagnostic (Codex 1's reclosure R4, 2026-10-31): BH_EVENT_SEED_OFFSET (default 0) shifts the pool seed of this
+      // group so that the same rows can be re-drawn with independent streams; the registered entries never set it
+      unsigned seed_offset = 0;
+      if (const char* e = std::getenv("BH_EVENT_SEED_OFFSET")) {
+        seed_offset = static_cast<unsigned>(std::strtoul(e, nullptr, 10));
+      }
+      if (seed_offset != 0) {
+        std::printf("(diag) %s: seed offset %u (BH_EVENT_SEED_OFFSET): pool seed %u instead of %u\n", tag.c_str(), seed_offset,
+                    1000u + (unsigned)Gp0 + 7919u * seed_offset, 1000u + (unsigned)Gp0);
+      }
+      const auto S = cooling_run(T, EVENT, spectrum, 1.0, 0.01, coeff, DT, Gp0, N, stop_frac, n_max, out_every,
+                                 1000u + (unsigned)Gp0 + 7919u * seed_offset);
       print_series(tag, S);
       auto d2 = spectrum == DELTA ? std::function<double(double)>([&](double G) { return d2_delta(T, G); })
                                   : std::function<double(double)>([&](double G) { return D2.at(G); });
@@ -1979,6 +1990,12 @@ auto main(int argc, char* argv[]) -> int {
           test_E2E3(T, D2, 3.0, N_stat, 130000, 0.64, { RESTFRAME }, "E10 ");
         }
       }
+    }
+    // R4 diagnostic (not registered in ctest): the Gamma_p0 = 3 restframe E2/E3 rows alone, on whatever tables
+    // BH_QK_SOURCE selects (fit when unset), with BH_EVENT_N and BH_EVENT_SEED_OFFSET from the environment
+    if (want("r4")) {
+      const auto D2 = load_d2(T);
+      test_E2E3(T, D2, 3.0, N_stat, 130000, 0.64, { RESTFRAME }, "R4 ");
     }
     if (want("e6")) {
       test_E6(T, N_stat);
