@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # P2 step 7, scaling harness (contract 2026-10-30 §1 M1, M2, M5): runs bh_proto through entity.xc for every
 # (mode, N_ion, variant, repeat), reads Entity's timers from the diagnostics blocks and the ledger from
-# hadronic_ledger_1.txt, and writes one CSV row per run plus a medians CSV. Bash 3.2 compatible; fails when no
-# run was executed or when a ledger identity does not close.
+# hadronic_ledger_1.txt, and writes one CSV row per run plus a medians CSV. Bash 3.2 compatible.
+# Exit status (Codex 1's closure C1, 2026-10-31): 0 every run valid; 1 a SCIENTIFIC failure only (an executed ledger
+# identity check failed: a "FAIL: " line); 3 any INFRASTRUCTURE failure (an "INFRA: " line: entity.xc non-zero exit,
+# missing or malformed timer output, a missing checkpoint or meta file, a restart that kept the stage enabled, bh_check
+# unable to read a ledger, no run executed, an invalid configuration), which takes precedence over 1.
 #
 # Usage: perf_driver.sh <entity.xc> <bh_check> <inputs dir (tests/hadronic/perf/inputs)> <workdir>
 # Environment (defaults in brackets):
@@ -52,7 +55,7 @@ PERF_VARIANTS="${PERF_VARIANTS:-warm cold}"
 PERF_REPEATS="${PERF_REPEATS:-3}"
 PERF_REPEATS_TOP="${PERF_REPEATS_TOP:-$PERF_REPEATS}"
 PERF_QK_SOURCE="${PERF_QK_SOURCE:-born}"
-case "$PERF_QK_SOURCE" in born|fit) ;; *) echo "FAIL: PERF_QK_SOURCE must be born or fit"; exit 1 ;; esac
+case "$PERF_QK_SOURCE" in born|fit) ;; *) echo "INFRA: PERF_QK_SOURCE must be born or fit"; exit 3 ;; esac
 N_TOP=$(for n in $PERF_N; do echo $n; done | sort -n | tail -1)
 PERF_WARMUP="${PERF_WARMUP:-100}"
 PERF_MEASURED="${PERF_MEASURED:-500}"
@@ -65,13 +68,13 @@ mkdir -p "$WD"
 CSV="$WD/perf_runs.csv"
 MED="$WD/perf_medians.csv"
 echo "label,tag,mode,variant,N,repeat,samples,custom_ms_per_step,custom_ns_per_ion_step,pusher_ms_per_step,deposit_ms_per_step,total_ms_per_step,progress_avg_ms,npart_ion_end,npart_pairs_end,ledger_ok,timers_ok,exit" > "$CSV"
-n_run=0; n_fail=0
+n_run=0; n_fail=0; n_infra=0   # n_fail: scientific failures (FAIL lines); n_infra: infrastructure failures (INFRA lines)
 
 # one extra diagnostics block at the end: the last step runs bh_proto's finish() (final summary, array identity, the
 # per-ion dump: O(N) host work) inside the Custom timer, so the final block is excluded from the measured mean
 steps_total=$((PERF_WARMUP + PERF_MEASURED + PERF_DIAG))
 if [ $((PERF_WARMUP % PERF_DIAG)) -ne 0 ] || [ $((PERF_MEASURED % PERF_DIAG)) -ne 0 ]; then
-  echo "FAIL: PERF_WARMUP and PERF_MEASURED must be multiples of PERF_DIAG"; exit 1
+  echo "INFRA: PERF_WARMUP and PERF_MEASURED must be multiples of PERF_DIAG"; exit 3
 fi
 blocks_skip=$((PERF_WARMUP / PERF_DIAG))
 runtime=$(awk -v s="$steps_total" -v dt="$DT" 'BEGIN { printf "%.1f", s * dt }')
@@ -171,19 +174,22 @@ run_one() {
   if [ "$had" = "true" ]; then npm=$(pairs_from_ledger "$WD/$name/hadronic_ledger_1.txt"); npp=0
   else npm=$(species_count "$WD/$name/run.log" "e-"); npp=$(species_count "$WD/$name/run.log" "e+"); fi
   ok=1
-  if [ $rc -ne 0 ]; then ok=0; echo "FAIL: $name: entity.xc exit $rc"; n_fail=$((n_fail + 1)); fi
+  if [ $rc -ne 0 ]; then ok=0; echo "INFRA: $name: entity.xc exit $rc"; n_infra=$((n_infra + 1)); fi
   if [ $rc -eq 0 ] && [ $timers_ok -ne 1 ]; then
-    ok=0; echo "FAIL: $name: timer output incomplete or non-finite ($nblocks diagnostics blocks, expected $((blocks_skip + PERF_MEASURED + 1)); Custom $custom, pusher $pusher, total $total)"; n_fail=$((n_fail + 1))
+    ok=0; echo "INFRA: $name: timer output incomplete or non-finite ($nblocks diagnostics blocks, expected $((blocks_skip + PERF_MEASURED + 1)); Custom $custom, pusher $pusher, total $total)"; n_infra=$((n_infra + 1))
   fi
-  if [ "$N" -le 0 ] || [ "$PERF_MEASURED" -le 0 ]; then ok=0; echo "FAIL: $name: N and PERF_MEASURED must be positive"; n_fail=$((n_fail + 1)); fi
+  if [ "$N" -le 0 ] || [ "$PERF_MEASURED" -le 0 ]; then ok=0; echo "INFRA: $name: N and PERF_MEASURED must be positive"; n_infra=$((n_infra + 1)); fi
   ledger_ok=1
   if [ "$had" = "true" ] && [ $rc -eq 0 ]; then
+    lrc=0
     if [ "$mode" = "event" ]; then
-      "$CHECK" ledger --file "$WD/$name/hadronic_ledger_1.txt" --expect_identity 1 > "$WD/$name/ledger_check.log" 2>&1 || ledger_ok=0
+      "$CHECK" ledger --file "$WD/$name/hadronic_ledger_1.txt" --expect_identity 1 > "$WD/$name/ledger_check.log" 2>&1 || lrc=$?
     else
-      "$CHECK" ledger --file "$WD/$name/hadronic_ledger_1.txt" > "$WD/$name/ledger_check.log" 2>&1 || ledger_ok=0
+      "$CHECK" ledger --file "$WD/$name/hadronic_ledger_1.txt" > "$WD/$name/ledger_check.log" 2>&1 || lrc=$?
     fi
-    if [ $ledger_ok -eq 0 ]; then ok=0; echo "FAIL: $name: ledger identity (see ledger_check.log)"; n_fail=$((n_fail + 1)); fi
+    # bh_check: 1 = an executed check failed (scientific), 2 = it could not read the ledger (infrastructure)
+    if [ $lrc -eq 1 ]; then ledger_ok=0; ok=0; echo "FAIL: $name: ledger identity (see ledger_check.log)"; n_fail=$((n_fail + 1))
+    elif [ $lrc -ne 0 ]; then ledger_ok=0; ok=0; echo "INFRA: $name: bh_check could not check the ledger (exit $lrc, see ledger_check.log)"; n_infra=$((n_infra + 1)); fi
   fi
   ns=$(awk -v c="$custom" -v n="$N" 'BEGIN { if (c == "nan" || n == 0) print "nan"; else printf "%.4f", c * 1.0e6 / n }')
   echo "$PERF_LABEL,$tag,$mode,$var,$N,$rep,$PERF_MEASURED,$custom,$ns,$pusher,$deposit,$total,$progress,$nion,$((npm + npp)),$ok,$timers_ok,$rc" >> "$CSV"
@@ -203,18 +209,18 @@ run_restart_pic() {
   ckdir=$(ls -d "$WD/$src"/*.ckpt 2>/dev/null | head -1)
   n_run=$((n_run + 1))
   if [ -z "$ckdir" ]; then
-    echo "FAIL: $name: no checkpoint directory under $WD/$src (the source run must write one at its last step)"; n_fail=$((n_fail + 1))
+    echo "INFRA: $name: no checkpoint directory under $WD/$src (the source run must write one at its last step)"; n_infra=$((n_infra + 1))
     echo "$PERF_LABEL,$tag,$mode,warm,$N,$rep,$PERF_MEASURED,nan,nan,nan,nan,nan,nan,0,0,0,0,3" >> "$CSV"; return
   fi
   cp -R "$ckdir" "$dir/restart.ckpt"
   meta=$(ls "$dir/restart.ckpt"/meta-*.toml 2>/dev/null | sort | tail -1)
   if [ -z "$meta" ]; then
-    echo "FAIL: $name: no meta file in $ckdir"; n_fail=$((n_fail + 1))
+    echo "INFRA: $name: no meta file in $ckdir"; n_infra=$((n_infra + 1))
     echo "$PERF_LABEL,$tag,$mode,warm,$N,$rep,$PERF_MEASURED,nan,nan,nan,nan,nan,nan,0,0,0,0,3" >> "$CSV"; return
   fi
   # the setup block of the checkpoint's meta is what the resumed run takes: hadronic off there
   sed -e 's/^\( *hadronic\.enabled *= *\)true/\1false/' "$meta" > "$meta.tmp" && mv "$meta.tmp" "$meta"
-  grep -q 'hadronic\.enabled *= *false' "$meta" || { echo "FAIL: $name: could not disable hadronic in $meta"; n_fail=$((n_fail + 1)); return; }
+  grep -q 'hadronic\.enabled *= *false' "$meta" || { echo "INFRA: $name: could not disable hadronic in $meta"; n_infra=$((n_infra + 1)); return; }
   step=$(ls "$dir/restart.ckpt" | sed -n 's/^step-\([0-9]*\)\.bp$/\1/p' | sort -n | tail -1)
   # the restart input: the source run's input with the runtime extended by steps_total steps and the read path set
   # the restart input: the source run's input with hadronic disabled (the generator re-reads its [setup] from the input
@@ -236,9 +242,9 @@ run_restart_pic() {
   # a resumed run prints its blocks from start_step: the same count as a fresh run of steps_total steps
   if [ "$nblocks" -ne $((blocks_skip + PERF_MEASURED + 1)) ] || [ "$pusher" = "nan" ] || [ "$total" = "nan" ]; then timers_ok=0; fi
   nion=$(species_count "$dir/run.log" "ion"); npm=$(species_count "$dir/run.log" "e-"); npp=$(species_count "$dir/run.log" "e+")
-  if [ $rc -ne 0 ]; then ok=0; echo "FAIL: $name: entity.xc -restart exit $rc"; n_fail=$((n_fail + 1)); fi
-  if [ $rc -eq 0 ] && [ $timers_ok -ne 1 ]; then ok=0; echo "FAIL: $name: timer output incomplete ($nblocks blocks, expected $((blocks_skip + PERF_MEASURED + 1)))"; n_fail=$((n_fail + 1)); fi
-  if [ $rc -eq 0 ] && grep -q "hadronic.enabled *= *true\|bh_proto: table:" "$dir/run.log"; then ok=0; echo "FAIL: $name: the restarted run still has the hadronic stage enabled"; n_fail=$((n_fail + 1)); fi
+  if [ $rc -ne 0 ]; then ok=0; echo "INFRA: $name: entity.xc -restart exit $rc"; n_infra=$((n_infra + 1)); fi
+  if [ $rc -eq 0 ] && [ $timers_ok -ne 1 ]; then ok=0; echo "INFRA: $name: timer output incomplete ($nblocks blocks, expected $((blocks_skip + PERF_MEASURED + 1)))"; n_infra=$((n_infra + 1)); fi
+  if [ $rc -eq 0 ] && grep -q "hadronic.enabled *= *true\|bh_proto: table:" "$dir/run.log"; then ok=0; echo "INFRA: $name: the restarted run still has the hadronic stage enabled"; n_infra=$((n_infra + 1)); fi
   echo "$PERF_LABEL,$tag,$mode,warm,$N,$rep,$PERF_MEASURED,$custom,nan,$pusher,$deposit,$total,$progress,$nion,$((npm + npp)),$ok,$timers_ok,$rc" >> "$CSV"
   echo "run $name (restart of $src at step $step, hadronic off): pusher $pusher ms/step, deposit $deposit, total $total ms, ions $nion, pairs $((npm + npp)), ok $ok, timers_ok $timers_ok, exit $rc"
 }
@@ -277,6 +283,8 @@ tail -n +2 "$CSV" | awk -F, '
     if (m % 2 == 1) return a[(m + 1) / 2]; return (a[m/2] + a[m/2 + 1]) / 2 }
   END { for (i = 1; i <= k; i++) { key = order[i]; printf "%s,%d,%s,%s,%s,%s,%s,%d\n", key, n[key], median(c[key]), median(ns[key]), median(p[key]), median(d[key]), median(t[key]), (key in bad) ? 0 : 1 } }' >> "$MED"
 echo "---- medians ($MED)"; cat "$MED"
-if [ $n_run -eq 0 ]; then echo "FAIL: perf_driver.sh executed no run"; n_fail=$((n_fail + 1)); fi
-echo "perf_driver.sh summary: $n_run runs executed, $n_fail failed checks, label $PERF_LABEL"
-[ $n_fail -eq 0 ] && [ $n_run -gt 0 ]
+if [ $n_run -eq 0 ]; then echo "INFRA: perf_driver.sh executed no run"; n_infra=$((n_infra + 1)); fi
+echo "perf_driver.sh summary: $n_run runs executed, $n_fail scientific failures, $n_infra infrastructure failures, label $PERF_LABEL"
+[ $n_infra -eq 0 ] || exit 3
+[ $n_fail -eq 0 ] || exit 1
+exit 0

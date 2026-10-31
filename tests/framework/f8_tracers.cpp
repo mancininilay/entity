@@ -598,8 +598,9 @@ auto main(int argc, char* argv[]) -> int {
       rc = 1;
     }
   } catch (const std::exception& e) {
-    std::printf("FAIL: f8_tracers: exception: %s\n", e.what());
-    rc = 1;
+    // an exception is not an executed assertion (Codex 1's C1): exit 2, classified as infrastructure by the job
+    std::printf("EXCEPTION: f8_tracers: %s\n", e.what());
+    rc = 2;
   }
   GlobalFinalize();
   return rc;

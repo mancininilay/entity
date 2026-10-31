@@ -41,5 +41,16 @@ Smoke on the Mac: `ctest -R "HADRONIC::perf_smoke|KERNELS::bh_perf"` (2¹⁶ ion
 mechanics on a CPU, not a performance measurement (uncontrolled host load, no registered equivalence tolerance;
 Codex 1's review of 2026-10-30 reproduced the states and counts but not the timings). Rusty: `rusty/` (the one
 A100 job, `p2-perf-a100.sbatch`; `preflight.sh` before submission; `PERF_SELFTEST=1` runs the script's negative
-probes; the job ends with `status.json` and an exit code per class: complete 0, scientific_check_failure 10,
-infrastructure_failure 20, incomplete_coverage 30).
+controls, registered as `HADRONIC::perf_job_selftest`; the job ends with `status.json` at the run root and an exit
+code per class: complete 0, scientific_check_failure 10, infrastructure_failure 20, incomplete_coverage 30).
+
+Failure classes (Codex 1's closure C1, 2026-10-31). A step is a scientific failure only when an EXECUTED check
+failed: the program exited 1 and printed a line starting with `FAIL: ` (`perf_driver.sh`: a ledger identity that
+bh_check rejected; `bh_perf`: an M3/M6 verdict; the F8 entries: an executed assertion). Everything else is
+infrastructure: `perf_driver.sh` prints `INFRA: ` and exits 3 for an `entity.xc` failure, missing or malformed timer
+data, a missing checkpoint, a restart that kept the stage on, or a ledger bh_check could not read; `rusty/f8_ctest.py`
+(the F8 step) runs each named entry on its own through Rusty's validated launcher plan (Codex 1's G3 plan: direct
+commands, `f8_tracers` among them, wrapped in `mpirun -n 1`; the stock two-rank commands kept) and classifies it from
+CTest's JUnit result: Not Run, Timeout, Exception (signals, aborts) and an MPI launcher failure are infrastructure
+(exit 4), an executed assertion failure is scientific (exit 1), a missing entry is the selection gate (exit 3). Each
+precision's F8 run starts only when its own build exited 0 and produced the complete inventory of its binaries.

@@ -103,6 +103,11 @@ if("${pgen}" STREQUAL "bh_proto")
                    bash ${BH_SCRIPTS}/perf/perf_driver.sh ${BH_SINGLE_ENTITY} $<TARGET_FILE:bh_check>
                    ${BH_SCRIPTS}/perf/inputs ${BH_WORK}/perf_smoke)
   set_tests_properties("HADRONIC::perf_smoke" PROPERTIES TIMEOUT 3600)
+  # step 7 round 3 (Codex 1's closure C1): the A100 job's own negative controls (classification, per-precision build
+  # gates, the F8 entries through the real CTest with mock launchers); no checkout, build or measurement
+  add_test(NAME "HADRONIC::perf_job_selftest"
+           COMMAND ${CMAKE_COMMAND} -E env PERF_SELFTEST=1 bash ${BH_SCRIPTS}/perf/rusty/p2-perf-a100.sbatch)
+  set_tests_properties("HADRONIC::perf_job_selftest" PROPERTIES TIMEOUT 300)
   set_tests_properties("HADRONIC::t5b_cross_build" "HADRONIC::t8_bit_identity" "HADRONIC::t10_poisson_determinism"
                        PROPERTIES SKIP_RETURN_CODE 77)
   set_tests_properties("HADRONIC::t12_capacity" "HADRONIC::t12b_estimate" "HADRONIC::t13_gauss"
