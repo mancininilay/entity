@@ -13,6 +13,18 @@
  *        to 1e-12 relative (the reducer's double-double value against the
  *        atomic double sum, whose own round-off is of that order) and that the
  *        reducer's result is independent of the thread count to 1e-15.
+ *        Round 2 (Codex 1 F7): equal boundaries and payloads. Every path is timed
+ *        END-TO-END (launch, fence, and the host readback of its result: the
+ *        reducers return on the host; the atomic paths add the deep_copy of
+ *        their three sums) and KERNEL-ONLY (launch and fence); a fourth path, a
+ *        Kokkos reducer over THREE PLAIN DOUBLES (the atomic paths' payload), is
+ *        the equal-payload reducer against which the per-team path is compared:
+ *        the "equalised ratio" of the report. The double-double LossLedger
+ *        reducer carries the full ledger (every dd field and the counters) and is
+ *        reported as the production reducer, not as an equal-payload comparison.
+ *        Reset treatment: the atomic targets are zeroed before each timed
+ *        repetition (outside the timed interval); the reducers need no reset.
+ *        BH_REDUCTION_N accepts a space-separated list (the job passes M1's grid).
  *
  * Conventions: the per-ion contribution is a deterministic pseudo-random
  * double in [0.5, 1.5) times a weight in [1, 2) (splitmix64 of the index), the
@@ -37,6 +49,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstdio>
+#include <string>
 #include <vector>
 
 using namespace ntt;
@@ -105,6 +118,28 @@ namespace {
     }
   };
 
+  // the equal-payload reducer value type: three plain doubles
+  struct Sum3 {
+    double a0 { 0.0 }, a1 { 0.0 }, a2 { 0.0 };
+
+    KOKKOS_INLINE_FUNCTION Sum3& operator+=(const Sum3& o) {
+      a0 += o.a0;
+      a1 += o.a1;
+      a2 += o.a2;
+      return *this;
+    }
+  };
+
+  struct Sum3Kernel {
+    Inline void operator()(const std::uint64_t i, Sum3& L) const {
+      double w, x;
+      contribution(i, w, x);
+      L.a0 += w * x;
+      L.a1 += w * 2.0 * x;
+      L.a2 += w * 0.5 * x;
+    }
+  };
+
   double median(std::vector<double> v) {
     std::sort(v.begin(), v.end());
     const std::size_t n = v.size();
@@ -112,6 +147,15 @@ namespace {
   }
 
 } // namespace
+
+namespace Kokkos {
+  template <>
+  struct reduction_identity<Sum3> {
+    KOKKOS_FORCEINLINE_FUNCTION static Sum3 sum() {
+      return Sum3 {};
+    }
+  };
+} // namespace Kokkos
 
 auto main(int argc, char* argv[]) -> int {
   Kokkos::initialize(argc, argv);
@@ -121,51 +165,88 @@ auto main(int argc, char* argv[]) -> int {
                 Kokkos::DefaultExecutionSpace().concurrency());
     const int reps = 20;
     std::vector<std::uint64_t> counts = { static_cast<std::uint64_t>(100000), static_cast<std::uint64_t>(1000000) };
-    if (const char* env = std::getenv("BH_REDUCTION_N")) {
-      const long long v = std::atoll(env);
-      if (v > 0) {
-        counts.push_back(static_cast<std::uint64_t>(v));
+    if (const char* env = std::getenv("BH_REDUCTION_N")) { // one count or a space-separated list (the job: M1's grid)
+      std::string        all(env);
+      std::size_t        pos = 0;
+      while (pos < all.size()) {
+        while (pos < all.size() && all[pos] == ' ') {
+          ++pos;
+        }
+        const std::size_t end = all.find(' ', pos);
+        const std::string tok = all.substr(pos, end == std::string::npos ? std::string::npos : end - pos);
+        if (!tok.empty()) {
+          const long long v = std::atoll(tok.c_str());
+          if (v > 0) {
+            counts.push_back(static_cast<std::uint64_t>(v));
+          }
+        }
+        if (end == std::string::npos) {
+          break;
+        }
+        pos = end;
       }
     }
+    std::printf("timed intervals: end-to-end = launch + fence + host readback of the result (reducers: the returned value; "
+                "atomics: deep_copy of the three sums); kernel-only = launch + fence; atomic targets zeroed before each repetition, "
+                "outside the timing\n");
     for (const std::uint64_t npart : counts) {
-      std::vector<double> t_red, t_atom, t_team;
+      std::vector<double> t_red, t_atom, t_team, t_sum3, t_atom_k, t_team_k;
       kh::LossLedger      L_last;
+      Sum3                S3_last;
       double              s_last[3] = { 0.0, 0.0, 0.0 }, team_last[3] = { 0.0, 0.0, 0.0 };
       array_t<double*>    sums { "sums", 3 };
       array_t<double*>    tsums { "team_sums", 3 };
+      auto                h  = Kokkos::create_mirror_view(sums);
+      auto                ht = Kokkos::create_mirror_view(tsums);
       const std::uint64_t per_team = 1024;
       const int           league   = static_cast<int>((npart + per_team - 1) / per_team);
       for (int r = 0; r <= reps; ++r) {
+        // (A) the production double-double LossLedger reducer: end-to-end (the value returns on the host)
         kh::LossLedger L;
         auto           t0 = std::chrono::steady_clock::now();
         Kokkos::parallel_reduce("reducer", Kokkos::RangePolicy<Kokkos::IndexType<std::uint64_t>>(0, npart),
                                 ReducerKernel {}, Kokkos::Sum<kh::LossLedger>(L));
         Kokkos::fence();
         const double tr = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+        // (B) the equal-payload reducer: three plain doubles, end-to-end
+        Sum3 S3;
+        t0 = std::chrono::steady_clock::now();
+        Kokkos::parallel_reduce("reducer_sum3", Kokkos::RangePolicy<Kokkos::IndexType<std::uint64_t>>(0, npart), Sum3Kernel {},
+                                Kokkos::Sum<Sum3>(S3));
+        Kokkos::fence();
+        const double ts3 = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+        // (C) plain atomics: kernel-only, then the host readback added for the end-to-end figure
         Kokkos::deep_copy(sums, 0.0);
+        Kokkos::fence();
         t0 = std::chrono::steady_clock::now();
         Kokkos::parallel_for("atomic", Kokkos::RangePolicy<Kokkos::IndexType<std::uint64_t>>(0, npart),
                              AtomicKernel { sums });
         Kokkos::fence();
+        const double ta_k = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+        Kokkos::deep_copy(h, sums);
         const double ta = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+        // (D) per-team scratch + one atomic per team: kernel-only and end-to-end
         Kokkos::deep_copy(tsums, 0.0);
+        Kokkos::fence();
         t0 = std::chrono::steady_clock::now();
         Kokkos::parallel_for("team_atomic", Kokkos::TeamPolicy<>(league, Kokkos::AUTO), TeamAtomicKernel { tsums, npart, per_team });
         Kokkos::fence();
+        const double tt_k = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+        Kokkos::deep_copy(ht, tsums);
         const double tt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
         if (r > 0) { // the first repetition is warm-up
           t_red.push_back(tr);
+          t_sum3.push_back(ts3);
           t_atom.push_back(ta);
+          t_atom_k.push_back(ta_k);
           t_team.push_back(tt);
+          t_team_k.push_back(tt_k);
         }
-        auto h = Kokkos::create_mirror_view(sums);
-        Kokkos::deep_copy(h, sums);
-        auto ht = Kokkos::create_mirror_view(tsums);
-        Kokkos::deep_copy(ht, tsums);
-        L_last    = L;
-        s_last[0] = h(0);
-        s_last[1] = h(1);
-        s_last[2] = h(2);
+        L_last       = L;
+        S3_last      = S3;
+        s_last[0]    = h(0);
+        s_last[1]    = h(1);
+        s_last[2]    = h(2);
         team_last[0] = ht(0);
         team_last[1] = ht(1);
         team_last[2] = ht(2);
@@ -193,15 +274,31 @@ auto main(int argc, char* argv[]) -> int {
       if (!ok_team) {
         rc = 1;
       }
-      std::printf("(diag) npart %llu: median wall time over %d repetitions: reducer %.3f ms, atomic_add %.3f ms "
-                  "(ratio reducer/atomic %.2f), per-team scratch + atomics %.3f ms (ratio reducer/team %.2f; %d teams of %llu); "
-                  "min reducer %.3f ms, min atomic %.3f ms, min team %.3f ms; sums E_drag %.12e (atomic %.12e, team %.12e), "
-                  "n_processed %llu\n",
-                  (unsigned long long)npart, reps, 1.0e3 * median(t_red), 1.0e3 * median(t_atom),
-                  median(t_red) / median(t_atom), 1.0e3 * median(t_team), median(t_red) / median(t_team), league,
-                  (unsigned long long)per_team, 1.0e3 * *std::min_element(t_red.begin(), t_red.end()),
+      {
+        const double s3[3] = { S3_last.a0, S3_last.a1, S3_last.a2 };
+        double       worst3 = 0.0;
+        for (int c = 0; c < 3; ++c) {
+          worst3 = std::max(worst3, std::abs(red[c] / s3[c] - 1.0));
+        }
+        const bool ok3 = worst3 <= 1.0e-12;
+        std::printf("%s: npart %llu: reducer (double-double) vs the three-double reducer agree, max |rel. diff| = %.3e (tolerance 1e-12) [M4]\n",
+                    ok3 ? "PASS" : "FAIL", (unsigned long long)npart, worst3);
+        if (!ok3) {
+          rc = 1;
+        }
+      }
+      std::printf("(diag) npart %llu: medians over %d repetitions [ms]: END-TO-END dd-ledger reducer %.3f, three-double reducer %.3f, "
+                  "atomic_add %.3f, per-team + atomics %.3f (%d teams of %llu); KERNEL-ONLY atomic_add %.3f, per-team %.3f; "
+                  "EQUALISED ratios (equal payload, equal boundaries): three-double reducer / per-team end-to-end %.2f, three-double "
+                  "reducer / atomic_add end-to-end %.2f; production reducer (full dd ledger) / per-team end-to-end %.2f [not equal payload]; "
+                  "min end-to-end: dd %.3f, sum3 %.3f, atomic %.3f, team %.3f; sums E_drag %.12e (sum3 %.12e, atomic %.12e, team %.12e), "
+                  "n_processed %llu [M4]\n",
+                  (unsigned long long)npart, reps, 1.0e3 * median(t_red), 1.0e3 * median(t_sum3), 1.0e3 * median(t_atom),
+                  1.0e3 * median(t_team), league, (unsigned long long)per_team, 1.0e3 * median(t_atom_k), 1.0e3 * median(t_team_k),
+                  median(t_sum3) / median(t_team), median(t_sum3) / median(t_atom), median(t_red) / median(t_team),
+                  1.0e3 * *std::min_element(t_red.begin(), t_red.end()), 1.0e3 * *std::min_element(t_sum3.begin(), t_sum3.end()),
                   1.0e3 * *std::min_element(t_atom.begin(), t_atom.end()), 1.0e3 * *std::min_element(t_team.begin(), t_team.end()),
-                  red[0], s_last[0], team_last[0], L_last.n_processed);
+                  red[0], S3_last.a0, s_last[0], team_last[0], L_last.n_processed);
       // thread-count independence of the reducer value (order-independent to the
       // double-double round-off): re-reduce with a single-chunk policy
       {

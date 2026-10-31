@@ -1,0 +1,28 @@
+Kokkos::OpenMP::initialize WARNING: OMP_PROC_BIND environment variable not set
+  In general, for best performance with OpenMP 4.0 or better set OMP_PROC_BIND=spread and OMP_PLACES=threads
+  For best performance with OpenMP 3.1 set OMP_PROC_BIND=true
+  For unit testing set OMP_PROC_BIND=false
+
+bh_reduction_timing: execution space OpenMP, concurrency 10
+timed intervals: end-to-end = launch + fence + host readback of the result (reducers: the returned value; atomics: deep_copy of the three sums); kernel-only = launch + fence; atomic targets zeroed before each repetition, outside the timing
+PASS: npart 100000: reducer (double-double) vs atomic double sums agree, max |rel. diff| = 6.439e-15 (tolerance 1e-12)
+PASS: npart 100000: reducer (double-double) vs per-team scratch + atomics agree, max |rel. diff| = 0.000e+00 (tolerance 1e-12) [M4]
+PASS: npart 100000: reducer (double-double) vs the three-double reducer agree, max |rel. diff| = 7.772e-16 (tolerance 1e-12) [M4]
+(diag) npart 100000: medians over 20 repetitions [ms]: END-TO-END dd-ledger reducer 0.999, three-double reducer 0.348, atomic_add 5.236, per-team + atomics 2.350 (98 teams of 1024); KERNEL-ONLY atomic_add 5.235, per-team 2.349; EQUALISED ratios (equal payload, equal boundaries): three-double reducer / per-team end-to-end 0.15, three-double reducer / atomic_add end-to-end 0.07; production reducer (full dd ledger) / per-team end-to-end 0.43 [not equal payload]; min end-to-end: dd 0.333, sum3 0.050, atomic 2.188, team 0.052; sums E_drag 1.498406272008e+05 (sum3 1.498406272008e+05, atomic 1.498406272008e+05, team 1.498406272008e+05), n_processed 100000 [M4]
+PASS: npart 100000: reducer value independent of the chunking, |rel. diff| = 0.000e+00 (tolerance 1e-15)
+PASS: npart 1000000: reducer (double-double) vs atomic double sums agree, max |rel. diff| = 1.221e-14 (tolerance 1e-12)
+PASS: npart 1000000: reducer (double-double) vs per-team scratch + atomics agree, max |rel. diff| = 3.331e-16 (tolerance 1e-12) [M4]
+PASS: npart 1000000: reducer (double-double) vs the three-double reducer agree, max |rel. diff| = 3.331e-16 (tolerance 1e-12) [M4]
+(diag) npart 1000000: medians over 20 repetitions [ms]: END-TO-END dd-ledger reducer 8.784, three-double reducer 5.926, atomic_add 92.151, per-team + atomics 5.297 (977 teams of 1024); KERNEL-ONLY atomic_add 92.150, per-team 5.295; EQUALISED ratios (equal payload, equal boundaries): three-double reducer / per-team end-to-end 1.12, three-double reducer / atomic_add end-to-end 0.06; production reducer (full dd ledger) / per-team end-to-end 1.66 [not equal payload]; min end-to-end: dd 6.005, sum3 1.536, atomic 33.240, team 1.063; sums E_drag 1.499131121848e+06 (sum3 1.499131121848e+06, atomic 1.499131121848e+06, team 1.499131121848e+06), n_processed 1000000 [M4]
+PASS: npart 1000000: reducer value independent of the chunking, |rel. diff| = 0.000e+00 (tolerance 1e-15)
+PASS: npart 262144: reducer (double-double) vs atomic double sums agree, max |rel. diff| = 1.754e-14 (tolerance 1e-12)
+PASS: npart 262144: reducer (double-double) vs per-team scratch + atomics agree, max |rel. diff| = 1.110e-16 (tolerance 1e-12) [M4]
+PASS: npart 262144: reducer (double-double) vs the three-double reducer agree, max |rel. diff| = 4.441e-16 (tolerance 1e-12) [M4]
+(diag) npart 262144: medians over 20 repetitions [ms]: END-TO-END dd-ledger reducer 3.921, three-double reducer 4.988, atomic_add 15.446, per-team + atomics 3.024 (256 teams of 1024); KERNEL-ONLY atomic_add 15.445, per-team 3.023; EQUALISED ratios (equal payload, equal boundaries): three-double reducer / per-team end-to-end 1.65, three-double reducer / atomic_add end-to-end 0.32; production reducer (full dd ledger) / per-team end-to-end 1.30 [not equal payload]; min end-to-end: dd 2.279, sum3 0.358, atomic 4.686, team 0.631; sums E_drag 3.930945606385e+05 (sum3 3.930945606385e+05, atomic 3.930945606385e+05, team 3.930945606385e+05), n_processed 262144 [M4]
+PASS: npart 262144: reducer value independent of the chunking, |rel. diff| = 0.000e+00 (tolerance 1e-15)
+PASS: npart 4194304: reducer (double-double) vs atomic double sums agree, max |rel. diff| = 7.094e-14 (tolerance 1e-12)
+PASS: npart 4194304: reducer (double-double) vs per-team scratch + atomics agree, max |rel. diff| = 2.776e-15 (tolerance 1e-12) [M4]
+PASS: npart 4194304: reducer (double-double) vs the three-double reducer agree, max |rel. diff| = 1.665e-15 (tolerance 1e-12) [M4]
+(diag) npart 4194304: medians over 20 repetitions [ms]: END-TO-END dd-ledger reducer 19.537, three-double reducer 6.400, atomic_add 395.568, per-team + atomics 6.094 (4096 teams of 1024); KERNEL-ONLY atomic_add 395.567, per-team 6.092; EQUALISED ratios (equal payload, equal boundaries): three-double reducer / per-team end-to-end 1.05, three-double reducer / atomic_add end-to-end 0.02; production reducer (full dd ledger) / per-team end-to-end 3.21 [not equal payload]; min end-to-end: dd 12.621, sum3 3.121, atomic 248.269, team 3.492; sums E_drag 6.289483290231e+06 (sum3 6.289483290231e+06, atomic 6.289483290232e+06, team 6.289483290231e+06), n_processed 4194304 [M4]
+PASS: npart 4194304: reducer value independent of the chunking, |rel. diff| = 0.000e+00 (tolerance 1e-15)
+bh_reduction_timing summary: sums agree
