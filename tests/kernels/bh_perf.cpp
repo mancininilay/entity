@@ -6,6 +6,16 @@
  *           linear interpolation), continuous (none) and event (delta, a = 1) at
  *           Gamma_p0 = 3, N ions, 20 warm-up and 100 timed launches, medians; the
  *           lookup fraction and the float-lerp saving reported. PERF BUILD ONLY.
+ *           Round 2 (Codex 1 F5): MATCHED WORK: before every launch the ion arrays are
+ *           restored from a snapshot of the initial state and the RNG pool is re-seeded
+ *           with the launch's seed, so every kernel sees the same ion states and the same
+ *           random stream on every launch; the residual work mismatch (events drawn and
+ *           pairs spawned per variant against the production kernel) is printed; the
+ *           ledger identity (1e-12 x E_drag) is a verdict for EVERY row, warm-up launches
+ *           included. Timed interval: the parallel_reduce (kernel + ledger reduction, the
+ *           host-returning reducer) and the fence; pairs.finish() (the spawn-counter
+ *           readback) is timed separately and reported; the production stage adds the
+ *           post-step (ledger accumulation) which is not part of this kernel measurement.
  *   stride  M6: the stage run every n steps with dt_BH = n dt, n in {1, 4, 16}, at fixed
  *           physical time, for the event mode (delta, a = 1) and the continuous mode
  *           (source none), N ions at Gamma_p0 = 3 (BH_PERF_N, default 65536; the A100
@@ -49,42 +59,80 @@ namespace {
 
   struct VariantRow {
     std::string kernel, mode;
-    double      median_s, min_s, ns_per_ion, meanK_over_K0, identity_rel;
-    unsigned long long events;
+    double      median_s, min_s, ns_per_ion, meanK_over_K0, identity_rel, identity_worst_launch, finish_median_s;
+    unsigned long long events, spawned;
+  };
+
+  // the ion state restored before every launch (matched work, F5): momenta and the three payload slots
+  struct IonSnapshot {
+    array_t<real_t*>  ux1, ux2, ux3;
+    array_t<real_t**> pld_r;
+
+    explicit IonSnapshot(const Ions& ions)
+      : ux1 { "snap_ux1", ions.n }
+      , ux2 { "snap_ux2", ions.n }
+      , ux3 { "snap_ux3", ions.n }
+      , pld_r { "snap_pld_r", ions.n, 3 } {
+      Kokkos::deep_copy(ux1, ions.arr.ux1);
+      Kokkos::deep_copy(ux2, ions.arr.ux2);
+      Kokkos::deep_copy(ux3, ions.arr.ux3);
+      Kokkos::deep_copy(pld_r, ions.arr.pld_r);
+    }
+
+    void restore(Ions& ions) const {
+      Kokkos::deep_copy(ions.arr.ux1, ux1);
+      Kokkos::deep_copy(ions.arr.ux2, ux2);
+      Kokkos::deep_copy(ions.arr.ux3, ux3);
+      Kokkos::deep_copy(ions.arr.pld_r, pld_r);
+      Kokkos::fence();
+    }
   };
 
   template <class KernelT>
   VariantRow run_variant(const char* name, const char* label, Tables& T, KernelT& kern, Ions& ions, Pairs& pairs,
-                         const std::vector<double>& K0v, int mode, int warm, int measured) {
-    ions.set_all(K0v);
-    std::vector<double> t;
+                         const IonSnapshot& snap, unsigned seed_base, int mode, int warm, int measured) {
+    std::vector<double> t, tf;
     kh::LossLedger      L, C;
+    double              worst_identity = 0.0;
     for (int l = 0; l < warm + measured; ++l) {
+      // matched work: the same ion states and the same random stream on every launch, for every kernel
+      snap.restore(ions);
+      kern.pool = random_number_pool_t(seed_base + static_cast<unsigned>(l));
       pairs.recycle();
-      auto targ = pairs.targets();
+      auto targ  = pairs.targets();
       kern.pairs = targ;
       const double s = timed_launch(label, kern, ions, pairs, L);
-      pairs.finish(targ);
+      const auto   f0 = std::chrono::steady_clock::now();
+      pairs.finish(targ); // the spawn-counter readback (deep_copy device -> host)
+      const double f = std::chrono::duration<double>(std::chrono::steady_clock::now() - f0).count();
+      worst_identity = std::max(worst_identity, identity_residual_rel(L)); // every launch, warm-up included
       if (l >= warm) {
         t.push_back(s);
+        tf.push_back(f);
         C += L;
       }
     }
     std::sort(t.begin(), t.end());
+    std::sort(tf.begin(), tf.end());
     VariantRow r;
-    r.kernel        = name;
-    r.mode          = mode == EVENT ? "event" : "continuous";
-    r.median_s      = t[t.size() / 2];
-    r.min_s         = t.front();
-    r.ns_per_ion    = 1.0e9 * r.median_s / static_cast<double>(ions.n);
-    const auto Ks   = ions.K();
-    double     m    = 0.0;
+    r.kernel                = name;
+    r.mode                  = mode == EVENT ? "event" : "continuous";
+    r.median_s              = t[t.size() / 2];
+    r.min_s                 = t.front();
+    r.finish_median_s       = tf[tf.size() / 2];
+    r.ns_per_ion            = 1.0e9 * r.median_s / static_cast<double>(ions.n);
+    const auto Ks           = ions.K();
+    double     m            = 0.0;
     for (const double k : Ks) {
       m += k;
     }
-    r.meanK_over_K0 = m / static_cast<double>(ions.n) / K0v[0];
-    r.identity_rel  = identity_residual_rel(C);
-    r.events        = C.n_events;
+    const auto K0s          = snap.ux1; // the snapshot energy is the same for every ion: read one
+    (void)K0s;
+    r.meanK_over_K0         = m / static_cast<double>(ions.n); // filled by the caller relative to K0
+    r.identity_rel          = identity_residual_rel(C);
+    r.identity_worst_launch = worst_identity;
+    r.events                = C.n_events;
+    r.spawned               = C.n_spawned;
     (void)T;
     return r;
   }
@@ -94,12 +142,17 @@ namespace {
     const double coeff = coeff_for_lambda(T, Gp0, lambda1, 1.0);
     const int    warm = 20, measured = 100;
     std::printf("\n=== M3 variants: production kernel vs (i) constants in place of the lookup, (ii) float tables with linear "
-                "interpolation; N = %u at Gamma_p0 = 3, lambda = %.3g, %d warm-up and %d timed launches, medians ===\n",
+                "interpolation; N = %u at Gamma_p0 = 3, lambda = %.3g, %d warm-up and %d timed launches, medians; MATCHED WORK "
+                "(the ion state restored and the RNG pool re-seeded before every launch, identically for every kernel) ===\n",
                 (unsigned)N, lambda1, warm, measured);
     std::printf("PERF BUILD (BH_PERF_VARIANT): the variant kernels are measurement code; none of their numbers is a physics "
-                "result, and this program writes no output file.\n");
+                "result, and this program writes no output file. Timed interval: parallel_reduce (kernel + ledger reduction) and "
+                "fence; pairs.finish() (spawn-counter readback) timed separately; the production stage's post-step is not included.\n");
+    std::printf("(perf) M3 BH_PERF_N = %u\n", (unsigned)N);
     Ions                ions(N, 1.0);
     std::vector<double> K0v(N, K_of_gamma(Gp0));
+    ions.set_all(K0v);
+    const IonSnapshot   snap(ions);
     Pairs               pairs(static_cast<npart_t>(std::max<std::size_t>(200000, static_cast<std::size_t>(N) * 2)));
     const auto          Tc = khp::make_const_tables(T.host, Gp0);
     const auto          Tf = khp::make_float_tables(T.host);
@@ -114,32 +167,63 @@ namespace {
         prm.source = static_cast<int>(kh::PairSource::None);
       }
       random_number_pool_t pool(4242u);
+      const unsigned       seed_base = 4242u + static_cast<unsigned>(1000 * mode);
       using KP = kh::BetheHeitler_kernel<Minkowski<Dim::_1D>>;
       using KC = khp::BetheHeitler_kernel_variant<Minkowski<Dim::_1D>, khp::PerfTablesConst>;
       using KF = khp::BetheHeitler_kernel_variant<Minkowski<Dim::_1D>, khp::PerfTablesFloat>;
+      auto gate = [&](VariantRow& r) {
+        r.meanK_over_K0 /= K0v[0];
+        verdict(r.identity_rel <= 1.0e-12, fmt("M3 %s %s: ledger identity residual / E_drag over the timed launches", r.mode.c_str(), r.kernel.c_str()),
+                r.identity_rel, 1.0e-12);
+        verdict(r.identity_worst_launch <= 1.0e-12,
+                fmt("M3 %s %s: worst per-launch ledger identity residual / E_drag (warm-up included)", r.mode.c_str(), r.kernel.c_str()),
+                r.identity_worst_launch, 1.0e-12);
+      };
       {
         KP kern { ions.arr, ions.mu_d, T.dev, prm, pairs.targets(), pool };
         rows.push_back(run_variant("production", mode == EVENT ? "bh_perf_production_event" : "bh_perf_production_continuous", T, kern,
-                                   ions, pairs, K0v, mode, warm, measured));
-        verdict(rows.back().identity_rel <= 1.0e-12, fmt("M3 %s production kernel: ledger identity residual / E_drag", rows.back().mode.c_str()),
-                rows.back().identity_rel, 1.0e-12);
+                                   ions, pairs, snap, seed_base, mode, warm, measured));
+        gate(rows.back());
       }
       {
         KC kern { ions.arr, ions.mu_d, Tc, prm, pairs.targets(), pool };
         rows.push_back(run_variant("(i) constants", mode == EVENT ? "bh_perf_variant_const_event" : "bh_perf_variant_const_continuous", T,
-                                   kern, ions, pairs, K0v, mode, warm, measured));
+                                   kern, ions, pairs, snap, seed_base, mode, warm, measured));
+        gate(rows.back());
       }
       {
         KF kern { ions.arr, ions.mu_d, Tf, prm, pairs.targets(), pool };
         rows.push_back(run_variant("(ii) float lerp", mode == EVENT ? "bh_perf_variant_float_event" : "bh_perf_variant_float_continuous", T,
-                                   kern, ions, pairs, K0v, mode, warm, measured));
+                                   kern, ions, pairs, snap, seed_base, mode, warm, measured));
+        gate(rows.back());
       }
     }
-    std::printf("(perf) M3 %-10s %-16s %12s %12s %10s %12s %12s %10s\n", "mode", "kernel", "median ms", "min ms", "ns/ion", "<K>/K0", "identity",
-                "events");
+    std::printf("(perf) M3 %-10s %-16s %12s %12s %10s %12s %12s %10s %10s %10s\n", "mode", "kernel", "median ms", "min ms", "ns/ion",
+                "<K>/K0", "identity", "events", "spawned", "finish ms");
     for (const auto& r : rows) {
-      std::printf("(perf) M3 %-10s %-16s %12.4f %12.4f %10.3f %12.6f %12.2e %10llu\n", r.mode.c_str(), r.kernel.c_str(), 1.0e3 * r.median_s,
-                  1.0e3 * r.min_s, r.ns_per_ion, r.meanK_over_K0, r.identity_rel, r.events);
+      std::printf("(perf) M3 %-10s %-16s %12.4f %12.4f %10.3f %12.6f %12.2e %10llu %10llu %10.4f\n", r.mode.c_str(), r.kernel.c_str(),
+                  1.0e3 * r.median_s, 1.0e3 * r.min_s, r.ns_per_ion, r.meanK_over_K0, r.identity_rel, r.events, r.spawned,
+                  1.0e3 * r.finish_median_s);
+    }
+    // the residual work mismatch under matched states and streams: events drawn and pairs spawned per variant against the
+    // production kernel (constants at Gamma_p = 3 reproduce the table's rate at the restored state; the float tables differ
+    // by their rounding)
+    for (const char* m : { "continuous", "event" }) {
+      unsigned long long ep = 0, sp = 0;
+      for (const auto& r : rows) {
+        if (r.mode == m && r.kernel == "production") {
+          ep = r.events;
+          sp = r.spawned;
+        }
+      }
+      for (const auto& r : rows) {
+        if (r.mode == m && r.kernel != "production") {
+          std::printf("(perf) M3 %s %s: residual work mismatch vs production under matched states: events %+.3e relative, spawned %+.3e "
+                      "relative\n",
+                      m, r.kernel.c_str(), ep > 0 ? (static_cast<double>(r.events) - static_cast<double>(ep)) / static_cast<double>(ep) : 0.0,
+                      sp > 0 ? (static_cast<double>(r.spawned) - static_cast<double>(sp)) / static_cast<double>(sp) : 0.0);
+        }
+      }
     }
     for (const char* m : { "continuous", "event" }) {
       double tp = 0.0, tc = 0.0, tf = 0.0;
@@ -155,7 +239,9 @@ namespace {
         }
       }
       std::printf("(perf) M3 %s: lookup fraction (production - constants) / production = %.3f; float-lerp saving (production - float) / "
-                  "production = %.3f [harness variants, not physics]\n",
+                  "production = %.3f [controlled: matched ion states and RNG streams per launch; limitation: the constants variant removes "
+                  "the lookup's memory traffic AND its arithmetic together, and the float variant changes the interpolation coordinate "
+                  "with the precision; harness variants, not physics]\n",
                   m, tp > 0.0 ? (tp - tc) / tp : 0.0, tp > 0.0 ? (tp - tf) / tp : 0.0);
     }
   }

@@ -78,6 +78,11 @@ if(${output})
   endif()
 endif()
 
+# [fork:hadronic/P2 step 7 round 2, Codex 2 F8 / Codex 1 F3] GPU tracer qualification: ID/weight/payload tracers
+# with dead holes through SortSpatially (the vendor sort on GPU builds), next-step deposition, split invariance,
+# checkpoint round trip (OUTPUT_ENABLED); 1D/2D/3D; enumerated assertions
+gen_test(f8_tracers false)
+
 # this test is only run manually to ensure ...
 # ... command line args are working properly ...
 # ... and that the logging is done correctly
