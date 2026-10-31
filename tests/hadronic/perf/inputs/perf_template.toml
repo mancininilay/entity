@@ -91,7 +91,7 @@
     enable = false
 
 [checkpoint]
-  interval = 100000000
+  interval = @CKPT_INTERVAL@
 
 [diagnostics]
   interval        = @DIAG@
