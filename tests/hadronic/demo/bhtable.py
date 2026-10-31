@@ -49,3 +49,26 @@ class Table:
 
 def K_of_gamma(G, mu=MU_R): return mu * (np.asarray(G) - 1.0)
 def gamma_of_K(K, mu=MU_R): return 1.0 + np.asarray(K) / mu
+
+# scalar fast path (pure Python, same interpolation) for the reference integrations
+import bisect as _bisect
+def _scalar_setup(self):
+    self._ys = self.y.tolist(); self._lnI = np.log(self.I).tolist(); self._lnJ = np.log(self.J).tolist(); self._lnD = np.log(self.D).tolist()
+def _scalar(self, lnv, last, G, below):
+    if not (G > self.gamma_th) or not (G >= self.gamma_min): return below
+    yy = math.log10(G - self.gamma_th)
+    if G >= self.gamma_max or yy >= self.y_max: return last
+    if yy < self.y_min: return below
+    hi = _bisect.bisect_right(self._ys, yy); hi = min(max(hi, 1), len(self._ys) - 1); lo = hi - 1
+    t = (yy - self._ys[lo]) / (self._ys[hi] - self._ys[lo])
+    return math.exp(lnv[lo] + t * (lnv[hi] - lnv[lo]))
+def _If_s(self, G):
+    if not hasattr(self, '_ys'): _scalar_setup(self)
+    return _scalar(self, self._lnI, self.I[-1], G, 0.0)
+def _Jf_s(self, G):
+    if not hasattr(self, '_ys'): _scalar_setup(self)
+    return _scalar(self, self._lnJ, self.J[-1], G, 0.0)
+def _Df_s(self, G):
+    if not hasattr(self, '_ys'): _scalar_setup(self)
+    return _scalar(self, self._lnD, self.D[-1], G, float(self.D[0]))
+Table.If_s = _If_s; Table.Jf_s = _Jf_s; Table.Df_s = _Df_s

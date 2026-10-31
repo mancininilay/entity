@@ -36,7 +36,7 @@ class D2Fixture:
 
 def plain_ode(T, tau0, K0, times, dt=0.5, sub=16):
     """K(t) of dK/dt = -tau0 I(Gamma(K)), RK4 with h = dt/sub, sampled at `times`."""
-    f = lambda K: -tau0 * float(T.If([gamma_of_K(K)])[0])
+    f = lambda K: -tau0 * T.If_s(1.0 + K / MU_R)
     out = []; K = K0; t = 0.0; h = dt / sub
     for te in times:
         while t < te - 1e-12 * max(1.0, te):
@@ -49,7 +49,7 @@ def plain_ode(T, tau0, K0, times, dt=0.5, sub=16):
 def corrected(T, tau0, K0, tm, Vm, d2fun, a=1.0, h=0.5):
     """The C++ `reference` with the run's records (tm, Vm): returns K_plain, K_corr, V_fb, V_fb_curv at tm.
     h is the RK4 step (the run's dt, as the C++)."""
-    I = lambda K: float(T.If([gamma_of_K(K)])[0]); J = lambda K: float(T.Jf([gamma_of_K(K)])[0])
+    I = lambda K: T.If_s(1.0 + K / MU_R); J = lambda K: T.Jf_s(1.0 + K / MU_R)
     Ipp = lambda K: (I(K + .02*K) - 2*I(K) + I(K - .02*K)) / (.02*K)**2
     Ip = lambda K: (I(K + .02*K) - I(K - .02*K)) / (2 * .02*K)
     B = lambda K: a * tau0 * J(K) * float(np.ravel(d2fun(gamma_of_K(K)))[0])
