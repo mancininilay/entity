@@ -1,0 +1,11 @@
+REPLAY ok: control: exit 0, 0 FAIL, 0 INFRA lines
+REPLAY ok: missing-deposit: exit 3, 0 FAIL, 13 INFRA lines
+REPLAY ok: nan-deposit: exit 3, 0 FAIL, 13 INFRA lines
+REPLAY ok: zero-deposit: exit 3, 0 FAIL, 5 INFRA lines
+REPLAY ok: missing-custom: exit 3, 0 FAIL, 13 INFRA lines
+REPLAY ok: short-timers: exit 3, 0 FAIL, 13 INFRA lines
+REPLAY ok: bad-ledger: exit 1, 10 FAIL, 0 INFRA lines
+REPLAY ok: unreadable-ledger: exit 3, 0 FAIL, 10 INFRA lines
+REPLAY ok: control CSV: 13 rows, every timing column finite, restart rows custom_ns_per_ion_step = n/a
+REPLAY ok: control medians: the two restart rows' median_custom_ns_per_ion_step = n/a
+perf_driver_replay summary: 10 checks, 0 mismatches

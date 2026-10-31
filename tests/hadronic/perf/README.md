@@ -37,6 +37,14 @@ steps, 46 per ion over 600 steps; the perf budget input sets `t_latency = 0` (pa
 only) and `on_capacity_estimate = "warn"` (the runtime capacity policy stays `error`). Species counts in the
 diagnostics are printed in `%.2e`; the exact pair counts come from the ledger row.
 
+Row validity (Codex 1's closure C2, 2026-10-31): every timing column of a CSV row (Custom, pusher, deposit, Total,
+progress_avg_ms) is gated in both driver paths, the fresh runs and the M5 restarts: exactly the measured window's
+samples, all finite, else the run is an infrastructure failure (`timers_ok = 0`); a deposit-enabled run (the five M5
+rows) must have measured a positive deposit. `nan` in the CSV means missing or invalid; `n/a` means not applicable: the
+restart rows' `custom_ns_per_ion_step`, whose stage is disabled (their `Custom`, the generator's post-step, is reported
+and gated). The restart takes the source run's checkpoint by its exact name `<run>.ckpt`. Negative controls on the real
+smoke output: `perf_driver_replay.sh`, registered as `HADRONIC::perf_driver_replay` (fixture on `HADRONIC::perf_smoke`).
+
 Smoke on the Mac: `ctest -R "HADRONIC::perf_smoke|KERNELS::bh_perf"` (2¹⁶ ions, OpenMP): a SMOKE of the harness
 mechanics on a CPU, not a performance measurement (uncontrolled host load, no registered equivalence tolerance;
 Codex 1's review of 2026-10-30 reproduced the states and counts but not the timings). Rusty: `rusty/` (the one

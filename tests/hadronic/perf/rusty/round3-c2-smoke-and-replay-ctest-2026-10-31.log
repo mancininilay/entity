@@ -1,0 +1,9 @@
+Test project /Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/builds/perf-single
+    Start 166: HADRONIC::perf_smoke
+1/2 Test #166: HADRONIC::perf_smoke .............   Passed   76.68 sec
+    Start 167: HADRONIC::perf_driver_replay
+2/2 Test #167: HADRONIC::perf_driver_replay .....   Passed   13.89 sec
+
+100% tests passed out of 2
+
+Total Test time (real) =  90.57 sec

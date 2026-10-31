@@ -46,6 +46,12 @@
 # printed running average at the last measured block, carrying the warm-up history) and never as the step cost;
 # the whole-step cost is the sum of the named timers in the block ("Total"), reported as total_ms_per_step.
 # Times in the CSV are milliseconds per step and ns per ion-step.
+# Validity (Codex 1's closure C2, 2026-10-31): EVERY timing column of a row is gated in BOTH paths (fresh runs and
+# the M5 restarts): Custom, pusher, deposit, Total and progress_avg_ms must each have exactly the measured window's
+# samples, all finite (else the run is an infrastructure failure, timers_ok = 0); a deposit-enabled run must also have
+# measured a positive deposit. In the CSV, "nan" means a missing or invalid value (the row is a failed run) and "n/a"
+# means not applicable: custom_ns_per_ion_step of a restart row, whose hadronic stage is disabled, so its Custom timer
+# (reported, gated) is the generator's post-step and not a stage cost per ion-step.
 source "$(dirname "$0")/../common.sh"
 EXE="$1"; CHECK="$2"; INP="$3"; WD="$4"
 [ -n "$WD" ] || { echo "usage: perf_driver.sh <entity.xc> <bh_check> <inputs> <workdir>"; exit 2; }
@@ -124,6 +130,12 @@ species_count() {
     $1 == "species" && $3 == lab { last = $4 }
     END { if (last == "") print 0; else printf "%.0f", last + 0 }'
 }
+# deposit_measured <deposit enabled: true|false> <deposit ms per step>: true unless the deposit is enabled and its
+# measured time is not a positive number (a deposit-enabled run whose CurrentDeposit is zero did not measure it)
+deposit_measured() {
+  [ "$1" = "true" ] || return 0
+  awk -v d="$2" 'BEGIN { exit !(d ~ /^[0-9]+(\.[0-9]+)?$/ && d + 0 > 0) }'
+}
 # pairs_from_ledger <ledger file>: npart_minus + npart_plus of the last row (columns 42 and 43, 1-based)
 pairs_from_ledger() {
   grep -v '^#' "$1" 2>/dev/null | tail -1 | awk '{ if (NF >= 43) printf "%.0f", $42 + $43; else print 0 }'
@@ -167,7 +179,8 @@ run_one() {
   progress=$(progress_avg_ms "$WD/$name/run.log" "$blocks_skip" "$PERF_MEASURED")
   nblocks=$(count_blocks "$WD/$name/run.log")
   timers_ok=1
-  if [ "$nblocks" -ne $((blocks_skip + PERF_MEASURED + 1)) ] || [ "$custom" = "nan" ] || [ "$pusher" = "nan" ] || [ "$total" = "nan" ]; then
+  if [ "$nblocks" -ne $((blocks_skip + PERF_MEASURED + 1)) ] || [ "$custom" = "nan" ] || [ "$pusher" = "nan" ] || [ "$deposit" = "nan" ] \
+     || [ "$total" = "nan" ] || [ "$progress" = "nan" ] || ! deposit_measured "$dep" "$deposit"; then
     timers_ok=0
   fi
   nion=$(species_count "$WD/$name/run.log" "ion")
@@ -176,7 +189,7 @@ run_one() {
   ok=1
   if [ $rc -ne 0 ]; then ok=0; echo "INFRA: $name: entity.xc exit $rc"; n_infra=$((n_infra + 1)); fi
   if [ $rc -eq 0 ] && [ $timers_ok -ne 1 ]; then
-    ok=0; echo "INFRA: $name: timer output incomplete or non-finite ($nblocks diagnostics blocks, expected $((blocks_skip + PERF_MEASURED + 1)); Custom $custom, pusher $pusher, total $total)"; n_infra=$((n_infra + 1))
+    ok=0; echo "INFRA: $name: timer output incomplete or non-finite ($nblocks diagnostics blocks, expected $((blocks_skip + PERF_MEASURED + 1)); Custom $custom, pusher $pusher, deposit $deposit (deposit on: $dep), total $total, progress $progress)"; n_infra=$((n_infra + 1))
   fi
   if [ "$N" -le 0 ] || [ "$PERF_MEASURED" -le 0 ]; then ok=0; echo "INFRA: $name: N and PERF_MEASURED must be positive"; n_infra=$((n_infra + 1)); fi
   ledger_ok=1
@@ -206,9 +219,11 @@ run_restart_pic() {
   local src="$1" tag="$2" mode="$3" N="$4" rep="$5"
   local name="${tag}_${mode}_warm_N${N}_r${rep}" dir ckdir meta step rc custom pusher deposit total progress nblocks timers_ok ok nion npm npp
   dir="$WD/$name"; rm -rf "$dir"; mkdir -p "$dir"
-  ckdir=$(ls -d "$WD/$src"/*.ckpt 2>/dev/null | head -1)
+  # the source run's checkpoint by its exact name (<simulation name>.ckpt): a glob would also match stray copies such as
+  # "<name> 2.ckpt" (found on the Mac smoke: empty duplicates created by the iCloud-synchronised folder)
+  ckdir="$WD/$src/$src.ckpt"
   n_run=$((n_run + 1))
-  if [ -z "$ckdir" ]; then
+  if [ ! -d "$ckdir" ]; then
     echo "INFRA: $name: no checkpoint directory under $WD/$src (the source run must write one at its last step)"; n_infra=$((n_infra + 1))
     echo "$PERF_LABEL,$tag,$mode,warm,$N,$rep,$PERF_MEASURED,nan,nan,nan,nan,nan,nan,0,0,0,0,3" >> "$CSV"; return
   fi
@@ -239,13 +254,15 @@ run_restart_pic() {
   progress=$(progress_avg_ms "$dir/run.log" "$blocks_skip" "$PERF_MEASURED")
   nblocks=$(count_blocks "$dir/run.log")
   timers_ok=1; ok=1
-  # a resumed run prints its blocks from start_step: the same count as a fresh run of steps_total steps
-  if [ "$nblocks" -ne $((blocks_skip + PERF_MEASURED + 1)) ] || [ "$pusher" = "nan" ] || [ "$total" = "nan" ]; then timers_ok=0; fi
+  # a resumed run prints its blocks from start_step: the same count as a fresh run of steps_total steps; every timing
+  # column is gated as for a fresh run (C2), the deposit (on in every restart) must be measured
+  if [ "$nblocks" -ne $((blocks_skip + PERF_MEASURED + 1)) ] || [ "$custom" = "nan" ] || [ "$pusher" = "nan" ] || [ "$deposit" = "nan" ] \
+     || [ "$total" = "nan" ] || [ "$progress" = "nan" ] || ! deposit_measured true "$deposit"; then timers_ok=0; fi
   nion=$(species_count "$dir/run.log" "ion"); npm=$(species_count "$dir/run.log" "e-"); npp=$(species_count "$dir/run.log" "e+")
   if [ $rc -ne 0 ]; then ok=0; echo "INFRA: $name: entity.xc -restart exit $rc"; n_infra=$((n_infra + 1)); fi
-  if [ $rc -eq 0 ] && [ $timers_ok -ne 1 ]; then ok=0; echo "INFRA: $name: timer output incomplete ($nblocks blocks, expected $((blocks_skip + PERF_MEASURED + 1)))"; n_infra=$((n_infra + 1)); fi
+  if [ $rc -eq 0 ] && [ $timers_ok -ne 1 ]; then ok=0; echo "INFRA: $name: timer output incomplete or non-finite ($nblocks blocks, expected $((blocks_skip + PERF_MEASURED + 1)); Custom $custom, pusher $pusher, deposit $deposit, total $total, progress $progress)"; n_infra=$((n_infra + 1)); fi
   if [ $rc -eq 0 ] && grep -q "hadronic.enabled *= *true\|bh_proto: table:" "$dir/run.log"; then ok=0; echo "INFRA: $name: the restarted run still has the hadronic stage enabled"; n_infra=$((n_infra + 1)); fi
-  echo "$PERF_LABEL,$tag,$mode,warm,$N,$rep,$PERF_MEASURED,$custom,nan,$pusher,$deposit,$total,$progress,$nion,$((npm + npp)),$ok,$timers_ok,$rc" >> "$CSV"
+  echo "$PERF_LABEL,$tag,$mode,warm,$N,$rep,$PERF_MEASURED,$custom,n/a,$pusher,$deposit,$total,$progress,$nion,$((npm + npp)),$ok,$timers_ok,$rc" >> "$CSV"
   echo "run $name (restart of $src at step $step, hadronic off): pusher $pusher ms/step, deposit $deposit, total $total ms, ions $nion, pairs $((npm + npp)), ok $ok, timers_ok $timers_ok, exit $rc"
 }
 
@@ -279,7 +296,9 @@ tail -n +2 "$CSV" | awk -F, '
   { key = $1 "," $2 "_" $3 "_" $4 "_" $5; if (!(key in seen)) { order[++k] = key; seen[key] = 1 }
     c[key] = c[key] " " $8; ns[key] = ns[key] " " $9; p[key] = p[key] " " $10; d[key] = d[key] " " $11; t[key] = t[key] " " $12
     n[key]++; if ($16 != 1 || $17 != 1) bad[key] = 1 }
-  function median(s,   a, m, i, tmp, j) { m = split(s, a, " "); for (i = 2; i <= m; i++) { tmp = a[i]; j = i - 1; while (j >= 1 && a[j] + 0 > tmp + 0) { a[j+1] = a[j]; j-- } a[j+1] = tmp }
+  function median(s,   a, m, i, tmp, j, na) { m = split(s, a, " "); na = 0; for (i = 1; i <= m; i++) { if (a[i] == "n/a") na++; if (a[i] == "nan") return "nan" }
+    if (na == m) return "n/a"; if (na > 0) return "nan"
+    for (i = 2; i <= m; i++) { tmp = a[i]; j = i - 1; while (j >= 1 && a[j] + 0 > tmp + 0) { a[j+1] = a[j]; j-- } a[j+1] = tmp }
     if (m % 2 == 1) return a[(m + 1) / 2]; return (a[m/2] + a[m/2 + 1]) / 2 }
   END { for (i = 1; i <= k; i++) { key = order[i]; printf "%s,%d,%s,%s,%s,%s,%s,%d\n", key, n[key], median(c[key]), median(ns[key]), median(p[key]), median(d[key]), median(t[key]), (key in bad) ? 0 : 1 } }' >> "$MED"
 echo "---- medians ($MED)"; cat "$MED"

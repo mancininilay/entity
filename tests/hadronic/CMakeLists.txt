@@ -102,7 +102,14 @@ if("${pgen}" STREQUAL "bh_proto")
                    PERF_M5=1 PERF_LABEL=ctest-smoke
                    bash ${BH_SCRIPTS}/perf/perf_driver.sh ${BH_SINGLE_ENTITY} $<TARGET_FILE:bh_check>
                    ${BH_SCRIPTS}/perf/inputs ${BH_WORK}/perf_smoke)
-  set_tests_properties("HADRONIC::perf_smoke" PROPERTIES TIMEOUT 3600)
+  set_tests_properties("HADRONIC::perf_smoke" PROPERTIES TIMEOUT 3600 FIXTURES_SETUP perf_smoke_output)
+  # step 7 round 3 (Codex 1's closure C1/C2): the driver's negative controls on the REAL perf_smoke logs, ledgers and
+  # checkpoints replayed through the unmodified driver (missing / nan / zero deposit, missing Custom, truncated output,
+  # a perturbed and an unreadable ledger, and the unmodified control)
+  add_test(NAME "HADRONIC::perf_driver_replay"
+           COMMAND bash ${BH_SCRIPTS}/perf/perf_driver_replay.sh $<TARGET_FILE:bh_check> ${BH_SCRIPTS}/perf/inputs
+                   ${BH_WORK}/perf_smoke ${BH_WORK}/perf_driver_replay)
+  set_tests_properties("HADRONIC::perf_driver_replay" PROPERTIES TIMEOUT 600 FIXTURES_REQUIRED perf_smoke_output)
   # step 7 round 3 (Codex 1's closure C1): the A100 job's own negative controls (classification, per-precision build
   # gates, the F8 entries through the real CTest with mock launchers); no checkout, build or measurement
   add_test(NAME "HADRONIC::perf_job_selftest"
