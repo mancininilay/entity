@@ -1,0 +1,31 @@
+[13:53:19 +0s] p2-perf-a100 job dryrun-11398 on nilays-imac.lan; commit d19011c296d2b08e592fe8a034d1dd44ca126507; root /tmp/p2perf-dry; dry run 1; budget 3600 s
+[13:53:19 +0s] START step0-checkout [gate] (budget 120 s): bash -c git clone -q 'git@github.com:mancininilay/entity.git' '/tmp/p2perf-dry/src' && git -C '/tmp/p2perf-dry/src' checkout -q 'd19011c296d2b08e592fe8a034d1dd44ca126507' && git -C '/tmp/p2perf-dry/src' rev-parse HEAD > '/tmp/p2perf-dry/logs/commit.txt' && git -C '/tmp/p2perf-dry/src' status --porcelain > '/tmp/p2perf-dry/logs/status.txt'
+[13:53:19 +0s] START step1-build [gate] (budget 780 s): bash -c cmake -S '/tmp/p2perf-dry/src' -B '/tmp/p2perf-dry/build-single' -G Ninja -DCMAKE_BUILD_TYPE=Release -DTESTS=ON -Dpgen=bh_proto -Dmpi=ON -Doutput=ON -Dgpu_aware_mpi=OFF -DKokkos_DIR=/unset -Dadios2_DIR=/unset -Dprecision=single && cmake --build '/tmp/p2perf-dry/build-single' -j 8 --target entity.xc bh_check test-kernels-bh_perf.xc test-kernels-bh_reduction_timing.xc test-framework-f8_tracers.xc test-framework-particles_sort.xc test-kernels-deposit.xc test-framework-checkpoint-data.xc test-framework-checkpoint-extents.xc test-framework-spectra.xc test-kernels-injectors_global_weights.xc test-kernels-reduced_stats_weights.xc
+[13:53:19 +0s] START step2-m1-m2-m5 [sci] (budget 1260 s): env PERF_N=262144 1048576 4194304 16777216 PERF_M5=1 PERF_LABEL=a100-dryrun-11398-d19011c296d2b08e592fe8a034d1dd44ca126507 OMP_NUM_THREADS=1 bash /tmp/p2perf-dry/src/tests/hadronic/perf/perf_driver.sh /tmp/p2perf-dry/entity-1rank.sh /tmp/p2perf-dry/build-single/tests/hadronic/bh_check /tmp/p2perf-dry/src/tests/hadronic/perf/inputs /tmp/p2perf-dry/out/m1
+[13:53:19 +0s] START step3-stride [sci] (budget 240 s): env BH_PERF_N=4194304 BH_QK_SOURCE=born OMP_NUM_THREADS=1 mpirun -n 1 /tmp/p2perf-dry/build-single/tests/kernels/test-kernels-bh_perf.xc stride
+[13:53:19 +0s] START step3-variants [sci] (budget 180 s): env BH_PERF_N=4194304 BH_QK_SOURCE=born OMP_NUM_THREADS=1 mpirun -n 1 /tmp/p2perf-dry/build-single/tests/kernels/test-kernels-bh_perf.xc variants
+[13:53:19 +0s] START step4-reduction [sci] (budget 90 s): env BH_REDUCTION_N=4194304 OMP_NUM_THREADS=1 mpirun -n 1 /tmp/p2perf-dry/build-single/tests/kernels/test-kernels-bh_reduction_timing.xc
+[13:53:19 +0s] START step5-profile-event-production [infra] (budget 100 s): bash -c profile_one event production
+[13:53:19 +0s] START step5-profile-event-const [infra] (budget 70 s): bash -c profile_one event const
+[13:53:20 +1s] START step5-profile-event-float [infra] (budget 70 s): bash -c profile_one event float
+[13:53:20 +1s] START step5-profile-continuous-production [infra] (budget 70 s): bash -c profile_one continuous production
+[13:53:20 +1s] START step5-rngpool [sci] (budget 40 s): env BH_PERF_N=4194304 OMP_NUM_THREADS=1 mpirun -n 1 /tmp/p2perf-dry/build-single/tests/kernels/test-kernels-bh_perf.xc rngpool
+[13:53:20 +1s] START step6-f8-single [sci] (budget 90 s): bash -c f8_ctest '/tmp/p2perf-dry/build-single'
+[13:53:20 +1s] START step7-f8-double-build [infra] (budget 480 s): bash -c cmake -S '/tmp/p2perf-dry/src' -B '/tmp/p2perf-dry/build-double' -G Ninja -DCMAKE_BUILD_TYPE=Release -DTESTS=ON -Dpgen=bh_proto -Dmpi=ON -Doutput=ON -Dgpu_aware_mpi=OFF -DKokkos_DIR=/unset -Dadios2_DIR=/unset -Dprecision=double && cmake --build '/tmp/p2perf-dry/build-double' -j 8 --target test-framework-f8_tracers.xc test-framework-particles_sort.xc test-kernels-deposit.xc test-framework-checkpoint-data.xc test-framework-checkpoint-extents.xc test-framework-spectra.xc test-kernels-injectors_global_weights.xc test-kernels-reduced_stats_weights.xc
+[13:53:20 +1s] START step7-f8-double [sci] (budget 90 s): bash -c f8_ctest '/tmp/p2perf-dry/build-double'
+[13:53:20 +1s] DONE: overall complete (exit 0); steps:
+step0-checkout	gate	120	0	0	dry
+step1-build	gate	780	0	0	dry
+step2-m1-m2-m5	sci	1260	0	0	dry
+step3-stride	sci	240	0	0	dry
+step3-variants	sci	180	0	0	dry
+step4-reduction	sci	90	0	0	dry
+step5-profile-event-production	infra	100	0	0	dry
+step5-profile-event-const	infra	70	0	0	dry
+step5-profile-event-float	infra	70	0	0	dry
+step5-profile-continuous-production	infra	70	0	0	dry
+step5-rngpool	sci	40	0	0	dry
+step6-f8-single	sci	90	0	0	dry
+step7-f8-double-build	infra	480	0	0	dry
+step7-f8-double	sci	90	0	0	dry
+exit 0

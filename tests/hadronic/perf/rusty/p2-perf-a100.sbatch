@@ -49,7 +49,8 @@
 #   3  M6 stride at PERF_N_M3 (event, none, poisson, budget; n = 1, 4, 16)        240 s
 #      M3 variants at PERF_N_M3 (matched work)                                   180 s
 #   4  M4 reducer vs atomics vs per-team, equal boundaries                        90 s
-#   5  profiles: nsys and ncu per configuration, with content assertions         300 s
+#   5  profiles: nsys + ncu per configuration (event: production, const, float; continuous: production)
+#      with content assertions, and the RNG-pool measurement                     350 s
 #   6  F8 single: FRAMEWORK::f8_tracers + the stock sort/deposit/checkpoint/spectra entries      90 s
 #   7  F8 double: build of the test targets (test-framework-f8_tracers.xc and the stock entries)  480 s
 #      + run                                                                      90 s
@@ -220,11 +221,37 @@ run step3-variants sci 180 env BH_PERF_N="$PERF_N_M3" BH_QK_SOURCE=born OMP_NUM_
 # ---- step 4: M4 reducer vs atomics vs per-team scratch at the contract's N
 run step4-reduction sci 90 env BH_REDUCTION_N="$PERF_N_M3" OMP_NUM_THREADS=1 mpirun -n 1 "$BLD/tests/kernels/test-kernels-bh_reduction_timing.xc"
 
-# ---- step 5: profiles for M3 (the variants binary: production kernel vs the two variants, labelled launches)
-run step5-nsys infra 180 env BH_PERF_N="$PERF_N_M3" OMP_NUM_THREADS=1 nsys profile --trace=cuda,nvtx --stats=true -o "$OUT/nsys-variants" \
-  "$BLD/tests/kernels/test-kernels-bh_perf.xc" variants
-run step5-ncu infra 240 env BH_PERF_N="$PERF_N_M3" OMP_NUM_THREADS=1 ncu --launch-skip 20 --launch-count 12 --kernel-name regex:bh_perf --set basic \
-  -o "$OUT/ncu-variants" "$BLD/tests/kernels/test-kernels-bh_perf.xc" variants
+# ---- step 5: profiles for M3 (Codex 1 F6): one capture window PER CONFIGURATION (`bh_perf variants --mode M --kernel K`
+#      runs that configuration's 20 + 100 launches alone), N fixed at PERF_N_M3 and asserted from the program's own
+#      "BH_PERF_N =" line, every profile checked for content: nsys must contain the NVTX ranges of the launch, the finish
+#      readback and the restore/reseed phases (nvtx_sum report) and ncu must have captured the requested kernels (CUDA
+#      function names of the Kokkos launches contain the functor type: regex BetheHeitler on the demangled name;
+#      --kernel-name-base demangled). The RNG-pool share is measured in isolation (`bh_perf rngpool`, the attribution
+#      method of the README). The step is an infrastructure failure when a profile lacks the expected content.
+profile_one() { # profile_one <mode> <kernel>
+  local m="$1" k="$2" tag="m3-$1-$2" rc=0 n
+  env BH_PERF_N="$PERF_N_M3" BH_QK_SOURCE=born OMP_NUM_THREADS=1 nsys profile --trace=cuda,nvtx --force-overwrite=true -o "$OUT/nsys-$tag" \
+    "$BLD/tests/kernels/test-kernels-bh_perf.xc" variants --mode "$m" --kernel "$k" > "$OUT/nsys-$tag.log" 2>&1 || rc=$?
+  grep -q "BH_PERF_N = $PERF_N_M3 " "$OUT/nsys-$tag.log" || { echo "profile $tag: BH_PERF_N is not $PERF_N_M3"; return 4; }
+  nsys stats --report nvtx_sum --format csv -o "$OUT/nsys-$tag" "$OUT/nsys-$tag.nsys-rep" > "$OUT/nsys-$tag-stats.log" 2>&1 || rc=$?
+  for r in bh_perf_restore_and_reseed bh_perf_finish_readback; do
+    grep -q "$r" "$OUT/nsys-$tag"_nvtx_sum.csv 2>/dev/null || { echo "profile $tag: NVTX range $r missing from the nsys report"; return 4; }
+  done
+  grep -q "bh_perf_.*_$m\|bh_perf_production_$m\|bh_perf_variant_${k}_$m" "$OUT/nsys-$tag"_nvtx_sum.csv || { echo "profile $tag: the launch range of ($m, $k) is missing"; return 4; }
+  env BH_PERF_N="$PERF_N_M3" BH_QK_SOURCE=born OMP_NUM_THREADS=1 ncu --kernel-name-base demangled --kernel-name regex:BetheHeitler \
+    --launch-skip 20 --launch-count 12 --set basic --force-overwrite -o "$OUT/ncu-$tag" \
+    "$BLD/tests/kernels/test-kernels-bh_perf.xc" variants --mode "$m" --kernel "$k" > "$OUT/ncu-$tag.log" 2>&1 || rc=$?
+  n=$(ncu --import "$OUT/ncu-$tag.ncu-rep" --csv --page raw 2>/dev/null | tail -n +2 | grep -c "BetheHeitler")
+  [ "$n" -ge 12 ] || { echo "profile $tag: ncu captured $n BetheHeitler kernel launches, expected 12"; return 4; }
+  echo "profile $tag: nsys ranges present, ncu captured $n launches"
+  return $rc
+}
+export -f profile_one; export OUT BLD PERF_N_M3
+run step5-profile-event-production infra 100 bash -c "profile_one event production"
+run step5-profile-event-const infra 70 bash -c "profile_one event const"
+run step5-profile-event-float infra 70 bash -c "profile_one event float"
+run step5-profile-continuous-production infra 70 bash -c "profile_one continuous production"
+run step5-rngpool sci 40 env BH_PERF_N="$PERF_N_M3" OMP_NUM_THREADS=1 mpirun -n 1 "$BLD/tests/kernels/test-kernels-bh_perf.xc" rngpool
 
 # ---- step 6: Codex 2's F8 GPU tracers, single precision: the tracer executable and the stock entries; the selection
 #      must be non-empty and complete (F8_EXPECTED entries run), else the step is an infrastructure failure
