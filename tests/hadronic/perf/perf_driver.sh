@@ -19,6 +19,12 @@
 #   PERF_DIAG     diagnostics interval in steps         [1]   (round 2, Codex 1 F4: every measured step is a sample;
 #                                                            the per-step timers are SUMMED over all PERF_MEASURED steps)
 #   PERF_M5       1: also the M5 reference runs (deposit on): hadronic off; poisson a = 1 (pair-loaded); budget [1]
+#                 Round 2 (Codex 1 F8): the pair-loaded runs (poisson, budget) write a checkpoint at their last step and
+#                 a RESTART run with hadronic DISABLED (the checkpoint's own setup block edited: hadronic.enabled = false)
+#                 and deposit on measures the stock pusher + deposit on the exact end-loaded population (weights,
+#                 phase space and payloads from the checkpoint): rows m5poisson_pic and m5budget_pic. The pair-loaded runs
+#                 themselves (hadronic on, growing population) stay as diagnostics. A zero-pair budget population is
+#                 reported as it is (t_latency = 0 in the perf budget input).
 #   PERF_LABEL    free label written in every row (e.g. "mac-openmp-smoke" or "a100")             [unlabelled]
 # The ledger row (and the per-ion dump of bh_proto's post-step, an O(N) host pass with text output) is written
 # once, at the last step (ledger.every = total steps): the "Custom" timer then holds the stage alone, not the
@@ -121,31 +127,34 @@ pairs_from_ledger() {
 }
 
 make_input() {
-  # make_input <name> <mode> <N> <K> <deposit> <hadronic> -> $WD/<name>/input.toml
-  local name="$1" mode="$2" N="$3" K="$4" dep="$5" had="$6"
+  # make_input <name> <mode> <N> <K> <deposit> <hadronic> [ckpt interval] -> $WD/<name>/input.toml
+  local name="$1" mode="$2" N="$3" K="$4" dep="$5" had="$6" ckpt="${7:-100000000}"
   local dir="$WD/$name"; rm -rf "$dir"; mkdir -p "$dir"
   local maxion maxpair modeblock
   maxion=$(awk -v n="$N" 'BEGIN { printf "%.1f", n * 1.05 + 64 }')
   maxpair=$(awk -v n="$N" 'BEGIN { printf "%.1f", n * 1.5 + 1024 }')
   modeblock="$INP/mode_$mode.toml"
-  awk -v name="$name" -v runtime="$runtime" -v nion="$N" -v kion="$K" -v maxion="$maxion" -v maxpair="$maxpair" \
+  awk -v name="$name" -v runtime="$runtime" -v nion="$N" -v kion="$K" -v maxion="$maxion" -v maxpair="$maxpair" -v ckpt="$ckpt" \
       -v dep="$dep" -v had="$had" -v diag="$PERF_DIAG" -v ledger="$steps_total" -v gtyp="3.0" -v modefile="$modeblock" -v qk="$PERF_QK_SOURCE" '
     { line = $0
       gsub(/@NAME@/, name, line); gsub(/@RUNTIME@/, runtime, line); gsub(/@NION@/, nion, line); gsub(/@KION@/, kion, line)
       gsub(/@MAXNPART_ION@/, maxion, line); gsub(/@MAXNPART_PAIR@/, maxpair, line); gsub(/@DEPOSIT@/, dep, line)
       gsub(/@HADRONIC@/, had, line); gsub(/@DIAG@/, diag, line); gsub(/@LEDGER_EVERY@/, ledger, line); gsub(/@GAMMA_TYP@/, gtyp, line)
-      gsub(/@QK_SOURCE@/, qk, line)
+      gsub(/@QK_SOURCE@/, qk, line); gsub(/@CKPT_INTERVAL@/, ckpt, line)
       if (line ~ /@MODE_BLOCK@/) { while ((getline ml < modefile) > 0) print ml; close(modefile) } else { print line } }' \
       "$INP/perf_template.toml" > "$dir/input.toml"
 }
 
 run_one() {
-  # run_one <mode> <variant> <N> <repeat> <deposit> <hadronic> <tag>
-  local mode="$1" var="$2" N="$3" rep="$4" dep="$5" had="$6" tag="$7"
+  # run_one <mode> <variant> <N> <repeat> <deposit> <hadronic> <tag> [ckpt]: with "ckpt" the run writes a checkpoint at its
+  # last step (checkpoint.interval = total steps), for the M5 restart of F8
+  local mode="$1" var="$2" N="$3" rep="$4" dep="$5" had="$6" tag="$7" ckpt="${8:-}"
   local K name rc ok custom pusher deposit total nion npm npp ns
   if [ "$var" = "cold" ]; then K=$(awk -v m="$MU_R" 'BEGIN { printf "%.6f", m * (2.0 - 1.0) }'); else K=$(awk -v m="$MU_R" 'BEGIN { printf "%.6f", m * (3.0 - 1.0) }'); fi
   name="${tag}_${mode}_${var}_N${N}_r${rep}"
-  make_input "$name" "$mode" "$N" "$K" "$dep" "$had"
+  # the checkpoint is written at the last MEASURED step (the final step runs finish() and the engine does not reach a
+  # checkpoint at the step count itself); the restart then continues from that population
+  if [ "$ckpt" = "ckpt" ]; then make_input "$name" "$mode" "$N" "$K" "$dep" "$had" "$((PERF_WARMUP + PERF_MEASURED))"; else make_input "$name" "$mode" "$N" "$K" "$dep" "$had"; fi
   ( cd "$WD/$name" && "$EXE" -input input.toml > run.log 2>&1 ); rc=$?
   n_run=$((n_run + 1))
   custom=$(timer_per_step "$WD/$name/run.log" "Custom" "$blocks_skip" "$PERF_MEASURED")
@@ -181,6 +190,59 @@ run_one() {
   echo "run $name: Custom $custom ms/step ($ns ns per ion-step), pusher $pusher, deposit $deposit, total $total ms (progress avg $progress ms), pairs $((npm + npp)), ok $ok, timers_ok $timers_ok, exit $rc"
 }
 
+# run_restart_pic <source run name> <tag> <mode> <N> <rep>: the M5 reference on the end-loaded population (F8). The source
+# run (deposit on, hadronic on) wrote <name>.ckpt/ at its last step; its checkpoint directory is copied, the setup block of
+# the checkpoint's meta file (which Entity's resume takes as the immutable setup: simulation.cpp) gets hadronic.enabled =
+# false, and entity.xc -restart continues for steps_total more steps with the stock pusher + deposit only. The timers
+# are read exactly as for a fresh run (warm-up discarded, measured steps summed). The population (ions + pairs with their
+# weights, phase space and payloads) is the source run's end state: the species counts of the last block are reported.
+run_restart_pic() {
+  local src="$1" tag="$2" mode="$3" N="$4" rep="$5"
+  local name="${tag}_${mode}_warm_N${N}_r${rep}" dir ckdir meta step rc custom pusher deposit total progress nblocks timers_ok ok nion npm npp
+  dir="$WD/$name"; rm -rf "$dir"; mkdir -p "$dir"
+  ckdir=$(ls -d "$WD/$src"/*.ckpt 2>/dev/null | head -1)
+  n_run=$((n_run + 1))
+  if [ -z "$ckdir" ]; then
+    echo "FAIL: $name: no checkpoint directory under $WD/$src (the source run must write one at its last step)"; n_fail=$((n_fail + 1))
+    echo "$PERF_LABEL,$tag,$mode,warm,$N,$rep,$PERF_MEASURED,nan,nan,nan,nan,nan,nan,0,0,0,0,3" >> "$CSV"; return
+  fi
+  cp -R "$ckdir" "$dir/restart.ckpt"
+  meta=$(ls "$dir/restart.ckpt"/meta-*.toml 2>/dev/null | sort | tail -1)
+  if [ -z "$meta" ]; then
+    echo "FAIL: $name: no meta file in $ckdir"; n_fail=$((n_fail + 1))
+    echo "$PERF_LABEL,$tag,$mode,warm,$N,$rep,$PERF_MEASURED,nan,nan,nan,nan,nan,nan,0,0,0,0,3" >> "$CSV"; return
+  fi
+  # the setup block of the checkpoint's meta is what the resumed run takes: hadronic off there
+  sed -e 's/^\( *hadronic\.enabled *= *\)true/\1false/' "$meta" > "$meta.tmp" && mv "$meta.tmp" "$meta"
+  grep -q 'hadronic\.enabled *= *false' "$meta" || { echo "FAIL: $name: could not disable hadronic in $meta"; n_fail=$((n_fail + 1)); return; }
+  step=$(ls "$dir/restart.ckpt" | sed -n 's/^step-\([0-9]*\)\.bp$/\1/p' | sort -n | tail -1)
+  # the restart input: the source run's input with the runtime extended by steps_total steps and the read path set
+  # the restart input: the source run's input with hadronic disabled (the generator re-reads its [setup] from the input
+  # file as well), the runtime extended by steps_total steps, the read path set, no further checkpoint
+  awk -v rt="$(awk -v s="$steps_total" -v st="$step" -v dt="$DT" 'BEGIN { printf "%.1f", (s + st) * dt }')" -v rd="$dir/restart.ckpt" '
+    /^ *runtime *=/ { print "  runtime = " rt; next }
+    /^ *hadronic\.enabled *=/ { print "  hadronic.enabled    = false"; next }
+    /^\[checkpoint\]/ { print; print "  read_path = \"" rd "\""; print "  write_path = \"" rd "-cont\""; print "  interval = 100000000"; skip = 1; next }
+    skip == 1 && /^ *interval *=/ { skip = 0; next }
+    { print }' "$WD/$src/input.toml" > "$dir/input.toml"
+  ( cd "$dir" && "$EXE" -input input.toml -restart > run.log 2>&1 ); rc=$?
+  custom=$(timer_per_step "$dir/run.log" "Custom" "$blocks_skip" "$PERF_MEASURED")
+  pusher=$(timer_per_step "$dir/run.log" "ParticlePusher" "$blocks_skip" "$PERF_MEASURED")
+  deposit=$(timer_per_step "$dir/run.log" "CurrentDeposit" "$blocks_skip" "$PERF_MEASURED")
+  total=$(timer_per_step "$dir/run.log" "Total" "$blocks_skip" "$PERF_MEASURED")
+  progress=$(progress_avg_ms "$dir/run.log" "$blocks_skip" "$PERF_MEASURED")
+  nblocks=$(count_blocks "$dir/run.log")
+  timers_ok=1; ok=1
+  # a resumed run prints its blocks from start_step: the same count as a fresh run of steps_total steps
+  if [ "$nblocks" -ne $((blocks_skip + PERF_MEASURED + 1)) ] || [ "$pusher" = "nan" ] || [ "$total" = "nan" ]; then timers_ok=0; fi
+  nion=$(species_count "$dir/run.log" "ion"); npm=$(species_count "$dir/run.log" "e-"); npp=$(species_count "$dir/run.log" "e+")
+  if [ $rc -ne 0 ]; then ok=0; echo "FAIL: $name: entity.xc -restart exit $rc"; n_fail=$((n_fail + 1)); fi
+  if [ $rc -eq 0 ] && [ $timers_ok -ne 1 ]; then ok=0; echo "FAIL: $name: timer output incomplete ($nblocks blocks, expected $((blocks_skip + PERF_MEASURED + 1)))"; n_fail=$((n_fail + 1)); fi
+  if [ $rc -eq 0 ] && grep -q "hadronic.enabled *= *true\|bh_proto: table:" "$dir/run.log"; then ok=0; echo "FAIL: $name: the restarted run still has the hadronic stage enabled"; n_fail=$((n_fail + 1)); fi
+  echo "$PERF_LABEL,$tag,$mode,warm,$N,$rep,$PERF_MEASURED,$custom,nan,$pusher,$deposit,$total,$progress,$nion,$((npm + npp)),$ok,$timers_ok,$rc" >> "$CSV"
+  echo "run $name (restart of $src at step $step, hadronic off): pusher $pusher ms/step, deposit $deposit, total $total ms, ions $nion, pairs $((npm + npp)), ok $ok, timers_ok $timers_ok, exit $rc"
+}
+
 for N in $PERF_N; do
   reps="$PERF_REPEATS"; [ "$N" = "$N_TOP" ] && reps="$PERF_REPEATS_TOP"
   for mode in $PERF_MODES; do
@@ -195,9 +257,11 @@ for N in $PERF_N; do
   if [ "$PERF_M5" = "1" ]; then
     rep=1
     while [ $rep -le "$reps" ]; do
-      run_one none warm "$N" "$rep" true false m5pic        # stock pusher + deposit, hadronic off
-      run_one poisson warm "$N" "$rep" true true m5poisson  # pair-loaded population (a = 1, physical pair count), deposit on
-      run_one budget warm "$N" "$rep" true true m5budget    # the contract's budget run with deposit on (few packets with t_latency = 0)
+      run_one none warm "$N" "$rep" true false m5pic             # stock pusher + deposit, hadronic off, ions only (the PIC floor)
+      run_one poisson warm "$N" "$rep" true true m5poisson ckpt  # pair-loaded population (a = 1), deposit on, hadronic on: diagnostic
+      run_one budget warm "$N" "$rep" true true m5budget ckpt    # the contract's budget run with deposit on (t_latency = 0): diagnostic
+      run_restart_pic "m5poisson_poisson_warm_N${N}_r${rep}" m5poisson_pic poisson "$N" "$rep"  # F8: the END population, hadronic off
+      run_restart_pic "m5budget_budget_warm_N${N}_r${rep}" m5budget_pic budget "$N" "$rep"
       rep=$((rep + 1))
     done
   fi
