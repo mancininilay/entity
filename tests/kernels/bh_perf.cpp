@@ -36,10 +36,29 @@
 #include "perf/bh_perf_kernel_variant.hpp"
 #include "perf/bh_perf_tables.h"
 
+// F6 (profiling): NVTX ranges around the phases of every launch on CUDA builds (nsys --trace=nvtx picks them up;
+// header-only NVTX3 of the CUDA toolkit, no library to link); no-ops elsewhere
+#if defined(KOKKOS_ENABLE_CUDA)
+  #include <nvtx3/nvToolsExt.h>
+  #define BH_PERF_RANGE_PUSH(name) nvtxRangePushA(name)
+  #define BH_PERF_RANGE_POP()      nvtxRangePop()
+#else
+  #define BH_PERF_RANGE_PUSH(name) ((void)0)
+  #define BH_PERF_RANGE_POP()      ((void)0)
+#endif
+
 namespace {
 
   namespace khp = kernel::hadronic_perf;
   double identity_residual_rel(const kh::LossLedger& C);
+
+  // F6: a configuration filter for the profiled invocations: `variants --mode event|continuous --kernel production|const|float`
+  // runs ONE (mode, kernel) configuration so that a profiler's capture window covers exactly that configuration's launches
+  std::string g_sel_mode, g_sel_kernel;
+
+  bool selected(const char* mode, const char* kernel) {
+    return (g_sel_mode.empty() || g_sel_mode == mode) && (g_sel_kernel.empty() || g_sel_kernel == kernel);
+  }
 
   /* ------------------------------------------------------------------------ */
   /* M3: the production kernel against the two harness table variants           */
@@ -49,10 +68,12 @@ namespace {
   template <class KernelT>
   double timed_launch(const char* label, KernelT& kern, Ions& ions, Pairs& pairs, kh::LossLedger& L) {
     L = kh::LossLedger {};
+    BH_PERF_RANGE_PUSH(label); // "<label>": the kernel + its ledger reduction (one parallel_reduce) + the fence
     const auto t0 = std::chrono::steady_clock::now();
     Kokkos::parallel_reduce(label, CreateParticleRangePolicy<Dim::_1D>({ 0u }, { ions.n }), kern, Kokkos::Sum<kh::LossLedger>(L));
     Kokkos::fence();
     const double s = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+    BH_PERF_RANGE_POP();
     (void)pairs;
     return s;
   }
@@ -96,15 +117,19 @@ namespace {
     double              worst_identity = 0.0;
     for (int l = 0; l < warm + measured; ++l) {
       // matched work: the same ion states and the same random stream on every launch, for every kernel
+      BH_PERF_RANGE_PUSH("bh_perf_restore_and_reseed");
       snap.restore(ions);
       kern.pool = random_number_pool_t(seed_base + static_cast<unsigned>(l));
       pairs.recycle();
       auto targ  = pairs.targets();
       kern.pairs = targ;
+      BH_PERF_RANGE_POP();
       const double s = timed_launch(label, kern, ions, pairs, L);
+      BH_PERF_RANGE_PUSH("bh_perf_finish_readback");
       const auto   f0 = std::chrono::steady_clock::now();
       pairs.finish(targ); // the spawn-counter readback (deep_copy device -> host)
       const double f = std::chrono::duration<double>(std::chrono::steady_clock::now() - f0).count();
+      BH_PERF_RANGE_POP();
       worst_identity = std::max(worst_identity, identity_residual_rel(L)); // every launch, warm-up included
       if (l >= warm) {
         t.push_back(s);
@@ -161,6 +186,10 @@ namespace {
              Tc.I0, Tc.J0, Tc.D0, Tc.eps0, Tf.n, Tf.gamma_min, Tf.gamma_max));
     std::vector<VariantRow> rows;
     for (const int mode : { CONTINUOUS, EVENT }) {
+      const char* mname = mode == EVENT ? "event" : "continuous";
+      if (!selected(mname, "production") && !selected(mname, "const") && !selected(mname, "float")) {
+        continue;
+      }
       auto prm = params(coeff, DELTA, 1.0, 0.01, 8);
       prm.mode = mode;
       if (mode == CONTINUOUS) {
@@ -179,25 +208,28 @@ namespace {
                 fmt("M3 %s %s: worst per-launch ledger identity residual / E_drag (warm-up included)", r.mode.c_str(), r.kernel.c_str()),
                 r.identity_worst_launch, 1.0e-12);
       };
-      {
+      if (selected(mname, "production")) {
         KP kern { ions.arr, ions.mu_d, T.dev, prm, pairs.targets(), pool };
         rows.push_back(run_variant("production", mode == EVENT ? "bh_perf_production_event" : "bh_perf_production_continuous", T, kern,
                                    ions, pairs, snap, seed_base, mode, warm, measured));
         gate(rows.back());
       }
-      {
+      if (selected(mname, "const")) {
         KC kern { ions.arr, ions.mu_d, Tc, prm, pairs.targets(), pool };
         rows.push_back(run_variant("(i) constants", mode == EVENT ? "bh_perf_variant_const_event" : "bh_perf_variant_const_continuous", T,
                                    kern, ions, pairs, snap, seed_base, mode, warm, measured));
         gate(rows.back());
       }
-      {
+      if (selected(mname, "float")) {
         KF kern { ions.arr, ions.mu_d, Tf, prm, pairs.targets(), pool };
         rows.push_back(run_variant("(ii) float lerp", mode == EVENT ? "bh_perf_variant_float_event" : "bh_perf_variant_float_continuous", T,
                                    kern, ions, pairs, snap, seed_base, mode, warm, measured));
         gate(rows.back());
       }
     }
+    std::printf("(perf) M3 launches per configuration: %d warm-up + %d timed = %d parallel_reduce launches of the kernel, %d configurations "
+                "selected (profiler capture windows are per configuration)\n",
+                warm, measured, warm + measured, static_cast<int>(rows.size()));
     std::printf("(perf) M3 %-10s %-16s %12s %12s %10s %12s %12s %10s %10s %10s\n", "mode", "kernel", "median ms", "min ms", "ns/ion",
                 "<K>/K0", "identity", "events", "spawned", "finish ms");
     for (const auto& r : rows) {
@@ -244,6 +276,57 @@ namespace {
                   "with the precision; harness variants, not physics]\n",
                   m, tp > 0.0 ? (tp - tc) / tp : 0.0, tp > 0.0 ? (tp - tf) / tp : 0.0);
     }
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* F6: the RNG-pool share, measured in isolation                              */
+  /* ------------------------------------------------------------------------ */
+  // the only RNG work of the production kernel per ion is get_state / one or a few draws / free_state; this kernel does
+  // exactly that (one draw, written to an array so that it is not optimised away) over N threads: its time is an
+  // upper bound of the pool's share of the stage at equal thread count (attribution method of the README)
+  struct RngPoolOnly {
+    random_number_pool_t pool;
+    array_t<real_t*>     out;
+
+    Inline void operator()(const npart_t p) const {
+      auto gen = pool.get_state();
+      out(p)   = static_cast<real_t>(gen.drand(0.0, 1.0));
+      pool.free_state(gen);
+    }
+  };
+
+  void test_rngpool(npart_t N) {
+    const int warm = 20, measured = 100;
+    std::printf("\n=== M3 attribution: RNG pool acquire / one draw / release over N = %u threads, %d warm-up and %d timed launches "
+                "(an upper bound of the pool's share of the stage) ===\n",
+                (unsigned)N, warm, measured);
+    array_t<real_t*>    out { "rng_out", N };
+    std::vector<double> t;
+    double              checksum = 0.0;
+    for (int l = 0; l < warm + measured; ++l) {
+      random_number_pool_t pool(9000u + static_cast<unsigned>(l));
+      RngPoolOnly          k { pool, out };
+      BH_PERF_RANGE_PUSH("bh_perf_rngpool_only");
+      const auto t0 = std::chrono::steady_clock::now();
+      Kokkos::parallel_for("bh_perf_rngpool_only", CreateParticleRangePolicy<Dim::_1D>({ 0u }, { N }), k);
+      Kokkos::fence();
+      const double s = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+      BH_PERF_RANGE_POP();
+      if (l >= warm) {
+        t.push_back(s);
+      }
+    }
+    {
+      auto h = Kokkos::create_mirror_view(out);
+      Kokkos::deep_copy(h, out);
+      for (npart_t p = 0; p < N; p += std::max<npart_t>(1, N / 1024)) {
+        checksum += static_cast<double>(h(p));
+      }
+    }
+    std::sort(t.begin(), t.end());
+    std::printf("(perf) M3 rngpool: median %.4f ms, min %.4f ms, %.3f ns per thread (checksum %.6g)\n", 1.0e3 * t[t.size() / 2],
+                1.0e3 * t.front(), 1.0e9 * t[t.size() / 2] / static_cast<double>(N), checksum);
+    verdict(std::isfinite(checksum), "M3 rngpool: the draws are finite", checksum, 0.0);
   }
 
   struct StrideRow {
@@ -336,9 +419,17 @@ auto main(int argc, char* argv[]) -> int {
     auto                     T = make_tables();
     std::vector<std::string> groups;
     for (int i = 1; i < argc; ++i) {
-      if (argv[i][0] != '-') {
+      const std::string a(argv[i]);
+      if (a == "--mode" && i + 1 < argc) {
+        g_sel_mode = argv[++i];
+      } else if (a == "--kernel" && i + 1 < argc) {
+        g_sel_kernel = argv[++i];
+      } else if (argv[i][0] != '-') {
         groups.emplace_back(argv[i]);
       }
+    }
+    if (!g_sel_mode.empty() || !g_sel_kernel.empty()) {
+      std::printf("bh_perf: configuration filter: mode '%s', kernel '%s'\n", g_sel_mode.c_str(), g_sel_kernel.c_str());
     }
     auto want = [&groups](const char* g) {
       return groups.empty() || std::find(groups.begin(), groups.end(), std::string(g)) != groups.end();
@@ -350,11 +441,15 @@ auto main(int argc, char* argv[]) -> int {
         N = static_cast<npart_t>(v);
       }
     }
+    std::printf("bh_perf: BH_PERF_N = %u (the A100 authorisation fixes 4194304 for M3 and M6; the job asserts this line)\n", (unsigned)N);
     if (want("stride")) {
       test_stride(T, N);
     }
     if (want("variants")) {
       test_variants(T, N);
+    }
+    if (want("rngpool")) {
+      test_rngpool(N);
     }
     std::printf("bh_perf summary: %d passed, %d failed\n", n_pass, n_fail);
     if (n_fail > 0 || n_pass == 0) {
