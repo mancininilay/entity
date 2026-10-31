@@ -24,7 +24,7 @@
  *        reported as the production reducer, not as an equal-payload comparison.
  *        Reset treatment: the atomic targets are zeroed before each timed
  *        repetition (outside the timed interval); the reducers need no reset.
- *        BH_REDUCTION_N accepts a space-separated list (the job passes M1's grid).
+ *        BH_REDUCTION_N accepts a space-separated list (the A100 job passes 2^22: M4 at 1e5, 1e6 and 2^22, not M1's grid).
  *
  * Conventions: the per-ion contribution is a deterministic pseudo-random
  * double in [0.5, 1.5) times a weight in [1, 2) (splitmix64 of the index), the
@@ -165,7 +165,7 @@ auto main(int argc, char* argv[]) -> int {
                 Kokkos::DefaultExecutionSpace().concurrency());
     const int reps = 20;
     std::vector<std::uint64_t> counts = { static_cast<std::uint64_t>(100000), static_cast<std::uint64_t>(1000000) };
-    if (const char* env = std::getenv("BH_REDUCTION_N")) { // one count or a space-separated list (the job: M1's grid)
+    if (const char* env = std::getenv("BH_REDUCTION_N")) { // one count or a space-separated list (the A100 job: 2^22, added to 1e5 and 1e6)
       std::string        all(env);
       std::size_t        pos = 0;
       while (pos < all.size()) {

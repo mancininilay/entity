@@ -47,7 +47,10 @@
 # value: progressbar.h averages a history of up to 1000 steps, so the driver reports it as progress_avg_ms (the
 # printed running average at the last measured block, carrying the warm-up history) and never as the step cost;
 # the whole-step cost is the sum of the named timers in the block ("Total"), reported as total_ms_per_step.
-# Times in the CSV are milliseconds per step and ns per ion-step.
+# Times in the CSV are milliseconds per step and ns per ion-step. npart_pairs_end counts the pair-species macroparticles
+# (e- + e+, i.e. leptons; physical pairs are half of it): exact from the ledger row for hadronic-on runs, the %.2e-rounded
+# diagnostics counts otherwise (the restart rows; npart_ion_end is always the rounded diagnostics count, e.g. 65500 for
+# 65536 ions).
 # Validity (Codex 1's closure C2, 2026-10-31): EVERY timing column of a row is gated in BOTH paths (fresh runs and
 # the M5 restarts): Custom, pusher, deposit, Total and progress_avg_ms must each have exactly the measured window's
 # samples, all finite (else the run is an infrastructure failure, timers_ok = 0); a deposit-enabled run must also have
@@ -208,7 +211,7 @@ run_one() {
   fi
   ns=$(awk -v c="$custom" -v n="$N" 'BEGIN { if (c == "nan" || n == 0) print "nan"; else printf "%.4f", c * 1.0e6 / n }')
   echo "$PERF_LABEL,$tag,$mode,$var,$N,$rep,$PERF_MEASURED,$custom,$ns,$pusher,$deposit,$total,$progress,$nion,$((npm + npp)),$ok,$timers_ok,$rc" >> "$CSV"
-  echo "run $name: Custom $custom ms/step ($ns ns per ion-step), pusher $pusher, deposit $deposit, total $total ms (progress avg $progress ms), pairs $((npm + npp)), ok $ok, timers_ok $timers_ok, exit $rc"
+  echo "run $name: Custom $custom ms/step ($ns ns per ion-step), pusher $pusher, deposit $deposit, total $total ms (progress avg $progress ms), leptons (e- + e+) $((npm + npp)), ok $ok, timers_ok $timers_ok, exit $rc"
 }
 
 # run_restart_pic <source run name> <tag> <mode> <N> <rep>: the M5 reference on the end-loaded population (F8). The source
@@ -265,7 +268,7 @@ run_restart_pic() {
   if [ $rc -eq 0 ] && [ $timers_ok -ne 1 ]; then ok=0; echo "INFRA: $name: timer output incomplete or non-finite ($nblocks blocks, expected $((blocks_skip + PERF_MEASURED + 1)); Custom $custom, pusher $pusher, deposit $deposit, total $total, progress $progress)"; n_infra=$((n_infra + 1)); fi
   if [ $rc -eq 0 ] && grep -q "hadronic.enabled *= *true\|bh_proto: table:" "$dir/run.log"; then ok=0; echo "INFRA: $name: the restarted run still has the hadronic stage enabled"; n_infra=$((n_infra + 1)); fi
   echo "$PERF_LABEL,$tag,$mode,warm,$N,$rep,$PERF_MEASURED,$custom,n/a,$pusher,$deposit,$total,$progress,$nion,$((npm + npp)),$ok,$timers_ok,$rc" >> "$CSV"
-  echo "run $name (restart of $src at step $step, hadronic off): pusher $pusher ms/step, deposit $deposit, total $total ms, ions $nion, pairs $((npm + npp)), ok $ok, timers_ok $timers_ok, exit $rc"
+  echo "run $name (restart of $src at step $step, hadronic off): pusher $pusher ms/step, deposit $deposit, total $total ms, ions $nion, leptons (e- + e+) $((npm + npp)) [%.2e-rounded diagnostics], ok $ok, timers_ok $timers_ok, exit $rc"
 }
 
 for N in $PERF_N; do
