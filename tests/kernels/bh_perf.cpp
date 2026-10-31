@@ -18,13 +18,19 @@
  *           post-step (ledger accumulation) which is not part of this kernel measurement.
  *   stride  M6: the stage run every n steps with dt_BH = n dt, n in {1, 4, 16}, at fixed
  *           physical time, for the event mode (delta, a = 1) and the continuous mode
- *           (source none), N ions at Gamma_p0 = 3 (BH_PERF_N, default 65536; the A100
- *           job sets 2^22): wall time per launch and per unit physical time (the
- *           saving n gives), <K> at the end against the ODE (event: the
- *           Jensen-corrected ODE, 4 s.e.; continuous: the plain ODE, relative), the
- *           ledger identity (1e-12 x E_drag) on every run. Measurement, not a
- *           registered physics test: the only verdicts are the identity and the
- *           4 s.e. cooling check of the contract.
+ *           with its three sources (none; poisson a = 1; budget), N ions at Gamma_p0 =
+ *           3 (BH_PERF_N, default 65536; the A100 job sets the contract's 2^22): the
+ *           ACCUMULATED STAGE-LAUNCH TIME (kernel + reduction + spawn readback of every
+ *           launch, fenced) per launch and per unit physical time, which is the stride
+ *           saving (the whole-harness time, allocation and host readbacks included, is
+ *           printed beside it and is not the saving: Codex 1 F9), <K> at the end
+ *           against the ODE (event: the Jensen-corrected ODE, the contract's 4 s.e.
+ *           verdict; continuous: the plain ODE, relative, REPORTED WITHOUT A VERDICT:
+ *           a deterministic ensemble has no sampling error and the finite-step
+ *           allowance is a contract clarification pending with Nilay), the ledger
+ *           identity (1e-12 x E_drag) on every run. Measurement, not a registered
+ *           physics test; the n = 16 event exceedance is an observed finite-step
+ *           discrepancy, retained, and no admissibility rule is inferred from it.
  * The helpers (tables, ions, pairs, launch, cooling_run, reference) are those of
  * tests/kernels/bh_event.cpp, included with its main compiled out. Nothing here
  * touches the module's production source.
@@ -330,21 +336,97 @@ namespace {
   }
 
   struct StrideRow {
-    int    mode;
-    int    n;
-    int    launches;
-    double seconds, seconds_per_launch, meanK_over_K0, z_or_rel, identity_rel;
-    bool   identity_ok;
+    int         mode, source;
+    int         n;
+    int         launches;
+    double      seconds, launch_seconds, launch_seconds_per_launch, meanK_over_K0, z_or_rel, identity_rel;
+    bool        identity_ok;
+    std::string name;
   };
 
+  constexpr int SRC_NONE    = static_cast<int>(kh::PairSource::None);
+  constexpr int SRC_POISSON = static_cast<int>(kh::PairSource::Poisson);
+  constexpr int SRC_BUDGET  = static_cast<int>(kh::PairSource::Budget);
+
+  // M6 run: cooling_run of bh_event.cpp with the continuous source selectable and the stage-launch time accumulated
+  // (every launch(): kernel + ledger reduction + spawn readback, fenced); the pairs are recycled outside the timing
+  struct StrideRun {
+    Series S;
+    double launch_seconds { 0.0 };
+  };
+
+  StrideRun stride_run(Tables& T, int mode, int source, double coeff, double dt, double Gp0, npart_t N, int n_max,
+                       int out_every, std::uint64_t seed, double eta_u) {
+    const auto t0 = std::chrono::steady_clock::now();
+    StrideRun           R;
+    Series&             S = R.S;
+    Ions                ions(N, 1.0);
+    std::vector<double> K0v(N, K_of_gamma(Gp0));
+    ions.set_all(K0v);
+    S.N     = N;
+    S.dt    = dt;
+    S.coeff = coeff;
+    S.a     = 1.0;
+    S.K0    = K0v[0];
+    Pairs pairs(static_cast<npart_t>(std::max<std::size_t>(200000, static_cast<std::size_t>(N) * 2)));
+    auto  prm = params(coeff, DELTA, 1.0, 0.01, 8);
+    prm.dt    = dt;
+    prm.mode  = mode;
+    if (mode == CONTINUOUS) {
+      prm.source = source; // none, poisson or budget (r_th_factor 10, f_r 0.02, t_latency 0: the kernel defaults)
+      prm.eta_u  = eta_u;
+    }
+    random_number_pool_t pool(seed);
+    HostLedger           H;
+    auto record = [&](int n) {
+      const auto Ks = ions.K();
+      double     m  = 0.0;
+      for (const double k : Ks) {
+        m += k;
+      }
+      m /= static_cast<double>(N);
+      double v = 0.0;
+      for (const double k : Ks) {
+        v += (k - m) * (k - m);
+      }
+      v /= static_cast<double>(N - 1);
+      S.t.push_back(static_cast<double>(n) * dt);
+      S.meanK.push_back(m);
+      S.varK.push_back(v);
+    };
+    record(0);
+    int n = 0;
+    while (n < n_max) {
+      const auto l0 = std::chrono::steady_clock::now();
+      H.add(launch(ions, pairs, T, prm, pool, static_cast<double>(n + 1) * dt)); // fenced inside; the ledger returns on the host
+      R.launch_seconds += std::chrono::duration<double>(std::chrono::steady_clock::now() - l0).count();
+      pairs.recycle();
+      ++n;
+      if (n % out_every == 0) {
+        record(n);
+      }
+    }
+    if (S.t.back() != static_cast<double>(n) * dt) {
+      record(n);
+    }
+    S.n_launch = n;
+    S.C        = H.C;
+    S.seconds  = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+    return R;
+  }
+
   double identity_residual_rel(const kh::LossLedger& C) {
-    // E_drag - [(E_pairs - E_absorbed) + E_round + E_stochastic + E_lost_nopairs] (debt and exports are 0 here)
+    // E_drag - [(E_pairs - E_absorbed) + E_round + E_stochastic + debt_outstanding + E_exported + E_lost_nopairs]: the
+    // full identity of bh_event.cpp's HostLedger::residual (the budget source leaves a debt snapshot at the end of a run;
+    // the event mode and the none / poisson sources have debt and exports 0)
     kh::dd r;
     r.add(C.E_drag.value());
     r.sub(C.E_pairs);
     r.add(C.E_absorbed);
     r.sub(C.E_round);
     r.sub(C.E_stochastic);
+    r.sub(C.debt_outstanding);
+    r.sub(C.E_exported);
     r.sub(C.E_lost_nopairs);
     const double E = std::abs(C.E_drag.value());
     return E > 0.0 ? std::abs(r.value()) / E : std::abs(r.value());
@@ -355,56 +437,73 @@ namespace {
     const double coeff = coeff_for_lambda(T, Gp0, lambda1, 1.0);
     const int    n1    = static_cast<int>(t_end / DT); // launches at n = 1
     std::printf("\n=== M6 stride: the stage every n steps with dt_BH = n dt, n in {1, 4, 16}, t_end = %g, Gamma_p0 = 3, N = %u, "
-                "lambda = %.3g at n = 1 (event delta a = 1; continuous none) ===\n",
+                "lambda = %.3g at n = 1; event (delta, a = 1) and continuous with source none / poisson (a = 1) / budget; "
+                "the saving is the ratio of ACCUMULATED STAGE-LAUNCH times at equal physical time ===\n",
                 t_end, (unsigned)N, lambda1);
+    std::printf("(perf) M6 BH_PERF_N = %u\n", (unsigned)N);
+    struct Cfg {
+      int         mode, source;
+      const char* name;
+    };
+    const std::vector<Cfg>  cfgs = { { EVENT, SRC_NONE, "event" }, { CONTINUOUS, SRC_NONE, "cont-none" },
+                                     { CONTINUOUS, SRC_POISSON, "cont-poisson" }, { CONTINUOUS, SRC_BUDGET, "cont-budget" } };
     std::vector<StrideRow> rows;
-    for (const int mode : { EVENT, CONTINUOUS }) {
+    for (const auto& c : cfgs) {
       for (const int n : { 1, 4, 16 }) {
         const int  launches = n1 / n;
-        const auto S = cooling_run(T, mode, DELTA, 1.0, 0.01, coeff, DT * n, Gp0, N, 0.0, launches, std::max(1, launches / 10),
-                                   77000u + static_cast<unsigned>(10 * n + mode), 1.0e-5);
-        auto       d2 = std::function<double(double)>([&](double G) { return d2_delta(T, G); });
-        const auto R  = reference(T, S, d2);
-        StrideRow  row;
-        row.mode               = mode;
-        row.n                  = n;
-        row.launches           = S.n_launch;
-        row.seconds            = S.seconds;
-        row.seconds_per_launch = S.n_launch > 0 ? S.seconds / S.n_launch : 0.0;
-        row.meanK_over_K0      = S.meanK.back() / S.K0;
-        row.identity_rel       = identity_residual_rel(S.C);
-        row.identity_ok        = row.identity_rel <= 1.0e-12;
-        const std::size_t i    = S.t.size() - 1;
-        if (mode == EVENT) {
+        const auto R = stride_run(T, c.mode, c.source, coeff, DT * n, Gp0, N, launches, std::max(1, launches / 10),
+                                  77000u + static_cast<unsigned>(10 * n + c.mode + 100 * c.source), 1.0e-5);
+        const Series& S = R.S;
+        auto          d2  = std::function<double(double)>([&](double G) { return d2_delta(T, G); });
+        const auto    Ref = reference(T, S, d2);
+        StrideRow     row;
+        row.mode                      = c.mode;
+        row.source                    = c.source;
+        row.name                      = c.name;
+        row.n                         = n;
+        row.launches                  = S.n_launch;
+        row.seconds                   = S.seconds;
+        row.launch_seconds            = R.launch_seconds;
+        row.launch_seconds_per_launch = S.n_launch > 0 ? R.launch_seconds / S.n_launch : 0.0;
+        row.meanK_over_K0             = S.meanK.back() / S.K0;
+        row.identity_rel              = identity_residual_rel(S.C);
+        row.identity_ok               = row.identity_rel <= 1.0e-12;
+        const std::size_t i           = S.t.size() - 1;
+        if (c.mode == EVENT) {
           const double se = std::sqrt(S.varK[i] / static_cast<double>(S.N));
-          row.z_or_rel    = (S.meanK[i] - R.K_corr[i]) / se;
+          row.z_or_rel    = (S.meanK[i] - Ref.K_corr[i]) / se;
           verdict(std::abs(row.z_or_rel) <= 4.0,
-                  fmt("M6 event n = %d: <K>(t = %g) vs the Jensen-corrected ODE, |diff| / s.e. (contract: 4 s.e.)", n, S.t[i]),
+                  fmt("M6 event n = %d: <K>(t = %g) vs the Jensen-corrected ODE, |diff| / s.e. (contract: 4 s.e.; an exceedance is an "
+                      "observed finite-step discrepancy, retained)",
+                      n, S.t[i]),
                   std::abs(row.z_or_rel), 4.0);
         } else {
-          row.z_or_rel = S.meanK[i] / R.K_plain[i] - 1.0;
-          diag(fmt("M6 continuous n = %d: <K>(t = %g) / K_ODE,plain - 1 = %.3e (deterministic; the Euler step dt_BH = %g against dt_BH = 0.5)",
-                   n, S.t[i], row.z_or_rel, DT * n));
+          row.z_or_rel = S.meanK[i] / Ref.K_plain[i] - 1.0;
+          diag(fmt("M6 %s n = %d: <K>(t = %g) / K_ODE,plain - 1 = %.3e [reported, no verdict: deterministic ensemble (Var K = %.2e K0^2), the "
+                   "finite-step allowance is a contract clarification pending with Nilay]; dt_BH = %g",
+                   c.name, n, S.t[i], row.z_or_rel, S.varK[i] / (S.K0 * S.K0), DT * n));
         }
-        verdict(row.identity_ok, fmt("M6 %s n = %d: ledger identity residual / E_drag", mode == EVENT ? "event" : "continuous", n),
-                row.identity_rel, 1.0e-12);
-        std::printf("(perf) M6 %-10s n = %2d: %5d launches in %8.3f s (%.3f ms per launch, %.3f ms per unit time), <K>/K0 = %.6f, "
-                    "events %llu, pairs %llu\n",
-                    mode == EVENT ? "event" : "continuous", n, S.n_launch, S.seconds, 1.0e3 * row.seconds_per_launch,
-                    1.0e3 * S.seconds / t_end, row.meanK_over_K0, S.C.n_events, S.C.n_spawned);
+        verdict(row.identity_ok, fmt("M6 %s n = %d: ledger identity residual / E_drag", c.name, n), row.identity_rel, 1.0e-12);
+        std::printf("(perf) M6 %-12s n = %2d: %5d launches; stage-launch time %8.3f s (%.3f ms per launch, %.3f ms per unit time); "
+                    "whole harness %8.3f s; <K>/K0 = %.6f, events %llu, pairs %llu, substeps %llu\n",
+                    c.name, n, S.n_launch, R.launch_seconds, 1.0e3 * row.launch_seconds_per_launch, 1.0e3 * R.launch_seconds / t_end,
+                    S.seconds, row.meanK_over_K0, S.C.n_events, S.C.n_spawned, S.C.n_substeps);
         rows.push_back(row);
       }
     }
-    std::printf("(perf) M6 summary (saving = stage time at n = 1 / stage time at n, same physical time):\n");
+    std::printf("(perf) M6 summary (saving = accumulated stage-launch time at n = 1 / at n, same physical time; the whole-harness ratio "
+                "beside it is NOT the saving):\n");
     for (const auto& r : rows) {
-      double t1 = 0.0;
+      double t1 = 0.0, w1 = 0.0;
       for (const auto& q : rows) {
-        if (q.mode == r.mode && q.n == 1) {
-          t1 = q.seconds;
+        if (q.mode == r.mode && q.source == r.source && q.n == 1) {
+          t1 = q.launch_seconds;
+          w1 = q.seconds;
         }
       }
-      std::printf("(perf) M6 %-10s n = %2d: saving %.2f x, <K>/K0 %.6f, %s %+.3e, identity %.2e\n", r.mode == EVENT ? "event" : "continuous",
-                  r.n, r.seconds > 0.0 ? t1 / r.seconds : 0.0, r.meanK_over_K0, r.mode == EVENT ? "z" : "rel", r.z_or_rel, r.identity_rel);
+      std::printf("(perf) M6 %-12s n = %2d: saving %.2f x (whole-harness ratio %.2f x), <K>/K0 %.6f, %s %+.3e, identity %.2e\n", r.name.c_str(),
+                  r.n, r.launch_seconds > 0.0 ? t1 / r.launch_seconds : 0.0, r.seconds > 0.0 ? w1 / r.seconds : 0.0, r.meanK_over_K0,
+                  r.mode == EVENT ? "z" : "rel", r.z_or_rel, r.identity_rel);
     }
   }
 
