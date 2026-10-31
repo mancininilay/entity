@@ -28,9 +28,11 @@
  *           saving (the whole-harness time, allocation and host readbacks included, is
  *           printed beside it and is not the saving: Codex 1 F9), <K> at the end
  *           against the ODE (event: the Jensen-corrected ODE, the contract's 4 s.e.
- *           verdict; continuous: the plain ODE, relative, REPORTED WITHOUT A VERDICT:
- *           a deterministic ensemble has no sampling error and the finite-step
- *           allowance is a contract clarification pending with Nilay), the ledger
+ *           verdict; continuous: DIAGNOSTIC ONLY by Nilay's decision of 2026-10-31,
+ *           contract revision 1.1: a deterministic ensemble has no sampling error, so
+ *           the rows report the relative deviation of <K>(t_end) between strides and
+ *           the convergence order in the stride, beside step 2's registered
+ *           dt-convergence order 1.0 +/- 0.3 (T5), with no pass/fail), the ledger
  *           identity (1e-12 x E_drag) on every run. Measurement, not a registered
  *           physics test; the n = 16 event exceedance is an observed finite-step
  *           discrepancy, retained, and no admissibility rule is inferred from it.
@@ -433,7 +435,7 @@ namespace {
     int         mode, source;
     int         n;
     int         launches;
-    double      seconds, launch_seconds, launch_seconds_per_launch, meanK_over_K0, z_or_rel, identity_rel;
+    double      seconds, launch_seconds, launch_seconds_per_launch, meanK_over_K0, z_or_rel, identity_rel, K_end;
     bool        identity_ok;
     std::string name;
   };
@@ -560,6 +562,7 @@ namespace {
         row.launch_seconds            = R.launch_seconds;
         row.launch_seconds_per_launch = S.n_launch > 0 ? R.launch_seconds / S.n_launch : 0.0;
         row.meanK_over_K0             = S.meanK.back() / S.K0;
+        row.K_end                     = S.meanK.back();
         row.identity_rel              = identity_residual_rel(S.C);
         row.identity_ok               = row.identity_rel <= 1.0e-12;
         const std::size_t i           = S.t.size() - 1;
@@ -573,8 +576,8 @@ namespace {
                   std::abs(row.z_or_rel), 4.0);
         } else {
           row.z_or_rel = S.meanK[i] / Ref.K_plain[i] - 1.0;
-          diag(fmt("M6 %s n = %d: <K>(t = %g) / K_ODE,plain - 1 = %.3e [reported, no verdict: deterministic ensemble (Var K = %.2e K0^2), the "
-                   "finite-step allowance is a contract clarification pending with Nilay]; dt_BH = %g",
+          diag(fmt("M6 %s n = %d: <K>(t = %g) / K_ODE,plain - 1 = %.3e [diagnostic only, no verdict (Nilay, 2026-10-31): deterministic "
+                   "ensemble (Var K = %.2e K0^2)]; dt_BH = %g",
                    c.name, n, S.t[i], row.z_or_rel, S.varK[i] / (S.K0 * S.K0), DT * n));
         }
         verdict(row.identity_ok, fmt("M6 %s n = %d: ledger identity residual / E_drag", c.name, n), row.identity_rel, 1.0e-12);
@@ -584,6 +587,34 @@ namespace {
                     S.seconds, row.meanK_over_K0, S.C.n_events, S.C.n_spawned, S.C.n_substeps);
         rows.push_back(row);
       }
+    }
+    // C5 (Nilay's decision of 2026-10-31, contract revision 1.1): the continuous rows are diagnostic only. For each source,
+    // the relative deviation of <K>(t_end) between strides and the convergence order in the stride (ratio 4 between
+    // successive strides): p = log(|K16 - K4| / |K4 - K1|) / log 4, reference-free (Richardson), and the order of the
+    // deviation from the plain ODE, log(|e16| / |e4|) / log 4 and log(|e4| / |e1|) / log 4, the form of step 2's T5;
+    // printed beside step 2's registered dt-convergence order 1.0 +/- 0.3 (first-order operator splitting), never judged
+    for (const auto& c : cfgs) {
+      if (c.mode != CONTINUOUS) {
+        continue;
+      }
+      double K[3] = { 0.0, 0.0, 0.0 }, e[3] = { 0.0, 0.0, 0.0 };
+      for (const auto& r : rows) {
+        if (r.mode == c.mode && r.source == c.source) {
+          const int j = r.n == 1 ? 0 : (r.n == 4 ? 1 : 2);
+          K[j]        = r.K_end;
+          e[j]        = r.z_or_rel;
+        }
+      }
+      const double d41 = K[1] / K[0] - 1.0, d164 = K[2] / K[1] - 1.0, d161 = K[2] / K[0] - 1.0;
+      const double num = std::abs(K[2] - K[1]), den = std::abs(K[1] - K[0]);
+      const double p_rich = (num > 0.0 && den > 0.0) ? std::log(num / den) / std::log(4.0) : std::numeric_limits<double>::quiet_NaN();
+      auto         ord    = [](double a, double b) {
+        return (a != 0.0 && b != 0.0) ? std::log(std::abs(a) / std::abs(b)) / std::log(4.0) : std::numeric_limits<double>::quiet_NaN();
+      };
+      std::printf("(perf) M6 %-12s DIAGNOSTIC (no verdict, Nilay 2026-10-31): <K>(t_end) relative deviation between strides: n4/n1 - 1 = %+.3e, "
+                  "n16/n4 - 1 = %+.3e, n16/n1 - 1 = %+.3e; convergence order in the stride (ratio 4): reference-free %.3f, vs the plain "
+                  "ODE %.3f (n4 -> n1) and %.3f (n16 -> n4); step 2's registered dt-convergence order of the continuous loss: 1.0 +/- 0.3 (T5)\n",
+                  c.name, d41, d164, d161, p_rich, ord(e[1], e[0]), ord(e[2], e[1]));
     }
     std::printf("(perf) M6 summary (saving = accumulated stage-launch time at n = 1 / at n, same physical time; the whole-harness ratio "
                 "beside it is NOT the saving):\n");
