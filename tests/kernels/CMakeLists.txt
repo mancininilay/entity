@@ -103,7 +103,9 @@ target_compile_definitions(test-kernels-bh_perf.xc PRIVATE BH_TEST_DATA_DIR="${C
 target_include_directories(test-kernels-bh_perf.xc PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_test(NAME "KERNELS::bh_perf_stride" COMMAND test-kernels-bh_perf.xc stride)
 add_test(NAME "KERNELS::bh_perf_variants" COMMAND test-kernels-bh_perf.xc variants)
-set_tests_properties("KERNELS::bh_perf_stride" "KERNELS::bh_perf_variants" PROPERTIES TIMEOUT 3600 ENVIRONMENT "BH_PERF_N=65536")
+add_test(NAME "KERNELS::bh_perf_rngpool" COMMAND test-kernels-bh_perf.xc rngpool)
+set_tests_properties("KERNELS::bh_perf_stride" "KERNELS::bh_perf_variants" "KERNELS::bh_perf_rngpool" PROPERTIES TIMEOUT 3600
+                     ENVIRONMENT "BH_PERF_N=65536;BH_QK_SOURCE=born")
 # the production build does not compile the variants in; the generated kernel copy is current
 add_test(NAME "KERNELS::bh_perf_isolation"
          COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/perf/check_perf_isolation.sh ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR})

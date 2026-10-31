@@ -98,7 +98,7 @@ if("${pgen}" STREQUAL "bh_proto")
   # step 7 (scaling harness, contract 2026-10-30): the Mac smoke of the perf driver at 2^16 ions, every mode and
   # variant plus the M5 reference runs, one repeat, 20 warm-up and 100 measured steps (numbers labelled as a smoke)
   add_test(NAME "HADRONIC::perf_smoke"
-           COMMAND ${CMAKE_COMMAND} -E env PERF_N=65536 PERF_REPEATS=1 PERF_WARMUP=20 PERF_MEASURED=100 PERF_DIAG=10
+           COMMAND ${CMAKE_COMMAND} -E env PERF_N=65536 PERF_REPEATS=1 PERF_WARMUP=20 PERF_MEASURED=100 PERF_DIAG=1
                    PERF_M5=1 PERF_LABEL=ctest-smoke
                    bash ${BH_SCRIPTS}/perf/perf_driver.sh ${BH_SINGLE_ENTITY} $<TARGET_FILE:bh_check>
                    ${BH_SCRIPTS}/perf/inputs ${BH_WORK}/perf_smoke)

@@ -1,0 +1,79 @@
+Test project /Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/builds/perf-single
+    Start  93: KERNELS::bh_perf_stride
+1/7 Test  #93: KERNELS::bh_perf_stride ..........***Failed   66.42 sec
+bh_perf: real_t = float, Kokkos default execution space = OpenMP
+bh_perf: BH_PERF_N = 65536 (the A100 authorisation fixes 4194304 for M3 and M6; the job asserts this line)
+
+=== M6 stride: the stage every n steps with dt_BH = n dt, n in {1, 4, 16}, t_end = 1000, Gamma_p0 = 3, N = 65536, lambda = 0.05 at n = 1; event (delta, a = 1) and continuous with source none / poisson (a = 1) / budget; the saving is the ratio of ACCUMULATED STAGE-LAUNCH times at equal physical time ===
+(perf) M6 BH_PERF_N = 65536
+PASS: M6 event n = 1: <K>(t = 1000) vs the Jensen-corrected ODE, |diff| / s.e. (contract: 4 s.e.; an exceedance is an observed finite-step discrepancy, retained) : 1.582487e+00 (tolerance 4.000e+00)
+PASS: M6 event n = 1: ledger identity residual / E_drag : 6.229457e-17 (tolerance 1.000e-12)
+(perf) M6 event        n =  1:  2000 launches; stage-launch time    8.954 s (4.477 ms per launch, 8.954 ms per unit time); whole harness    9.044 s; <K>/K0 = 0.905607, events 4540157, pairs 4540157, substeps 0
+PASS: M6 event n = 4: <K>(t = 1000) vs the Jensen-corrected ODE, |diff| / s.e. (contract: 4 s.e.; an exceedance is an observed finite-step discrepancy, retained) : 1.871442e+00 (tolerance 4.000e+00)
+PASS: M6 event n = 4: ledger identity residual / E_drag : 5.031897e-17 (tolerance 1.000e-12)
+(perf) M6 event        n =  4:   500 launches; stage-launch time    2.657 s (5.314 ms per launch, 2.657 ms per unit time); whole harness    2.748 s; <K>/K0 = 0.905597, events 4540640, pairs 4540640, substeps 0
+FAIL: M6 event n = 16: <K>(t = 1000) vs the Jensen-corrected ODE, |diff| / s.e. (contract: 4 s.e.; an exceedance is an observed finite-step discrepancy, retained) : 6.256577e+00 (tolerance 4.000e+00)
+PASS: M6 event n = 16: ledger identity residual / E_drag : 2.122595e-17 (tolerance 1.000e-12)
+(perf) M6 event        n = 16:   125 launches; stage-launch time    0.922 s (7.374 ms per launch, 0.922 ms per unit time); whole harness    0.929 s; <K>/K0 = 0.905461, events 4547344, pairs 4547344, substeps 0
+(diag) M6 cont-none n = 1: <K>(t = 1000) / K_ODE,plain - 1 = -1.381e-05 [reported, no verdict: deterministic ensemble (Var K = 3.94e-25 K0^2), the finite-step allowance is a contract clarification pending with Nilay]; dt_BH = 0.5
+PASS: M6 cont-none n = 1: ledger identity residual / E_drag : 0.000000e+00 (tolerance 1.000e-12)
+(perf) M6 cont-none    n =  1:  2000 launches; stage-launch time    8.925 s (4.463 ms per launch, 8.925 ms per unit time); whole harness    9.000 s; <K>/K0 = 0.905712, events 0, pairs 0, substeps 0
+(diag) M6 cont-none n = 4: <K>(t = 1000) / K_ODE,plain - 1 = -5.521e-05 [reported, no verdict: deterministic ensemble (Var K = 5.97e-25 K0^2), the finite-step allowance is a contract clarification pending with Nilay]; dt_BH = 2
+PASS: M6 cont-none n = 4: ledger identity residual / E_drag : 0.000000e+00 (tolerance 1.000e-12)
+(perf) M6 cont-none    n =  4:   500 launches; stage-launch time    2.207 s (4.414 ms per launch, 2.207 ms per unit time); whole harness    2.354 s; <K>/K0 = 0.905674, events 0, pairs 0, substeps 0
+(diag) M6 cont-none n = 16: <K>(t = 1000) / K_ODE,plain - 1 = -2.215e-04 [reported, no verdict: deterministic ensemble (Var K = 1.26e-25 K0^2), the finite-step allowance is a contract clarification pending with Nilay]; dt_BH = 8
+PASS: M6 cont-none n = 16: ledger identity residual / E_drag : 0.000000e+00 (tolerance 1.000e-12)
+(perf) M6 cont-none    n = 16:   125 launches; stage-launch time    0.535 s (4.283 ms per launch, 0.535 ms per unit time); whole harness    0.584 s; <K>/K0 = 0.905524, events 0, pairs 0, substeps 0
+(diag) M6 cont-poisson n = 1: <K>(t = 1000) / K_ODE,plain - 1 = -1.381e-05 [reported, no verdict: deterministic ensemble (Var K = 3.94e-25 K0^2), the finite-step allowance is a contract clarification pending with Nilay]; dt_BH = 0.5
+PASS: M6 cont-poisson n = 1: ledger identity residual / E_drag : 0.000000e+00 (tolerance 1.000e-12)
+(perf) M6 cont-poisson n =  1:  2000 launches; stage-launch time   11.746 s (5.873 ms per launch, 11.746 ms per unit time); whole harness   11.883 s; <K>/K0 = 0.905712, events 4537049, pairs 4537049, substeps 0
+(diag) M6 cont-poisson n = 4: <K>(t = 1000) / K_ODE,plain - 1 = -5.521e-05 [reported, no verdict: deterministic ensemble (Var K = 5.97e-25 K0^2), the finite-step allowance is a contract clarification pending with Nilay]; dt_BH = 2
+PASS: M6 cont-poisson n = 4: ledger identity residual / E_drag : 0.000000e+00 (tolerance 1.000e-12)
+(perf) M6 cont-poisson n =  4:   500 launches; stage-launch time    3.181 s (6.362 ms per launch, 3.181 ms per unit time); whole harness    3.314 s; <K>/K0 = 0.905674, events 4524919, pairs 4524919, substeps 0
+(diag) M6 cont-poisson n = 16: <K>(t = 1000) / K_ODE,plain - 1 = -2.215e-04 [reported, no verdict: deterministic ensemble (Var K = 1.26e-25 K0^2), the finite-step allowance is a contract clarification pending with Nilay]; dt_BH = 8
+PASS: M6 cont-poisson n = 16: ledger identity residual / E_drag : 0.000000e+00 (tolerance 1.000e-12)
+(perf) M6 cont-poisson n = 16:   125 launches; stage-launch time    1.064 s (8.512 ms per launch, 1.064 ms per unit time); whole harness    1.209 s; <K>/K0 = 0.905524, events 4517180, pairs 4517180, substeps 0
+(diag) M6 cont-budget n = 1: <K>(t = 1000) / K_ODE,plain - 1 = -1.381e-05 [reported, no verdict: deterministic ensemble (Var K = 3.94e-25 K0^2), the finite-step allowance is a contract clarification pending with Nilay]; dt_BH = 0.5
+PASS: M6 cont-budget n = 1: ledger identity residual / E_drag : 0.000000e+00 (tolerance 1.000e-12)
+(perf) M6 cont-budget  n =  1:  2000 launches; stage-launch time   12.727 s (6.363 ms per launch, 12.727 ms per unit time); whole harness   12.846 s; <K>/K0 = 0.905712, events 589824, pairs 589824, substeps 0
+(diag) M6 cont-budget n = 4: <K>(t = 1000) / K_ODE,plain - 1 = -5.521e-05 [reported, no verdict: deterministic ensemble (Var K = 5.97e-25 K0^2), the finite-step allowance is a contract clarification pending with Nilay]; dt_BH = 2
+PASS: M6 cont-budget n = 4: ledger identity residual / E_drag : 0.000000e+00 (tolerance 1.000e-12)
+(perf) M6 cont-budget  n =  4:   500 launches; stage-launch time    3.155 s (6.309 ms per launch, 3.155 ms per unit time); whole harness    3.219 s; <K>/K0 = 0.905674, events 589824, pairs 589824, substeps 0
+(diag) M6 cont-budget n = 16: <K>(t = 1000) / K_ODE,plain - 1 = -2.215e-04 [reported, no verdict: deterministic ensemble (Var K = 1.26e-25 K0^2), the finite-step allowance is a contract clarification pending with Nilay]; dt_BH = 8
+PASS: M6 cont-budget n = 16: ledger identity residual / E_drag : 0.000000e+00 (tolerance 1.000e-12)
+(perf) M6 cont-budget  n = 16:   125 launches; stage-launch time    0.899 s (7.190 ms per launch, 0.899 ms per unit time); whole harness    0.976 s; <K>/K0 = 0.905524, events 524288, pairs 524288, substeps 0
+(perf) M6 summary (saving = accumulated stage-launch time at n = 1 / at n, same physical time; the whole-harness ratio beside it is NOT the saving):
+(perf) M6 event        n =  1: saving 1.00 x (whole-harness ratio 1.00 x), <K>/K0 0.905607, z -1.582e+00, identity 6.23e-17
+(perf) M6 event        n =  4: saving 3.37 x (whole-harness ratio 3.29 x), <K>/K0 0.905597, z -1.871e+00, identity 5.03e-17
+(perf) M6 event        n = 16: saving 9.71 x (whole-harness ratio 9.73 x), <K>/K0 0.905461, z -6.257e+00, identity 2.12e-17
+(perf) M6 cont-none    n =  1: saving 1.00 x (whole-harness ratio 1.00 x), <K>/K0 0.905712, rel -1.381e-05, identity 0.00e+00
+(perf) M6 cont-none    n =  4: saving 4.04 x (whole-harness ratio 3.82 x), <K>/K0 0.905674, rel -5.521e-05, identity 0.00e+00
+(perf) M6 cont-none    n = 16: saving 16.67 x (whole-harness ratio 15.42 x), <K>/K0 0.905524, rel -2.215e-04, identity 0.00e+00
+(perf) M6 cont-poisson n =  1: saving 1.00 x (whole-harness ratio 1.00 x), <K>/K0 0.905712, rel -1.381e-05, identity 0.00e+00
+(perf) M6 cont-poisson n =  4: saving 3.69 x (whole-harness ratio 3.59 x), <K>/K0 0.905674, rel -5.521e-05, identity 0.00e+00
+(perf) M6 cont-poisson n = 16: saving 11.04 x (whole-harness ratio 9.83 x), <K>/K0 0.905524, rel -2.215e-04, identity 0.00e+00
+(perf) M6 cont-budget  n =  1: saving 1.00 x (whole-harness ratio 1.00 x), <K>/K0 0.905712, rel -1.381e-05, identity 0.00e+00
+(perf) M6 cont-budget  n =  4: saving 4.03 x (whole-harness ratio 3.99 x), <K>/K0 0.905674, rel -5.521e-05, identity 0.00e+00
+(perf) M6 cont-budget  n = 16: saving 14.16 x (whole-harness ratio 13.16 x), <K>/K0 0.905524, rel -2.215e-04, identity 0.00e+00
+bh_perf summary: 14 passed, 1 failed
+
+    Start  94: KERNELS::bh_perf_variants
+2/7 Test  #94: KERNELS::bh_perf_variants ........   Passed   13.49 sec
+    Start  95: KERNELS::bh_perf_rngpool
+3/7 Test  #95: KERNELS::bh_perf_rngpool .........   Passed    7.75 sec
+    Start  96: KERNELS::bh_perf_isolation
+4/7 Test  #96: KERNELS::bh_perf_isolation .......   Passed    0.23 sec
+    Start 109: KERNELS::bh_reduction_timing
+5/7 Test #109: KERNELS::bh_reduction_timing .....   Passed    2.37 sec
+    Start 145: FRAMEWORK::f8_tracers
+6/7 Test #145: FRAMEWORK::f8_tracers ............   Passed    0.26 sec
+    Start 166: HADRONIC::perf_smoke
+7/7 Test #166: HADRONIC::perf_smoke .............   Passed   98.93 sec
+
+86% tests passed, 1 tests failed out of 7
+
+Total Test time (real) = 189.45 sec
+
+The following tests FAILED:
+	 93 - KERNELS::bh_perf_stride (Failed)
+Errors while running CTest
