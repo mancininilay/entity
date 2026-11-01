@@ -1,0 +1,15 @@
+# R1: the eight real F8 entries of builds/perf-single (rebuilt at 49cd6aa5) through the corrected f8_ctest.py, no launcher (non-MPI build), default threads (10)
+F8 entry FRAMEWORK::f8_tracers: passed
+F8 entry FRAMEWORK::particles_sort: passed
+F8 entry KERNELS::deposit: passed
+F8 entry FRAMEWORK::checkpoint-data: passed
+F8 entry FRAMEWORK::checkpoint-extents: passed
+F8 entry FRAMEWORK::spectra: passed
+F8 entry KERNELS::injectors_global_weights: passed
+F8 entry KERNELS::reduced_stats_weights: passed
+F8: 8 entries, 8 passed, 0 scientific failures, 0 infrastructure failures
+# KERNELS::deposit alone at OMP_NUM_THREADS=2, three repetitions (Codex 1's two-thread observation; classification only, no cause assigned)
+FAIL: F8 entry KERNELS::deposit: executed check failure ('DepositCurrents_kernel::SumDivJ != 0')   (repetition 1 of 3)
+FAIL: F8 entry KERNELS::deposit: executed check failure ('DepositCurrents_kernel::SumDivJ != 0')   (repetition 2 of 3)
+FAIL: F8 entry KERNELS::deposit: executed check failure ('DepositCurrents_kernel::SumDivJ != 0')   (repetition 3 of 3)
+# the tool's own exception guard: --dest that already exists (FileExistsError) -> 'INFRA: f8_ctest.py exception: FileExistsError: ...', exit 4 (previously Python's traceback exit 1)

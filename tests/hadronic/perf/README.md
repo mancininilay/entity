@@ -67,6 +67,11 @@ infrastructure: `perf_driver.sh` prints `INFRA: ` and exits 3 for an `entity.xc`
 data, a missing checkpoint, a restart that kept the stage on, or a ledger bh_check could not read; `rusty/f8_ctest.py`
 (the F8 step) runs each named entry on its own through Rusty's validated launcher plan (Codex 1's G3 plan: direct
 commands, `f8_tracers` among them, wrapped in `mpirun -n 1`; the stock two-rank commands kept) and classifies it from
-CTest's JUnit result: Not Run, Timeout, Exception (signals, aborts) and an MPI launcher failure are infrastructure
-(exit 4), an executed assertion failure is scientific (exit 1), a missing entry is the selection gate (exit 3). Each
+CTest's JUnit result and, for a failed entry, the native exit value in CTest's Test.xml: Not Run, Timeout, Exception
+(signals, aborts), an MPI launcher failure, a native exit other than 1 (the caught-exception exit 2 of `f8_tracers`
+and the two weights tests) and an exit 1 without the entry's anchored check-failure evidence are infrastructure
+(exit 4); scientific (exit 1) needs that evidence (the verdict programs' `FAIL: ` lines with a summary failed count
+>= 1; `deposit`'s four check messages; a `raise::Error` at a line of the framework test's own source), since a stock
+non-zero exit is not presumed to be a check failure (Codex 1's reclosure R1); a missing entry is the selection gate
+(exit 3). Each
 precision's F8 run starts only when its own build exited 0 and produced the complete inventory of its binaries.

@@ -1,0 +1,28 @@
+# R1 (Codex 1's reclosure at 49cd6aa5): Codex 1's control on the REAL program, reproduced by Claude 1, 2026-11-01, Mac native single/OpenMP/non-MPI build builds/perf-single.
+# An external copy of tests/kernels/injectors_global_weights.cpp (49cd6aa5) with one injected throw inside its existing try block, before any check:
+209a210
+>     throw std::runtime_error("REFEREE injected infrastructure exception");
+# compiled and linked out of tree with the build's own ninja compile and link commands (object and executable redirected to a scratch directory; the build's binary and the source tree untouched).
+# direct run, OMP_NUM_THREADS=2: prints the exception, native exit 2 (Kokkos banner omitted)
+injectors_global_weights: real_t = float, execution space = OpenMP
+injectors_global_weights: exception: REFEREE injected infrastructure exception
+native exit 2
+# registered as KERNELS::injectors_global_weights in a scratch CTest directory; f8_ctest.py through the job's own run() and write_status() (functions extracted from p2-perf-a100.sbatch, step6-f8-single, kind sci):
+tool exit 4
+INFRA: F8 entry KERNELS::injectors_global_weights: exited 2 (a caught exception or another non-check exit), not an executed check failure [log <scratch>/r1-injected/root/plan/ctest-00.log]
+F8: 1 entries, 0 passed, 0 scientific failures, 1 infrastructure failures
+{
+  "job": "r1-real",
+  "commit": "worktree",
+  "root": "<scratch>/r1-injected/root",
+  "dry_run": 1,
+  "overall": "infrastructure_failure",
+  "any_infrastructure_failure": 1,
+  "any_scientific_check_failure": 0,
+  "any_skipped_or_blocked": 0,
+  "elapsed_s": 0,
+  "steps": [
+    {"name": "step6-f8-single", "kind": "sci", "budget_s": 90, "seconds": 0, "exit": "4", "class": "infrastructure_failure"}
+  ]
+}
+# CTest Test.xml of that entry: Exit Value 2

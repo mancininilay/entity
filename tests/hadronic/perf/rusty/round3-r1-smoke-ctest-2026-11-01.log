@@ -1,0 +1,18 @@
+# R1 Mac smoke of the R1 working tree on 49cd6aa5 (Claude 1, 2026-11-01): builds/perf-single rebuilt (12 job single targets), native Release/single, Kokkos 5.0.1 OpenMP, 10 threads, non-MPI
+# ctest -R "HADRONIC::perf_smoke|HADRONIC::perf_driver_replay|HADRONIC::perf_job_selftest|KERNELS::bh_perf|KERNELS::bh_reduction_timing|FRAMEWORK::f8_tracers"
+ 1/10 Test  #93: KERNELS::bh_perf_stride ..........***Failed   15.29 sec
+ 2/10 Test  #94: KERNELS::bh_perf_variants ........   Passed    4.28 sec
+ 3/10 Test  #95: KERNELS::bh_perf_rngpool .........   Passed    3.92 sec
+ 4/10 Test  #96: KERNELS::bh_perf_identity_gate ...   Passed    3.87 sec
+ 5/10 Test  #97: KERNELS::bh_perf_isolation .......   Passed    0.13 sec
+ 6/10 Test #110: KERNELS::bh_reduction_timing .....   Passed    6.97 sec
+ 7/10 Test #146: FRAMEWORK::f8_tracers ............   Passed    0.03 sec
+ 8/10 Test #167: HADRONIC::perf_smoke .............   Passed   43.75 sec
+ 9/10 Test #168: HADRONIC::perf_driver_replay .....   Passed    7.13 sec
+10/10 Test #169: HADRONIC::perf_job_selftest ......   Passed    7.71 sec
+90% tests passed, 1 tests failed out of 10
+Total Test time (real) =  93.07 sec
+ctest rc=8
+FAIL: M6 event n = 16: <K>(t = 1000) vs the Jensen-corrected ODE, |diff| / s.e. (contract: 4 s.e.; an exceedance is an observed finite-step discrepancy, retained) : 6.256577e+00 (tolerance 4.000e+00)
+perf_driver_replay summary: 10 checks, 0 mismatches
+SELFTEST summary: 47 checks, 0 mismatches

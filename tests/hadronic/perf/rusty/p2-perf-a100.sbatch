@@ -69,6 +69,8 @@
 #                               "FAIL: "                                                                     exit 10
 #     infrastructure_failure    checkout/build gate, incomplete binary inventory, timeout (124), kill (137), exception
 #                               (2, signals), missing binary (126/127), a CTest entry Not Run / Timeout / Exception,
+#                               an F8 entry that exited through a caught exception (native exit 2) or without a
+#                               parsed check result (f8_ctest.py; Codex 1's reclosure R1),
 #                               an MPI launcher failure, missing or malformed timer data, missing profile content,
 #                               any non-zero exit other than (1 + a "FAIL: " line)                         exit 20
 #     (refused before start: an existing run root, exit 5; PERF_N_M3 != 4194304, exit 6; no status.json then)
@@ -266,8 +268,31 @@ if [ "${PERF_SELFTEST:-0}" = "1" ]; then
   f8_probe probe-f8-exception FRAMEWORK::f8_tracers /bin/sh -c 'echo "EXCEPTION: f8_tracers: exception: out of memory"; exit 2'
   f8_probe probe-f8-no-assertion FRAMEWORK::f8_tracers /bin/sh -c 'echo "something went wrong"; exit 1'
   f8_probe probe-f8-assertion FRAMEWORK::f8_tracers /bin/sh -c 'echo "FAIL: S3 1D: alive id set exact"; echo "f8_tracers summary: 32 passed, 1 failed"; exit 1'
-  f8_probe probe-f8-stock-fail KERNELS::deposit /bin/sh -c 'echo "Error: deposit mismatch" >&2; exit 1'
+  f8_probe probe-f8-stock-fail KERNELS::deposit /bin/sh -c 'echo "DepositCurrents_kernel::SumDivJ != 0" >&2; exit 1'
   f8_probe probe-f8-mpi-slots FRAMEWORK::particles_sort "$MOCK/mpiexec" -n 2 "$MOCK/fake-test.xc"
+  # R1 (Codex 1's reclosure at 49cd6aa5): scientific needs positive evidence of an executed failed check, read with the
+  # native exit value (CTest Test.xml); a caught exception (exit 2) or an exit without a parsed check result is
+  # infrastructure. Codex 1's control: the injector-weights test with a referee-injected exception before any check
+  # (its exact output and exit 2), and the same for reduced_stats_weights; the exit-without-results control (exit 1, the
+  # program's no-check branch, summary 0 passed 0 failed); a stock exit 1 with unrecognised output; the positive controls
+  # (a weights FAIL verdict, a raise::Error check of particles_sort at its own source line); an exception after a failed
+  # verdict (infrastructure plus the -scientific row)
+  f8_probe probe-f8-weights-exception KERNELS::injectors_global_weights /bin/sh -c 'echo "injectors_global_weights: real_t = float, execution space = OpenMP"; echo "injectors_global_weights: exception: REFEREE injected infrastructure exception" >&2; exit 2'
+  f8_probe probe-f8-rsw-exception KERNELS::reduced_stats_weights /bin/sh -c 'echo "reduced_stats_weights: real_t = float, execution space = OpenMP"; echo "reduced_stats_weights: exception: REFEREE injected infrastructure exception" >&2; exit 2'
+  f8_probe probe-f8-no-results KERNELS::reduced_stats_weights /bin/sh -c 'echo "reduced_stats_weights: real_t = float, execution space = OpenMP"; echo "reduced_stats_weights summary: 0 passed, 0 failed"; exit 1'
+  f8_probe probe-f8-stock-unparsed KERNELS::deposit /bin/sh -c 'echo "Error: deposit mismatch" >&2; exit 1'
+  f8_probe probe-f8-weights-assertion KERNELS::injectors_global_weights /bin/sh -c 'echo "PASS: 1D weighted: stored weight : 1 (expected 1)"; echo "FAIL: 1D weighted: the untouched tail still holds 99 : 0 (expected 1)"; echo "injectors_global_weights summary: 1 passed, 1 failed"; exit 1'
+  f8_probe probe-f8-raise-check FRAMEWORK::particles_sort /bin/sh -c 'echo "Error: wrong number of alive particles after sort /src/tests/framework/particles_sort.cpp:167 @ main" >&2; exit 1'
+  f8_probe probe-f8-fail-then-exception KERNELS::reduced_stats_weights /bin/sh -c 'echo "FAIL: case 1: mean energy : 1.0e-02 (tolerance 1.0e-06)"; echo "reduced_stats_weights: exception: REFEREE injected after a check" >&2; exit 2'
+  # Codex 1's control through the job's run() and write_status() alone (his observed overall was
+  # scientific_check_failure, class 10, infrastructure flag 0): a separate root and fresh flags
+  (
+    ROOT="$ROOT/r1-status-only"; LOG="$ROOT/logs"; mkdir -p "$LOG"; : > "$LOG/steps.tsv"; ANY_INFRA=0; ANY_SCI=0; ANY_SKIP=0
+    f8_probe probe-f8-weights-exception KERNELS::injectors_global_weights /bin/sh -c 'echo "injectors_global_weights: exception: REFEREE injected infrastructure exception" >&2; exit 2' > /dev/null
+    DRY_RUN=1; write_status
+    echo "$OVERALL $OVERALL_RC $ANY_INFRA $ANY_SCI" > "$ROOT/overall.txt"
+  )
+  expect_rc "R1 weights-exception control alone: overall, class, infrastructure flag, scientific flag" "$(cat "$ROOT/r1-status-only/overall.txt")" "infrastructure_failure 20 1 0"
   ctest_dir "$ROOT/probe-f8-unregistered" KERNELS::something_else /bin/sh -c 'exit 0'
   run probe-f8-unregistered sci 60 python3 "$F8_TOOL" --build "$ROOT/probe-f8-unregistered" --dest "$ROOT/probe-f8-unregistered/plan" --launcher "$MOCK/mpirun -n 1" FRAMEWORK::f8_tracers
   echo "probe-f8-unregistered returned $?"
@@ -370,6 +395,14 @@ probe-f8-no-assertion infrastructure_failure
 probe-f8-assertion scientific_check_failure
 probe-f8-stock-fail scientific_check_failure
 probe-f8-mpi-slots infrastructure_failure
+probe-f8-weights-exception infrastructure_failure
+probe-f8-rsw-exception infrastructure_failure
+probe-f8-no-results infrastructure_failure
+probe-f8-stock-unparsed infrastructure_failure
+probe-f8-weights-assertion scientific_check_failure
+probe-f8-raise-check scientific_check_failure
+probe-f8-fail-then-exception infrastructure_failure
+probe-f8-fail-then-exception-scientific scientific_check_failure
 probe-f8-unregistered infrastructure_failure
 probe-prof-ok ok
 probe-prof-one-launch-24-rows infrastructure_failure

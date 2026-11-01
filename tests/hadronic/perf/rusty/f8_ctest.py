@@ -10,26 +10,45 @@ MPI rank) and every command that already starts with mpirun / mpiexec / orterun 
 unchanged; the test properties (WORKING_DIRECTORY, ...) are kept. Only the named entries are written. An entry whose
 executable does not exist is written with a non-existent command so that CTest itself reports it Not Run.
 
-Classification of an entry (CTest JUnit status; the strings were verified against CTest's output):
+Classification of an entry (CTest JUnit status and, for a failed entry, the NATIVE exit value from CTest's Test.xml
+`Exit Value` measurement, recorded by running each entry with `-T Test`: JUnit's "Failed" does not distinguish exit 1
+from exit 2; Codex 1's reclosure R1, 2026-10-31). Scientific needs POSITIVE evidence of an executed check that failed;
+everything else is infrastructure (a stock test's non-zero exit is NOT presumed to be a check failure):
   status run                                     -> passed
   status notrun / disabled ("Unable to find executable", ...)                -> INFRASTRUCTURE (not run)
   status fail, message Timeout / SEGFAULT / Subprocess aborted / ILLEGAL / ... -> INFRASTRUCTURE (timeout, exception)
   status fail, message Failed (the process ran to completion and returned non-zero):
       the output carries an MPI launcher / initialisation failure marker      -> INFRASTRUCTURE
-      FRAMEWORK::f8_tracers: an executed assertion failed ("FAIL: " lines and the summary's failed count >= 1)
-                                                                              -> SCIENTIFIC; otherwise INFRASTRUCTURE
-      a stock entry (its only non-zero return is the catch of a raised check)  -> SCIENTIFIC
+      native exit value not recorded                                          -> INFRASTRUCTURE
+      native exit value != 1 (e.g. 2: the caught-exception exit of f8_tracers, injectors_global_weights and
+        reduced_stats_weights; MPI_Abort's error code)                        -> INFRASTRUCTURE
+      native exit value 1 AND the entry's anchored check-failure evidence (CHECK_EVIDENCE below):
+        f8_tracers, injectors_global_weights, reduced_stats_weights: >= 1 verdict line starting "FAIL: ", the
+          program's summary line "<prog> summary: P passed, F failed" with F >= 1, no "<prog>: exception:" line
+        deposit: one of its four check messages "DepositCurrents_kernel::SumDivJ != 0" / "SumJ{x,y,z} mismatch"
+        particles_sort, checkpoint-data, checkpoint-extents, spectra: a raise::Error message raised at a line of the
+          test's OWN source file ("<message> .../tests/framework/<test>.cpp:<line> @ <func>"), other than the
+          two-rank launch precondition                                       -> SCIENTIFIC
+      native exit value 1 without that evidence (no parsed check result)      -> INFRASTRUCTURE
   no JUnit record / unknown status                                            -> INFRASTRUCTURE
+  An infrastructure entry whose output nevertheless carries the anchored verdict lines of executed failed checks (an
+  exception after a failed check) also prints a "FAIL: " line, so that the job records <step>-scientific beside the
+  infrastructure class, as its run() does for any step. In an MPI build raise::Error calls MPI_Abort before the test's
+  catch, so a failed raise check of the four framework tests exits with MPI_Abort's code and is reported as
+  infrastructure with its log (never presumed scientific); its message is then read from the log by hand.
 An entry not registered in the build is the selection gate (exit 3).
 
 Output: one line per entry on stdout ("F8 entry <name>: passed", "FAIL: F8 entry <name>: ..." for a scientific failure,
 "INFRA: F8 entry <name>: ..." for an infrastructure failure), the CTest console log and JUnit file of every entry in the
 destination directory, and a summary line. Exit: 0 all passed; 1 scientific failures only; 3 selection gate; 4 any
-infrastructure failure. Python 3.6 compatible (Rusty's system python3).
+infrastructure failure, including an exception raised in this tool itself (never exit 1 through a traceback). Python 3.6
+compatible (Rusty's system python3).
 """
 import argparse
+import glob
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -46,6 +65,20 @@ MPI_INFRA_MARKERS = (
     "mpirun noticed that process rank",
     "MPI_ERRORS_ARE_FATAL",
 )
+# verdict programs: the prefix of their summary and exception lines
+VERDICT_PROGRAMS = {
+    "FRAMEWORK::f8_tracers": "f8_tracers",
+    "KERNELS::injectors_global_weights": "injectors_global_weights",
+    "KERNELS::reduced_stats_weights": "reduced_stats_weights",
+}
+# raise-style stock tests: the check-failure line printed by the test's own catch (anchored, multiline)
+CHECK_EVIDENCE = {
+    "KERNELS::deposit": re.compile(r"^DepositCurrents_kernel::(SumDivJ != 0|SumJ[xyz] mismatch)\s*$", re.M),
+}
+for _n, _f in (("FRAMEWORK::particles_sort", "particles_sort"), ("FRAMEWORK::checkpoint-data", "checkpoint-data"),
+               ("FRAMEWORK::checkpoint-extents", "checkpoint-extents"), ("FRAMEWORK::spectra", "spectra")):
+    CHECK_EVIDENCE[_n] = re.compile(r"^(?!(Error: )?this test requires exactly 2 MPI ranks )(Error: )?\S.* \S*tests/framework/"
+                                    + re.escape(_f) + r"\.cpp:\d+ @ \S.*$", re.M)
 
 
 def quote(value):
@@ -121,19 +154,63 @@ def junit_result(path):
     return None, None, ""
 
 
-def f8_tracers_assertion_failed(text):
-    fails = [l for l in text.splitlines() if l.startswith("FAIL: ") and "exception" not in l]
-    for l in text.splitlines():
-        if l.startswith("f8_tracers summary:"):
-            try:
-                n_failed = int(l.split(",")[1].split()[0])
-            except (IndexError, ValueError):
-                return False
-            return n_failed >= 1 and len(fails) >= 1
-    return False
+def native_exit_value(dest, name):
+    """The entry's native exit value from the Test.xml that `ctest -T Test` wrote for this invocation (None if absent)."""
+    try:
+        with open(os.path.join(dest, "Testing", "TAG")) as f:
+            tag = f.readline().strip()
+        paths = [os.path.join(dest, "Testing", tag, "Test.xml")]
+    except OSError:
+        paths = sorted(glob.glob(os.path.join(dest, "Testing", "*", "Test.xml")))
+    for path in paths:
+        try:
+            root = ET.parse(path).getroot()
+        except (OSError, ET.ParseError):
+            continue
+        for test in root.iter("Test"):
+            if test.findtext("Name") != name:
+                continue
+            for m in test.iter("NamedMeasurement"):
+                if m.get("name") == "Exit Value":
+                    try:
+                        return int((m.findtext("Value") or "").strip())
+                    except ValueError:
+                        return None
+    return None
 
 
-def classify(name, status, message, text):
+def executed_check_failure(name, text):
+    """The anchored evidence that an executed check of this entry failed (a description), or None."""
+    prog = VERDICT_PROGRAMS.get(name)
+    if prog:
+        lines = text.splitlines()
+        fails = [l for l in lines if l.startswith("FAIL: ") and "exception" not in l]
+        n_failed = None
+        for l in lines:
+            m = re.match(r"^" + re.escape(prog) + r" summary: (\d+) passed, (\d+) failed\s*$", l)
+            if m:
+                n_failed = int(m.group(2))
+        if any(l.startswith(prog + ": exception:") or l.startswith("EXCEPTION:") for l in lines):
+            return None
+        if fails and n_failed is not None and n_failed >= 1:
+            return "executed check failure ({} FAIL line(s), summary failed count {})".format(len(fails), n_failed)
+        return None
+    pattern = CHECK_EVIDENCE.get(name)
+    if pattern:
+        m = pattern.search(text)
+        if m:
+            return "executed check failure ({!r})".format(m.group(0).strip())
+    return None
+
+
+def failed_verdicts(name, text):
+    """FAIL verdict lines of a verdict program in an output that is infrastructure for another reason."""
+    if name not in VERDICT_PROGRAMS:
+        return 0
+    return len([l for l in text.splitlines() if l.startswith("FAIL: ") and "exception" not in l])
+
+
+def classify(name, status, message, exit_value, text):
     if status == "run":
         return "passed", "passed"
     if status is None:
@@ -146,11 +223,14 @@ def classify(name, status, message, text):
         marker = next((m for m in MPI_INFRA_MARKERS if m in text), None)
         if marker:
             return "infra", "returned non-zero with an MPI launcher/initialisation marker ({!r})".format(marker)
-        if name == "FRAMEWORK::f8_tracers":
-            if f8_tracers_assertion_failed(text):
-                return "sci", "executed assertion failure (FAIL lines, summary failed count >= 1)"
-            return "infra", "returned non-zero without an executed assertion failure (no FAIL line / summary)"
-        return "sci", "the stock test ran and returned its check failure"
+        if exit_value is None:
+            return "infra", "returned non-zero; native exit value not recorded (no Test.xml Exit Value)"
+        if exit_value != 1:
+            return "infra", "exited {} (a caught exception or another non-check exit), not an executed check failure".format(exit_value)
+        evidence = executed_check_failure(name, text)
+        if evidence:
+            return "sci", evidence
+        return "infra", "exited 1 without a parsed check result (no anchored check-failure evidence for this entry)"
     return "infra", "unknown CTest status {!r}".format(status)
 
 
@@ -171,12 +251,15 @@ def main():
         junit = os.path.join(a.dest, "junit-{:02d}.xml".format(i))
         log = os.path.join(a.dest, "ctest-{:02d}.log".format(i))
         with open(log, "w") as f:
-            subprocess.call(["ctest", "--test-dir", a.dest, "-R", "^" + name + "$", "--output-on-failure", "--timeout", str(a.timeout),
-                             "--output-junit", junit], stdout=f, stderr=subprocess.STDOUT)
+            # -T Test: CTest's Test.xml carries the native exit value ("Exit Value"), which JUnit's "Failed" does not
+            subprocess.call(["ctest", "--test-dir", a.dest, "-T", "Test", "-R", "^" + name + "$", "--output-on-failure",
+                             "--timeout", str(a.timeout), "--output-junit", junit], stdout=f, stderr=subprocess.STDOUT)
         status, message, out = junit_result(junit)
+        exit_value = native_exit_value(a.dest, name) if status == "fail" else None
         with open(log) as f:
-            text = out + "\n" + f.read()
-        cls, why = classify(name, status, message, text)
+            # the entry's output: JUnit's system-out, or the console log (which repeats it) when JUnit has none
+            text = out if out.strip() else f.read()
+        cls, why = classify(name, status, message, exit_value, text)
         if name in notes:
             why += "; " + notes[name]
         if cls == "passed":
@@ -188,6 +271,11 @@ def main():
         else:
             n_infra += 1
             print("INFRA: F8 entry {}: {} [log {}]".format(name, why, log))
+            n_verdicts = failed_verdicts(name, text)
+            if n_verdicts:
+                n_sci += 1
+                print("FAIL: F8 entry {}: its output also carries {} FAIL verdict line(s) of executed checks before the "
+                      "infrastructure fault [log {}]".format(name, n_verdicts, log))
     print("F8: {} entries, {} passed, {} scientific failures, {} infrastructure failures".format(len(a.names), n_pass, n_sci, n_infra))
     if n_infra:
         return 4
@@ -195,4 +283,9 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        rc = main()
+    except Exception as e:  # an exception in this tool is infrastructure, never Python's exit 1
+        print("INFRA: f8_ctest.py exception: {}: {}".format(type(e).__name__, e))
+        rc = 4
+    sys.exit(rc)
