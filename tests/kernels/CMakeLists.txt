@@ -68,15 +68,16 @@ foreach(grp tables overflow huge t9 tags above subcycling t6 t5 t5fine t5b)
 endforeach()
 set_tests_properties("KERNELS::bh_loss_t5fine_born" "KERNELS::bh_loss_t5b_born" PROPERTIES TIMEOUT 7200)
 # Bethe-Heitler pair plumbing (P2 step 3): T10 (budget, capped, closing), poisson,
-# none, pairs per unit energy, T12, T10b, T-exp; one ctest entry per group
+# none, pairs per unit energy, T12, T10b, T-exp; one ctest entry per group;
+# [fork:hadronic/P2 step 8] t18a: the budget emission lag (technical spec v3.3.6, decision 2026-11-01)
 add_executable(test-kernels-bh_pairs.xc bh_pairs.cpp)
 add_dependencies(test-kernels-bh_pairs.xc ntt_kernels ntt_metrics ntt_framework)
 target_link_libraries(test-kernels-bh_pairs.xc PRIVATE ntt_kernels ntt_metrics ntt_framework)
-foreach(grp t10 poisson none energy momentum t12 t10b texp r1 r2 r3 cmpi1)
+foreach(grp t10 poisson none energy momentum t12 t10b texp r1 r2 r3 cmpi1 t18a)
   add_test(NAME "KERNELS::bh_pairs_${grp}" COMMAND test-kernels-bh_pairs.xc ${grp})
 endforeach()
 # [fork:hadronic/P2 step 6] on the Born rate tables
-foreach(grp t10 poisson none energy momentum t12 t10b texp r1 r2 r3 cmpi1)
+foreach(grp t10 poisson none energy momentum t12 t10b texp r1 r2 r3 cmpi1 t18a)
   add_test(NAME "KERNELS::bh_pairs_${grp}_born" COMMAND test-kernels-bh_pairs.xc ${grp})
   set_tests_properties("KERNELS::bh_pairs_${grp}_born" PROPERTIES ENVIRONMENT "BH_QK_SOURCE=born")
 endforeach()

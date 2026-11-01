@@ -99,6 +99,13 @@ namespace {
     std::printf("(diag) %s\n", s.c_str());
   }
 
+  template <typename... Ts>
+  std::string fmt(const char* f, Ts... xs) {
+    char buf[512];
+    std::snprintf(buf, sizeof(buf), f, xs...);
+    return std::string(buf);
+  }
+
   constexpr double MU_R = 1836.15;
   constexpr double EPS0 = 0.5;
   constexpr double DT   = 0.5;
@@ -1946,6 +1953,135 @@ namespace {
               static_cast<double>(L.n_processed), 4.0);
     }
   }
+
+  /* ------------------------------------------------------------------------ */
+  /* T18a: the budget source's emission lag (registered 2026-11-01)             */
+  /* ------------------------------------------------------------------------ */
+  /**
+   * @brief T18a (technical spec v3.3.6, V.2; Nilay's decision of 2026-11-01): the history bias of the budget
+   *        source's whole-run pair number in a uniform cooling box. Continuous mode, delta spectrum (every ion
+   *        follows one path), 8 ions, lambda = R dt = 0.05 at Gamma_p0 (the step-8 demonstration's cases), packet
+   *        scale s in {1, 1/2, 1/4} as (r_th_factor, f_r) = s (10, 0.02). delta(s) = sum_pairs w / int dK/<D> - 1
+   *        over the paid energy Q (from the arrays; the debt is paid in order, so Q is the top of the path), <D> =
+   *        I/J from the host table. A packet's pairs are drawn at its emission point, r_packet/2 + d below the
+   *        midpoint of the energy it pays (d < a, the debt left; a = eta_u K + coeff I dt, the largest single
+   *        application; a K0 packet pays at most r_th + a with d = 0). Registered, with g = d ln<D>/dK > 0 and
+   *        r_th1 = min(10 <D>, 0.02 K) on the path: (i) 0 < delta(s) <= U(s) = max g (s r_th1/2 + 1.5 a) (1 + s max
+   *        r_th1 g); (ii) |2 delta(1/2) - delta(1)| <= 1.5 max (a g) + delta(1) max (r_th1 g) / 2; no dropped or
+   *        capped packet. The predictions of the one-ion model (tests/hadronic/demo/budget_lag.py, Born tables,
+   *        recorded in the spec before this test ran) are printed beside the measured values.
+   */
+  void test_T18a(const Tables& T) {
+    const double eta_u = 1.0e-4;
+    auto         Dmean = [&](double K) {
+      const double G = 1.0 + K / MU_R;
+      return bh::interpolate_loss_host(T.host, G) / bh::interpolate_rate_host(T.host, G);
+    };
+    // int_{Ka}^{Kb} dK / <D>, composite Simpson
+    auto n_phys = [&](double Ka, double Kb) {
+      const int    n = 4000;
+      const double h = (Kb - Ka) / n;
+      double       s = 1.0 / Dmean(Ka) + 1.0 / Dmean(Kb);
+      for (int i = 1; i < n; ++i) {
+        s += (i % 2 == 1 ? 4.0 : 2.0) / Dmean(Ka + i * h);
+      }
+      return s * h / 3.0;
+    };
+    auto g_of = [&](double K) {
+      const double h = 0.5;
+      return (std::log(Dmean(K + h)) - std::log(Dmean(K - h))) / (2.0 * h);
+    };
+    struct Case {
+      double Gp0;
+      int    nsteps;
+      double predicted[3];
+    };
+    const double scales[3] = { 1.0, 0.5, 0.25 };
+    for (const Case c : { Case { 6.0, 39600, { 0.2645e-2, 0.1333e-2, 0.0679e-2 } },
+                          Case { 3.0, 130000, { 0.3552e-2, 0.1788e-2, 0.0906e-2 } } }) {
+      const double coeff = 0.05 / (bh::interpolate_rate_host(T.host, c.Gp0) * DT);
+      std::printf("\n=== T18a budget emission lag: Gamma_p0 = %g, %d steps of dt = %g, 8 ions, delta, continuous, lambda = 0.05 at "
+                  "Gamma_p0 (coeff = %.10g), eta_u = 1e-4, t_latency = 0, (r_th_factor, f_r) = s (10, 0.02), s = 1, 1/2, 1/4 ===\n",
+                  c.Gp0, c.nsteps, DT, coeff);
+      double delta[3] = {}, Kmin = K_of_gamma(c.Gp0), K0 = 0.0;
+      for (int j = 0; j < 3; ++j) {
+        const double s = scales[j];
+        const npart_t N = 8;
+        Ions          ions(N, 1.0);
+        for (npart_t p = 0; p < N; ++p) {
+          ions.set(p, K_of_gamma(c.Gp0));
+        }
+        ions.zero_payloads();
+        Pairs                pairs(N * 1000);
+        random_number_pool_t pool(7u);
+        const auto           prm = params(coeff, BUDGET, 10.0 * s, 0.02 * s);
+        HostLedger           H;
+        const auto           K_init = ions.K();
+        for (int n = 0; n < c.nsteps; ++n) {
+          H.add(launch(ions, pairs, T, prm, pool, static_cast<double>(n + 1) * DT));
+        }
+        const auto A    = array_identity(ions, K_init, pairs, H);
+        const auto Kf   = ions.K();
+        const auto pend = ions.payload(0);
+        const auto debt = ions.payload(1);
+        K0              = K_init[0];
+        const double Kf_min = *std::min_element(Kf.begin(), Kf.end()), Kf_max = *std::max_element(Kf.begin(), Kf.end());
+        Kmin                = std::min(Kmin, Kf_min - *std::max_element(pend.begin(), pend.end()));
+        const double Nw = A.sum_wpair / N, Q = A.lhs / N;
+        delta[j]        = Nw / n_phys(K0 - Q, K0) - 1.0;
+        // the first-order estimate from ion 0's own packets: sum r^2 g / 2 / sum r at the emission points
+        double sr = 0.0, sr2g = 0.0;
+        for (const auto& r : pairs.rows()) {
+          if (!(r.birth_m > 0.0) || r.i1m != 0) {
+            continue;
+          }
+          const double rp = r.wm * (kh::lepton_gamma(r.u1m, r.u2m, r.u3m) + kh::lepton_gamma(r.u1p, r.u2p, r.u3p) - r.eps_m);
+          sr += rp;
+          sr2g += rp * rp * g_of(MU_R * (r.gp_m - 1.0)) / 2.0;
+        }
+        std::printf("(diag) T18a G%g s = %g: packets/ion %.2f, K0 triggers/ion %.2f, final K %.6g (spread over ions %.3g), "
+                    "pending %.4g, debt %.6g; N = %.8g, Q = %.8g, int dK/<D> over [K0 - Q, K0] = %.8g; delta = %+.5f %% "
+                    "(predicted %+.4f %%); first-order estimate from the packets %+.5f %%\n",
+                    c.Gp0, s, static_cast<double>(H.C.n_spawned) / N, static_cast<double>(H.C.n_k0_trigger) / N, Kf[0],
+                    Kf_max - Kf_min, pend[0], debt[0], Nw, Q, n_phys(K0 - Q, K0), 100.0 * delta[j], 100.0 * c.predicted[j],
+                    100.0 * sr2g / sr);
+        verdict(H.C.n_dropped == 0 && H.C.n_capped == 0, fmt("T18a G%g s = %g: no dropped or capped packet", c.Gp0, s),
+                static_cast<double>(H.C.n_dropped + H.C.n_capped), 0.0);
+      }
+      // the bounds from the parameters and the table on the path [Kmin, K0]
+      const int nK = 4000;
+      double    max_g_rth = 0.0, max_ag = 0.0, min_g = 1e300, U[3] = { 0.0, 0.0, 0.0 };
+      for (int i = 0; i <= nK; ++i) {
+        const double K    = Kmin + (K0 - Kmin) * i / nK;
+        const double g    = g_of(K);
+        const double rth1 = std::min(10.0 * Dmean(K), 0.02 * K);
+        const double a    = eta_u * K + coeff * bh::interpolate_loss_host(T.host, 1.0 + K / MU_R) * DT;
+        min_g             = std::min(min_g, g);
+        max_g_rth         = std::max(max_g_rth, g * rth1);
+        max_ag            = std::max(max_ag, a * g);
+        for (int j = 0; j < 3; ++j) {
+          U[j] = std::max(U[j], g * (scales[j] * rth1 / 2.0 + 1.5 * a));
+        }
+      }
+      diag(fmt("T18a G%g: on the path K in [%.6g, %.6g]: min g = %.4e (> 0 required for the sign), max r_th1 g = %.4e, max a g = %.4e",
+               c.Gp0, Kmin, K0, min_g, max_g_rth, max_ag));
+      for (int j = 0; j < 3; ++j) {
+        U[j] *= 1.0 + scales[j] * max_g_rth;
+        verdict(min_g > 0.0 && delta[j] > 0.0 && delta[j] <= U[j],
+                fmt("T18a G%g s = %g: 0 < delta <= U (first-order bound from the parameters, U = %.5f %%); delta", c.Gp0, scales[j],
+                    100.0 * U[j]),
+                delta[j], U[j]);
+      }
+      for (int j = 0; j < 2; ++j) {
+        diag(fmt("T18a G%g: observed order log2(delta(%g) / delta(%g)) = %.4f", c.Gp0, scales[j], scales[j + 1],
+                 std::log2(delta[j] / delta[j + 1])));
+      }
+      const double d0 = 2.0 * delta[1] - delta[0], d0_tol = 1.5 * max_ag + 0.5 * delta[0] * max_g_rth;
+      verdict(std::abs(d0) <= d0_tol,
+              fmt("T18a G%g: linear in the packet scale, Richardson residual |2 delta(1/2) - delta(1)| (signed %+.4e)", c.Gp0, d0),
+              std::abs(d0), d0_tol);
+    }
+  }
 } // namespace
 
 auto main(int argc, char* argv[]) -> int {
@@ -2007,6 +2143,9 @@ auto main(int argc, char* argv[]) -> int {
     }
     if (want("cmpi1")) {
       test_CMPI1_send_remnant(T);
+    }
+    if (want("t18a")) {
+      test_T18a(T);
     }
     std::printf("bh_pairs summary: %d passed, %d failed, %d expected failures\n",
                 n_pass, n_fail, n_expected_fail);
