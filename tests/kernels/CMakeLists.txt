@@ -98,6 +98,8 @@ set_tests_properties("KERNELS::bh_event_e2e3" "KERNELS::bh_event_e2e3_g3" "KERNE
                      "KERNELS::bh_event_e4" PROPERTIES TIMEOUT 7200)
 # [fork:hadronic/P2 step 6, closure C10] on the fitted step-1 tables the restframe E2 rows of these groups are history (decision
 # 2026-10-27 (a)), printed as HISTORY rows and counted apart; the registered counterparts are the _born E10 entries
+# [fork:hadronic/P2 step 8, Codex 1's reclosure R4] the restframe E3 rows on the fitted tables likewise (decision 2026-11-01: the
+# prediction takes the table's dI/dK, the jumps the Born law); counterparts the E3 rows of the _born E10 entries and e7_born
 set_tests_properties("KERNELS::bh_event_e2e3" "KERNELS::bh_event_e2e3_g3" "KERNELS::bh_event_e7" PROPERTIES LABELS "history-fit-tables")
 # [fork:hadronic/P2 step 6 integration] E10 (event contract revision 1.1): E2 restframe on the Born loss tables
 foreach(grp e10 e10_g3)

@@ -109,16 +109,25 @@ namespace {
   bool born_mode();
 
   /**
-   * @brief A history row (Codex 1's closure C10, 2026-10-31): the restframe E2 comparison on the FITTED step-1
-   *        loss tables, superseded by decision 2026-10-27 (a) (the Born recoil in the tables); the registered
-   *        counterpart is E10 on the Born tables (KERNELS::bh_event_e10_born, e10_g3_born). Printed with its number
-   *        and its historical tolerance, counted in n_history, never a failure.
+   * @brief A history row: a restframe comparison on the FITTED step-1 loss tables, printed with its number and its
+   *        historical tolerance, counted in n_history, never a failure. E2 (Codex 1's closure C10, 2026-10-31):
+   *        superseded by decision 2026-10-27 (a) (the Born recoil in the tables). E3 (decision 2026-11-01, Codex 1's
+   *        reclosure R4): the drift-feedback prediction takes the table's dI/dK while the restframe jumps follow the
+   *        Born law; the fitted slope, 0.35 to 0.41 % steeper between Gamma_p = 3 and 2.45, biases the Gamma_p0 = 3
+   *        row by about +1.2 % at the domain end against a gate of 1.79 % that shrinks as 1/sqrt(N). The registered
+   *        counterparts are on the Born tables: E10 (KERNELS::bh_event_e10_born, e10_g3_born) and E7
+   *        (KERNELS::bh_event_e7_born).
    */
-  void verdict_history(bool ok, const std::string& what, double value, double tol) {
-    std::printf("HISTORY %s: %s : %.6e (historical tolerance %.3e) [history: fitted step-1 tables, superseded by decision 2026-10-27 (a); "
-                "the registered counterpart is E10 on the Born tables]\n",
-                ok ? "met" : "exceeded", what.c_str(), value, tol);
+  void verdict_history(bool ok, const std::string& what, double value, double tol, const char* why) {
+    std::printf("HISTORY %s: %s : %.6e (historical tolerance %.3e) [history: fitted step-1 tables, %s; the registered counterpart is "
+                "on the Born tables (E10, e7_born)]\n",
+                ok ? "met" : "exceeded", what.c_str(), value, tol, why);
     ++n_history;
+  }
+
+  // the restframe E2 and E3 rows on the fitted tables are history (E2: decision 2026-10-27 (a); E3: decision 2026-11-01)
+  bool fit_restframe(const std::string& tag) {
+    return !born_mode() && tag.find("restframe") != std::string::npos;
   }
 
   void verdict(bool ok, const std::string& what, double value, double tol) {
@@ -1084,11 +1093,11 @@ namespace {
       const double se   = std::sqrt(S.varK[i] / static_cast<double>(S.N));
       const double diff = S.meanK[i] - R.K_corr[i];
       const double dpl  = S.meanK[i] - R.K_plain[i];
-      if (!born_mode() && tag.find("restframe") != std::string::npos) {
+      if (fit_restframe(tag)) {
         verdict_history(std::abs(diff) <= 4.0 * se,
                         tag + fmt(": E2 at <K>/K0 = %.2f (t = %.6g, <K> = %.6g): |<K> - K_ODE,corrected| / s.e. (s.e. = %.4g)", f, S.t[i],
                                   S.meanK[i], se),
-                        std::abs(diff) / se, 4.0);
+                        std::abs(diff) / se, 4.0, "superseded by decision 2026-10-27 (a)");
       } else {
         verdict(std::abs(diff) <= 4.0 * se,
                 tag + fmt(": E2 at <K>/K0 = %.2f (t = %.6g, <K> = %.6g): |<K> - K_ODE,corrected| / s.e. (s.e. = %.4g)", f,
@@ -1159,7 +1168,14 @@ namespace {
       const double dKK      = (S.K0 - R.K_corr[i]) / S.K0;
       const double ratio_fb = S.varK[i] / R.var_fb[i];
       const double curv     = curv_of(i);
-      if (curv <= CURV_DOMAIN) {
+      if (curv <= CURV_DOMAIN && fit_restframe(tag)) {
+        verdict_history(std::abs(ratio_fb - 1.0) <= tol,
+                        tag + fmt(": E3 [revision 1.1.1: drift feedback] at %s (t = %.6g, Delta K/K = %.4f, Var_meas = %.6g, "
+                                  "Var_fb = %.6g, curvature budget %.3f %%): |Var_meas/Var_fb - 1|",
+                                  pt.first, S.t[i], dKK, S.varK[i], R.var_fb[i], 100.0 * curv),
+                        std::abs(ratio_fb - 1.0), tol,
+                        "decision 2026-11-01 (R4: the prediction takes the table's dI/dK, the restframe jumps the Born law)");
+      } else if (curv <= CURV_DOMAIN) {
         verdict(std::abs(ratio_fb - 1.0) <= tol,
                 tag + fmt(": E3 [registered, revision 1.1.1: drift feedback] at %s (t = %.6g, Delta K/K = %.4f, Var_meas = %.6g, "
                           "Var_fb = %.6g, curvature budget %.3f %%): |Var_meas/Var_fb - 1|",
@@ -1203,9 +1219,9 @@ namespace {
         t_worst_fb = S.t[i];
       }
     }
-    std::printf("(diag) %s: E3 max |Var_meas/Var - 1| over the window (Delta K/K >= 1%%) = %.4g at t = %.6g [feedback, registered], "
+    std::printf("(diag) %s: E3 max |Var_meas/Var - 1| over the window (Delta K/K >= 1%%) = %.4g at t = %.6g [feedback, %s], "
                 "%.4g at t = %.6g [no feedback, history] (tolerance %.4g)\n",
-                tag.c_str(), worst_fb, t_worst_fb, worst, t_worst, tol);
+                tag.c_str(), worst_fb, t_worst_fb, fit_restframe(tag) ? "history on the fitted tables" : "registered", worst, t_worst, tol);
   }
 
   void print_series(const std::string& tag, const Series& S) {
@@ -1245,9 +1261,9 @@ namespace {
     std::printf("(diag) E[D^2] fixture: bhref-0.2.0/moments_mono05.txt, %zu nodes, data_sha256 %s\n", D2.gamma.size(),
                 D2.sha.c_str());
     if (!born_mode()) {
-      std::printf("HISTORY: the restframe E2 rows of this group run on the FITTED step-1 loss tables (qk_source = fit), superseded by "
-                  "decision 2026-10-27 (a); they are printed as history rows, not verdicts; the registered counterpart is E10 on the "
-                  "Born tables (bh_event_e10_born, e10_g3_born)\n");
+      std::printf("HISTORY: the restframe E2 and E3 rows of this group run on the FITTED step-1 loss tables (qk_source = fit), E2 "
+                  "superseded by decision 2026-10-27 (a), E3 by decision 2026-11-01 (R4); they are printed as history rows, not "
+                  "verdicts; the registered counterpart is E10 on the Born tables (bh_event_e10_born, e10_g3_born)\n");
     }
     const int out_every = 25;
     for (const int spectrum : spectra) {
@@ -1376,9 +1392,9 @@ namespace {
   /**
    * @brief E7 (revision 1.1): a in {1, 2, 4} at f_max = 0.04, Gamma_p0 = 6 cooling over the
    *        band Gamma_p 6 to 3 (stop at <K>/K0 = 0.4, Gamma_p = 3), E2 at {0.9, 0.7, 0.5} and
-   *        E3 asserted for delta and restframe (the restframe mean against the fitted table
-   *        carries the fit-vs-Born offset: its failures are expected until E10 on the Born
-   *        tables); a = 4 is admitted by the support bound, min over the band of a_max(Gamma)
+   *        E3 asserted for delta and restframe (on the fitted tables the restframe E2 and E3
+   *        rows are history, decisions 2026-10-27 (a) and 2026-11-01; the registered restframe
+   *        rows are KERNELS::bh_event_e7_born); a = 4 is admitted by the support bound, min over the band of a_max(Gamma)
    *        = f_max K / D_max,unweighted = 5.36 (checked); a in {10, 30} at f_max = 0.1 run as
    *        the labelled clipped-law diagnostic (the support bound is violated there, events
    *        with a D > f_max K are skipped: the realised law is clipped, not coarse-grained).
@@ -1992,7 +2008,8 @@ auto main(int argc, char* argv[]) -> int {
       }
     }
     // R4 diagnostic (not registered in ctest): the Gamma_p0 = 3 restframe E2/E3 rows alone, on whatever tables
-    // BH_QK_SOURCE selects (fit when unset), with BH_EVENT_N and BH_EVENT_SEED_OFFSET from the environment
+    // BH_QK_SOURCE selects (fit when unset: history rows since decision 2026-11-01), with BH_EVENT_N and
+    // BH_EVENT_SEED_OFFSET from the environment
     if (want("r4")) {
       const auto D2 = load_d2(T);
       test_E2E3(T, D2, 3.0, N_stat, 130000, 0.64, { RESTFRAME }, "R4 ");
@@ -2009,8 +2026,8 @@ auto main(int argc, char* argv[]) -> int {
       test_E4(T, 500000, 11);
     }
     std::printf("bh_event summary: %d passed, %d failed, %d under the development-only exception (delta spectrum, single build, "
-                "revision 1.1; registered failures kept visible), %d history rows (restframe E2 on the fitted tables, superseded "
-                "2026-10-27 (a); the registered counterpart is E10 on the Born tables)\n",
+                "revision 1.1; registered failures kept visible), %d history rows (restframe E2 and E3 on the fitted tables, "
+                "superseded 2026-10-27 (a) and 2026-11-01; the registered counterparts are E10 and e7_born on the Born tables)\n",
                 n_pass, n_fail, n_exception, n_history);
     if (n_fail > 0 || n_pass == 0) {
       rc = 1;
