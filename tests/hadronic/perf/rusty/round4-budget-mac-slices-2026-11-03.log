@@ -1,0 +1,75 @@
+# round 4 budgets: the real engine through two repeat slices (event warm + the M5 poisson pair, fit, 2^16 ions, Mac) and their combined medians; preflight's part check with a mock sbatch; Claude 1, 2026-11-03
+## slice r1
+selector probe: the generated input holds qk_source = "fit" (<scratch>/slices/part-r1/selector_probe/input.toml)
+run m1_event_warm_N65536_r1: Custom 1.486300 ms/step (22.6791 ns per ion-step), pusher 0.569660, deposit 0.000000, total 2.056300 ms (progress avg 2.102000 ms), leptons (e- + e+) 20150, qk_source fit, ok 1, timers_ok 1, exit 0
+run m5poisson_poisson_warm_N65536_r1: Custom 1.482300 ms/step (22.6181 ns per ion-step), pusher 0.565830, deposit 0.399880, total 2.485900 ms (progress avg 2.521000 ms), leptons (e- + e+) 20152, qk_source fit, ok 1, timers_ok 1, exit 0
+run m5poisson_pic_poisson_warm_N65536_r1 (restart of m5poisson_poisson_warm_N65536_r1 at step 00000121, hadronic off): pusher 0.627240 ms/step, deposit 0.429060, total 1.095700 ms, ions 65500, leptons (e- + e+) 20200 [%.2e-rounded diagnostics], ok 1, timers_ok 1, exit 0
+---- medians (<scratch>/slices/part-r1/perf_medians.csv)
+label,tag_mode_variant_N,runs,median_custom_ms_per_step,median_custom_ns_per_ion_step,median_pusher_ms_per_step,median_deposit_ms_per_step,median_total_ms_per_step,all_ok
+a100-mac1-2996f2307392be24afa2db38d665fc7cc2a5d4aa,m1_event_warm_65536,1,1.486300,22.6791,0.569660,0.000000,2.056300,1
+a100-mac1-2996f2307392be24afa2db38d665fc7cc2a5d4aa,m5poisson_poisson_warm_65536,1,1.482300,22.6181,0.565830,0.399880,2.485900,1
+a100-mac1-2996f2307392be24afa2db38d665fc7cc2a5d4aa,m5poisson_pic_poisson_warm_65536,1,0.004700,n/a,0.627240,0.429060,1.095700,1
+perf_driver.sh summary: 3 runs executed, 0 scientific failures, 0 infrastructure failures, label a100-mac1-2996f2307392be24afa2db38d665fc7cc2a5d4aa
+### perf_runs.csv
+label,tag,mode,variant,N,repeat,samples,custom_ms_per_step,custom_ns_per_ion_step,pusher_ms_per_step,deposit_ms_per_step,total_ms_per_step,progress_avg_ms,npart_ion_end,npart_pairs_end,ledger_ok,timers_ok,exit,qk_source
+a100-mac1-2996f2307392be24afa2db38d665fc7cc2a5d4aa,m1,event,warm,65536,1,100,1.486300,22.6791,0.569660,0.000000,2.056300,2.102000,65500,20150,1,1,0,fit
+a100-mac1-2996f2307392be24afa2db38d665fc7cc2a5d4aa,m5poisson,poisson,warm,65536,1,100,1.482300,22.6181,0.565830,0.399880,2.485900,2.521000,65500,20152,1,1,0,fit
+a100-mac1-2996f2307392be24afa2db38d665fc7cc2a5d4aa,m5poisson_pic,poisson,warm,65536,1,100,0.004700,n/a,0.627240,0.429060,1.095700,1.144000,65500,20200,1,1,0,n/a
+## slice r2
+selector probe: the generated input holds qk_source = "fit" (<scratch>/slices/part-r2/selector_probe/input.toml)
+run m1_event_warm_N65536_r2: Custom 1.481900 ms/step (22.6120 ns per ion-step), pusher 0.572200, deposit 0.000000, total 2.054300 ms (progress avg 2.094000 ms), leptons (e- + e+) 20150, qk_source fit, ok 1, timers_ok 1, exit 0
+run m5poisson_poisson_warm_N65536_r2: Custom 1.487700 ms/step (22.7005 ns per ion-step), pusher 0.575620, deposit 0.403630, total 2.507300 ms (progress avg 2.541000 ms), leptons (e- + e+) 20152, qk_source fit, ok 1, timers_ok 1, exit 0
+run m5poisson_pic_poisson_warm_N65536_r2 (restart of m5poisson_poisson_warm_N65536_r2 at step 00000121, hadronic off): pusher 0.655160 ms/step, deposit 0.446160, total 1.149400 ms, ions 65500, leptons (e- + e+) 20200 [%.2e-rounded diagnostics], ok 1, timers_ok 1, exit 0
+---- medians (<scratch>/slices/part-r2/perf_medians.csv)
+label,tag_mode_variant_N,runs,median_custom_ms_per_step,median_custom_ns_per_ion_step,median_pusher_ms_per_step,median_deposit_ms_per_step,median_total_ms_per_step,all_ok
+a100-mac2-2996f2307392be24afa2db38d665fc7cc2a5d4aa,m1_event_warm_65536,1,1.481900,22.6120,0.572200,0.000000,2.054300,1
+a100-mac2-2996f2307392be24afa2db38d665fc7cc2a5d4aa,m5poisson_poisson_warm_65536,1,1.487700,22.7005,0.575620,0.403630,2.507300,1
+a100-mac2-2996f2307392be24afa2db38d665fc7cc2a5d4aa,m5poisson_pic_poisson_warm_65536,1,0.005690,n/a,0.655160,0.446160,1.149400,1
+perf_driver.sh summary: 3 runs executed, 0 scientific failures, 0 infrastructure failures, label a100-mac2-2996f2307392be24afa2db38d665fc7cc2a5d4aa
+### perf_runs.csv
+label,tag,mode,variant,N,repeat,samples,custom_ms_per_step,custom_ns_per_ion_step,pusher_ms_per_step,deposit_ms_per_step,total_ms_per_step,progress_avg_ms,npart_ion_end,npart_pairs_end,ledger_ok,timers_ok,exit,qk_source
+a100-mac2-2996f2307392be24afa2db38d665fc7cc2a5d4aa,m1,event,warm,65536,2,100,1.481900,22.6120,0.572200,0.000000,2.054300,2.094000,65500,20150,1,1,0,fit
+a100-mac2-2996f2307392be24afa2db38d665fc7cc2a5d4aa,m5poisson,poisson,warm,65536,2,100,1.487700,22.7005,0.575620,0.403630,2.507300,2.541000,65500,20152,1,1,0,fit
+a100-mac2-2996f2307392be24afa2db38d665fc7cc2a5d4aa,m5poisson_pic,poisson,warm,65536,2,100,0.005690,n/a,0.655160,0.446160,1.149400,1.209000,65500,20200,1,1,0,n/a
+## combine
+combined labels: a100-mac1-2996f2307392be24afa2db38d665fc7cc2a5d4aa a100-mac2-2996f2307392be24afa2db38d665fc7cc2a5d4aa 
+---- combined medians (<scratch>/slices/combined/perf_medians.csv) of 2 CSV files
+label,tag_mode_variant_N,runs,median_custom_ms_per_step,median_custom_ns_per_ion_step,median_pusher_ms_per_step,median_deposit_ms_per_step,median_total_ms_per_step,all_ok
+mac-slices-combined,m1_event_warm_65536,2,1.4841,22.6456,0.57093,0,2.0553,1
+mac-slices-combined,m5poisson_poisson_warm_65536,2,1.485,22.6593,0.570725,0.401755,2.4966,1
+mac-slices-combined,m5poisson_pic_poisson_warm_65536,2,0.005195,n/a,0.6412,0.43761,1.12255,1
+## preflight
+== PERF_PART=engine PERF_N=4194304 PERF_REPEAT_LAST=1
+preflight rc=0
+part configuration accepted (dry run <scratch>/p2perf-preflight.nxx15T/dry-run.log):
+  step0-checkout                              120 s  dry
+  step1-build                                 780 s  dry
+  step2-engine-N4194304                      1912 s  dry
+sbatch --test-only:
+mock sbatch --test-only --export=ALL,ENTITY_COMMIT=deadbeef /Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments
+== PERF_PART=engine PERF_N=4194304
+preflight rc=7
+part configuration REFUSED (dry run <scratch>/p2perf-preflight.5UGfej/dry-run.log):
+configuration refused: the engine slice needs 6636 s of ceilings (gate included), more than 2880 s: split it (perf_budget.py --plan)
+== PERF_PART=kernel
+preflight rc=0
+part configuration accepted (dry run <scratch>/p2perf-preflight.7Pd3Hp/dry-run.log):
+  step0-checkout                              120 s  dry
+  step1-build                                 780 s  dry
+  step3-stride                                150 s  dry
+  step3-variants                              100 s  dry
+  step4-reduction                              30 s  dry
+  step5-nsys-event-production                  50 s  dry
+  step5-nsys-event-const                       50 s  dry
+  step5-nsys-event-float                       50 s  dry
+  step5-nsys-continuous-production             50 s  dry
+  step5-ncu-event-production                   50 s  not_requested
+  step5-ncu-event-const                        50 s  not_requested
+  step5-ncu-event-float                        50 s  not_requested
+  step5-ncu-continuous-production              50 s  not_requested
+  step5-rngpool                                30 s  dry
+  step6-f8-single                             120 s  dry
+  step7-f8-double-build                      1000 s  dry
+  step7-f8-double                             120 s  dry
+sbatch --test-only:
+mock sbatch --test-only --export=ALL,ENTITY_COMMIT=deadbeef /Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments

@@ -94,3 +94,17 @@ requires each hadronic-on run's startup line `bh_proto: qk_source = <PERF_QK_SOU
 last CSV column. Controls: `HADRONIC::perf_job_selftest` (real template with fit and born; a template without the
 placeholder refused) and `HADRONIC::perf_driver_replay` (fit requested on Born logs, the startup line removed, a
 template without the placeholder and one with a fixed value; the 13 generated inputs and the CSV column checked).
+
+Budgets and one-hour parts (round 4, from the measured costs of B7398318 and A7397866; report §7.9). `rusty/perf_budget.py`
+holds the per-process model: startup 3.0 s at 2¹⁸ (+1 µs per further ion, planning), the Born table 7.2 s (Born only;
+the engine runs use fit), the 550-step stepping measured at 2¹⁸ plus a planning slope of 2 ns per particle-step, and
+bh_proto's end-of-run per-ion and pair text dumps, measured at 12–17 µs per particle and linear in N (a serial host
+loop). The dumps dominate: the registered engine campaign (143 processes) is about 5.0 A100-hours, 4.2 of them dumps,
+so it cannot fit one or two one-hour jobs and is split, never shrunk, into one-hour parts: `perf_budget.py --plan` lists
+15 (one kernel part, 14 engine slices) and checks that each fits 80 % of its hour and that together they cover the 143
+processes exactly once. The job takes `PERF_PART=kernel` or `PERF_PART=engine` with a slice (`PERF_N`,
+`PERF_REPEAT_FIRST/LAST`, `PERF_M1`, `PERF_MODES`, `PERF_VARIANTS`, `PERF_M5_SETS`), one step per N whose ceiling is the
+slice's sum of the embedded per-process table (`--emit-table`), and refuses (exit 7, before its root exists) a missing,
+unknown, basis-less or oversized part; `preflight.sh` dry-runs the exported part through that guard. The parts' CSVs are
+combined by `PERF_COMBINE=<csv>:<csv>... perf_driver.sh` (medians over all rows, one commit, never overwriting). ncu is
+optional (`PERF_NCU=1`; off by default, recorded `not_requested`: Rusty's driver refused the counters), nsys always runs.

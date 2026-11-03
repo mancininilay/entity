@@ -32,6 +32,15 @@
 #                 reported as it is (t_latency = 0 in the perf budget input).
 #   PERF_LABEL    free label written in every row (e.g. "mac-openmp-smoke" or "a100")             [unlabelled]
 #   PERF_CHECK_INPUTS_ONLY  1: generate the selector probe input, check it (below) and exit (0 or 3) without any run   [0]
+#   PERF_REPEAT_FIRST, PERF_REPEAT_LAST  the repeat indices run at every N   [1 and the N's registered count]
+#   PERF_M1       1: the M1/M2 runs (PERF_MODES x PERF_VARIANTS) at every N; 0: none (an M5-only part)   [1]
+#   PERF_M5_SETS  subset of "pic poisson budget": the M5 groups run per repeat [all three]; "poisson" and "budget" are each
+#                 a source run and its restart (the restart reads that run's checkpoint, so the pair is never split)
+#   PERF_COMBINE  "<csv>:<csv>:...": no run; the medians of the concatenated perf_runs.csv files (a colon-separated list:
+#                 paths may hold spaces) are written to <workdir>/perf_medians.csv, which must not exist
+# Round 4 (budgets from B7398318): the campaign is split into one-hour parts (rusty/perf_budget.py --plan), each a slice of
+# (N, repeats, modes, M5 groups) whose rows carry their true repeat index; PERF_COMBINE recomputes the medians over the
+# parts with the rule below. No measured quantity changes: the same processes, steps and timers as one long run.
 # The q_k selector (round 4, Codex 1's B1 of B7398318: the template had no @QK_SOURCE@, so all 28 generated inputs of that
 # job omitted qk_source and the engine ran on the parser's default, Born, while fit had been requested). Three checks, each
 # an INFRASTRUCTURE failure (a wrong effective input, never a scientific result): (1) before any run, a probe input is
@@ -82,12 +91,17 @@ PERF_MEASURED="${PERF_MEASURED:-500}"
 PERF_DIAG="${PERF_DIAG:-1}"
 PERF_M5="${PERF_M5:-1}"
 PERF_LABEL="${PERF_LABEL:-unlabelled}"
+PERF_REPEAT_FIRST="${PERF_REPEAT_FIRST:-1}"
+PERF_M1="${PERF_M1:-1}"
+PERF_M5_SETS="${PERF_M5_SETS:-pic poisson budget}"
+for g in $PERF_M5_SETS; do case "$g" in pic|poisson|budget) ;; *) echo "INFRA: PERF_M5_SETS: unknown group '$g'"; exit 3 ;; esac; done
 DT=0.5
 MU_R=1836.15
 mkdir -p "$WD"
 CSV="$WD/perf_runs.csv"
 MED="$WD/perf_medians.csv"
-echo "label,tag,mode,variant,N,repeat,samples,custom_ms_per_step,custom_ns_per_ion_step,pusher_ms_per_step,deposit_ms_per_step,total_ms_per_step,progress_avg_ms,npart_ion_end,npart_pairs_end,ledger_ok,timers_ok,exit,qk_source" > "$CSV"
+COMBINE_LATER=0; [ -n "${PERF_COMBINE:-}" ] && COMBINE_LATER=1
+[ "$COMBINE_LATER" = "1" ] || echo "label,tag,mode,variant,N,repeat,samples,custom_ms_per_step,custom_ns_per_ion_step,pusher_ms_per_step,deposit_ms_per_step,total_ms_per_step,progress_avg_ms,npart_ion_end,npart_pairs_end,ledger_ok,timers_ok,exit,qk_source" > "$CSV"
 n_run=0; n_fail=0; n_infra=0   # n_fail: scientific failures (FAIL lines); n_infra: infrastructure failures (INFRA lines)
 
 # one extra diagnostics block at the end: the last step runs bh_proto's finish() (final summary, array identity, the
@@ -163,6 +177,23 @@ selector_ok() {
 runtime_qk_source() {
   sed -n 's/^bh_proto: qk_source = \([a-z]*\): .*/\1/p' "$1" 2>/dev/null | awk '
     { v[++n] = $1 } END { if (n == 0) print "missing"; else if (n == 1) print v[1]; else { s = v[1]; for (i = 2; i <= n; i++) s = s "," v[i]; print "multiple:" s } }'
+}
+
+# write_medians <out> <csv...>: medians over repeats per (label, mode, variant, N, tag) on custom_ms_per_step, pusher,
+# deposit, total (the rows of every csv, header lines skipped); with MED_LABEL set, every row's label is replaced by it (the
+# parts of one campaign carry their own job labels)
+write_medians() {
+  local out="$1"; shift
+echo "label,tag_mode_variant_N,runs,median_custom_ms_per_step,median_custom_ns_per_ion_step,median_pusher_ms_per_step,median_deposit_ms_per_step,median_total_ms_per_step,all_ok" > "$out"
+for c in "$@"; do tail -n +2 "$c"; done | awk -F, -v lab="${MED_LABEL:-}" '
+  { key = (lab != "" ? lab : $1) "," $2 "_" $3 "_" $4 "_" $5; if (!(key in seen)) { order[++k] = key; seen[key] = 1 }
+    c[key] = c[key] " " $8; ns[key] = ns[key] " " $9; p[key] = p[key] " " $10; d[key] = d[key] " " $11; t[key] = t[key] " " $12
+    n[key]++; if ($16 != 1 || $17 != 1) bad[key] = 1 }
+  function median(s,   a, m, i, tmp, j, na) { m = split(s, a, " "); na = 0; for (i = 1; i <= m; i++) { if (a[i] == "n/a") na++; if (a[i] == "nan") return "nan" }
+    if (na == m) return "n/a"; if (na > 0) return "nan"
+    for (i = 2; i <= m; i++) { tmp = a[i]; j = i - 1; while (j >= 1 && a[j] + 0 > tmp + 0) { a[j+1] = a[j]; j-- } a[j+1] = tmp }
+    if (m % 2 == 1) return a[(m + 1) / 2]; return (a[m/2] + a[m/2 + 1]) / 2 }
+  END { for (i = 1; i <= k; i++) { key = order[i]; printf "%s,%d,%s,%s,%s,%s,%s,%d\n", key, n[key], median(c[key]), median(ns[key]), median(p[key]), median(d[key]), median(t[key]), (key in bad) ? 0 : 1 } }' >> "$out"
 }
 
 make_input() {
@@ -303,6 +334,19 @@ run_restart_pic() {
   echo "run $name (restart of $src at step $step, hadronic off): pusher $pusher ms/step, deposit $deposit, total $total ms, ions $nion, leptons (e- + e+) $((npm + npp)) [%.2e-rounded diagnostics], ok $ok, timers_ok $timers_ok, exit $rc"
 }
 
+# PERF_COMBINE: the medians over the parts' CSVs, written to a NEW file (an existing medians file is never overwritten)
+if [ "$COMBINE_LATER" = "1" ]; then
+  [ -e "$MED" ] && { echo "INFRA: PERF_COMBINE: $MED exists (no overwrite)"; exit 3; }
+  IFS=: read -r -a COMBINE_FILES <<< "$PERF_COMBINE"
+  for c in "${COMBINE_FILES[@]}"; do [ -s "$c" ] || { echo "INFRA: PERF_COMBINE: $c is missing or empty"; exit 3; }; done
+  # the parts must measure one commit: the job labels a100-<job>-<40-hex commit> must agree on the commit
+  commits=$(for c in "${COMBINE_FILES[@]}"; do tail -n +2 "$c"; done | cut -d, -f1 | sed -n 's/^a100-[^-]*-\([0-9a-f]\{40\}\)$/\1/p' | sort -u)
+  [ "$(echo "$commits" | grep -c .)" -le 1 ] || { echo "INFRA: PERF_COMBINE: the parts measure different commits: $(echo $commits)"; exit 3; }
+  echo "combined labels: $(for c in "${COMBINE_FILES[@]}"; do tail -n +2 "$c"; done | cut -d, -f1 | sort -u | tr '\n' ' ')"
+  MED_LABEL="$PERF_LABEL" write_medians "$MED" "${COMBINE_FILES[@]}"
+  echo "---- combined medians ($MED) of ${#COMBINE_FILES[@]} CSV files"; cat "$MED"; exit 0
+fi
+
 # B1 (1): before any run, a probe input generated from the template must carry the requested selector; a template without
 # the placeholder (or with a fixed value) refuses the whole campaign here, before an hour is spent on the wrong tables
 make_input selector_probe event 1 "$(awk -v m="$MU_R" 'BEGIN { printf "%.6f", m * 2.0 }')" false true
@@ -316,9 +360,10 @@ echo "selector probe: the generated input holds qk_source = \"$PERF_QK_SOURCE\" 
 
 for N in $PERF_N; do
   reps="$PERF_REPEATS"; [ "$N" = "$N_TOP" ] && reps="$PERF_REPEATS_TOP"
-  for mode in $PERF_MODES; do
+  [ -n "${PERF_REPEAT_LAST:-}" ] && reps="$PERF_REPEAT_LAST"
+  [ "$PERF_M1" = "1" ] && for mode in $PERF_MODES; do
     for var in $PERF_VARIANTS; do
-      rep=1
+      rep="$PERF_REPEAT_FIRST"
       while [ $rep -le "$reps" ]; do
         run_one "$mode" "$var" "$N" "$rep" false true m1
         rep=$((rep + 1))
@@ -326,29 +371,25 @@ for N in $PERF_N; do
     done
   done
   if [ "$PERF_M5" = "1" ]; then
-    rep=1
+    rep="$PERF_REPEAT_FIRST"
     while [ $rep -le "$reps" ]; do
-      run_one none warm "$N" "$rep" true false m5pic             # stock pusher + deposit, hadronic off, ions only (the PIC floor)
-      run_one poisson warm "$N" "$rep" true true m5poisson ckpt  # pair-loaded population (a = 1), deposit on, hadronic on: diagnostic
-      run_one budget warm "$N" "$rep" true true m5budget ckpt    # the contract's budget run with deposit on (t_latency = 0): diagnostic
-      run_restart_pic "m5poisson_poisson_warm_N${N}_r${rep}" m5poisson_pic poisson "$N" "$rep"  # F8: the END population, hadronic off
-      run_restart_pic "m5budget_budget_warm_N${N}_r${rep}" m5budget_pic budget "$N" "$rep"
+      case " $PERF_M5_SETS " in *" pic "*)
+        run_one none warm "$N" "$rep" true false m5pic ;;            # stock pusher + deposit, hadronic off, ions only (the PIC floor)
+      esac
+      case " $PERF_M5_SETS " in *" poisson "*)
+        run_one poisson warm "$N" "$rep" true true m5poisson ckpt    # pair-loaded population (a = 1), deposit on, hadronic on: diagnostic
+        run_restart_pic "m5poisson_poisson_warm_N${N}_r${rep}" m5poisson_pic poisson "$N" "$rep" ;;  # F8: the END population, hadronic off
+      esac
+      case " $PERF_M5_SETS " in *" budget "*)
+        run_one budget warm "$N" "$rep" true true m5budget ckpt      # the contract's budget run with deposit on (t_latency = 0): diagnostic
+        run_restart_pic "m5budget_budget_warm_N${N}_r${rep}" m5budget_pic budget "$N" "$rep" ;;
+      esac
       rep=$((rep + 1))
     done
   fi
 done
 
-# medians over repeats per (label, mode, variant, N, tag) on custom_ms_per_step, pusher, deposit, total
-echo "label,tag_mode_variant_N,runs,median_custom_ms_per_step,median_custom_ns_per_ion_step,median_pusher_ms_per_step,median_deposit_ms_per_step,median_total_ms_per_step,all_ok" > "$MED"
-tail -n +2 "$CSV" | awk -F, '
-  { key = $1 "," $2 "_" $3 "_" $4 "_" $5; if (!(key in seen)) { order[++k] = key; seen[key] = 1 }
-    c[key] = c[key] " " $8; ns[key] = ns[key] " " $9; p[key] = p[key] " " $10; d[key] = d[key] " " $11; t[key] = t[key] " " $12
-    n[key]++; if ($16 != 1 || $17 != 1) bad[key] = 1 }
-  function median(s,   a, m, i, tmp, j, na) { m = split(s, a, " "); na = 0; for (i = 1; i <= m; i++) { if (a[i] == "n/a") na++; if (a[i] == "nan") return "nan" }
-    if (na == m) return "n/a"; if (na > 0) return "nan"
-    for (i = 2; i <= m; i++) { tmp = a[i]; j = i - 1; while (j >= 1 && a[j] + 0 > tmp + 0) { a[j+1] = a[j]; j-- } a[j+1] = tmp }
-    if (m % 2 == 1) return a[(m + 1) / 2]; return (a[m/2] + a[m/2 + 1]) / 2 }
-  END { for (i = 1; i <= k; i++) { key = order[i]; printf "%s,%d,%s,%s,%s,%s,%s,%d\n", key, n[key], median(c[key]), median(ns[key]), median(p[key]), median(d[key]), median(t[key]), (key in bad) ? 0 : 1 } }' >> "$MED"
+write_medians "$MED" "$CSV"
 echo "---- medians ($MED)"; cat "$MED"
 if [ $n_run -eq 0 ]; then echo "INFRA: perf_driver.sh executed no run"; n_infra=$((n_infra + 1)); fi
 echo "perf_driver.sh summary: $n_run runs executed, $n_fail scientific failures, $n_infra infrastructure failures, label $PERF_LABEL"

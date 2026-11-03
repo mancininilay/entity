@@ -1,0 +1,125 @@
+# round 4 budgets: perf_budget.py (model from B7398318 and A7397866), default and sensitivity; Claude 1, 2026-11-03
+## --table --plan (fit, slope 2 ns)
+engine campaign, qk_source = fit, planning slope 2.00 ns per particle-step above 2^18
+| N | processes | init s | Born s | stepping s | finish (dumps) s | total s | ceiling s (x1.25) |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 262144 | 39 | 117 | 0 | 306 | 236 | 660 | 825 |
+| 1048576 | 39 | 148 | 0 | 349 | 945 | 1442 | 1803 |
+| 4194304 | 39 | 270 | 0 | 520 | 3782 | 4573 | 5716 |
+| 16777216 | 26 | 507 | 0 | 803 | 10085 | 11396 | 14245 |
+all four N: 143 processes, 18070 s (5.02 h), of which the end-of-run text dumps 15049 s (4.18 h); without the dumps 3022 s (0.84 h)
+
+per-process at 2^24 (s): init, Born, stepping, finish
+  m1/budget/cold                       20, 0, 24, 232
+  m1/budget/warm                       20, 0, 25, 364
+  m1/event/cold                        20, 0, 24, 236
+  m1/event/warm                        20, 0, 38, 515
+  m1/none/cold                         20, 0, 24, 248
+  m1/none/warm                         20, 0, 24, 323
+  m1/poisson/cold                      20, 0, 24, 264
+  m1/poisson/warm                      20, 0, 38, 637
+  m5budget/budget/warm                 20, 0, 27, 348
+  m5budget_pic/budget/warm             20, 0, 27, 348
+  m5pic/none/warm                      20, 0, 27, 240
+  m5poisson/poisson/warm               20, 0, 43, 644
+  m5poisson_pic/poisson/warm           20, 0, 56, 644
+
+other steps (measured -> ceiling, s)
+  step0-checkout                                                25 ->   120   [B7398318]
+  step1-build (single: 12 targets, 79 Ninja steps, -j 8)       654 ->   780   [B7398318]
+  step3-stride (M6, 4M ions)                                    96 ->   150   [B7398318]
+  step3-variants (M3, 4M ions)                                  62 ->   100   [B7398318]
+  step4-reduction (M4)                                           3 ->    30   [B7398318]
+  step5-nsys x4 (each <= 32 s incl. the failed ncu attempt)    128 ->   200   [B7398318]
+  step5-rngpool                                                  2 ->    30   [B7398318]
+  step6-f8-single (8 entries)                                   27 ->   120   [B7398318 (injector aborted early)]
+  step7-f8-double-build (8 targets, 69 Ninja steps, -j 8)     1000 ->  1000   [A7397866: 27 targets, 109 steps in 1003 s at -j 12; B7398318: 49/69 steps at 480 s]
+  step7-f8-double (8 entries)                                   27 ->   120   [as single]
+  step5-ncu x4                                                   - ->   200   [optional, off by default]
+
+one-hour parts: every part has its own checkout and single-precision build gate (900 s); ceilings at most 2880 s (80 % of the hour)
+| part | PERF_N | repeats | PERF_M1 | PERF_MODES | PERF_VARIANTS | PERF_M5_SETS | processes | ceilings s |
+| --- | ---: | --- | ---: | --- | --- | --- | ---: | ---: |
+| K | (kernel: M3, M4, M6, nsys, RNG, F8 single and double) | | | | | | | 2650 (2850 with ncu) |
+| E01 | 262144 | 1-3 | 1 | none poisson budget event | warm cold | pic poisson budget | 39 | 1740 |
+| E02 | 1048576 | 1-3 | 1 | none poisson budget event | warm cold | pic poisson budget | 39 | 2724 |
+| E03 | 4194304 | 1-1 | 1 | none poisson budget event | warm cold | pic poisson budget | 13 | 2812 |
+| E04 | 4194304 | 2-2 | 1 | none poisson budget event | warm cold | pic poisson budget | 13 | 2812 |
+| E05 | 4194304 | 3-3 | 1 | none poisson budget event | warm cold | pic poisson budget | 13 | 2812 |
+| E06 | 16777216 | 1-1 | 1 | poisson event | warm | - | 2 | 2485 |
+| E07 | 16777216 | 1-1 | 1 | none poisson budget event | cold | - | 4 | 2345 |
+| E08 | 16777216 | 2-2 | 1 | poisson event | warm | - | 2 | 2485 |
+| E09 | 16777216 | 2-2 | 1 | none poisson budget event | cold | - | 4 | 2345 |
+| E10 | 16777216 | 1-2 | 1 | none budget | warm | - | 4 | 2838 |
+| E11 | 16777216 | 1-1 | 0 | - | - | poisson | 2 | 2685 |
+| E12 | 16777216 | 2-2 | 0 | - | - | poisson | 2 | 2685 |
+| E13 | 16777216 | 1-1 | 0 | - | - | pic budget | 3 | 2245 |
+| E14 | 16777216 | 2-2 | 0 | - | - | pic budget | 3 | 2245 |
+coverage: 143 registered processes, 143 in the parts, 0 duplicated, 0 missing, 0 extra
+plan: 15 parts (15 A100-hours reserved), every part fits and the coverage is exact
+rc=0
+
+## --beta-ns 0.5
+engine campaign, qk_source = fit, planning slope 0.50 ns per particle-step above 2^18
+| N | processes | init s | Born s | stepping s | finish (dumps) s | total s | ceiling s (x1.25) |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 262144 | 39 | 117 | 0 | 306 | 236 | 660 | 825 |
+| 1048576 | 39 | 148 | 0 | 317 | 945 | 1410 | 1763 |
+| 4194304 | 39 | 270 | 0 | 360 | 3782 | 4412 | 5515 |
+| 16777216 | 26 | 507 | 0 | 354 | 10085 | 10947 | 13683 |
+all four N: 143 processes, 17429 s (4.84 h), of which the end-of-run text dumps 15049 s (4.18 h); without the dumps 2380 s (0.66 h)
+
+
+## --beta-ns 5
+engine campaign, qk_source = fit, planning slope 5.00 ns per particle-step above 2^18
+| N | processes | init s | Born s | stepping s | finish (dumps) s | total s | ceiling s (x1.25) |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 262144 | 39 | 117 | 0 | 306 | 236 | 660 | 825 |
+| 1048576 | 39 | 148 | 0 | 413 | 945 | 1506 | 1883 |
+| 4194304 | 39 | 270 | 0 | 841 | 3782 | 4893 | 6117 |
+| 16777216 | 26 | 507 | 0 | 1702 | 10085 | 12294 | 15368 |
+all four N: 143 processes, 19354 s (5.38 h), of which the end-of-run text dumps 15049 s (4.18 h); without the dumps 4305 s (1.20 h)
+
+
+## --qk born
+engine campaign, qk_source = born, planning slope 2.00 ns per particle-step above 2^18
+| N | processes | init s | Born s | stepping s | finish (dumps) s | total s | ceiling s (x1.25) |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 262144 | 39 | 117 | 216 | 306 | 236 | 876 | 1095 |
+| 1048576 | 39 | 148 | 216 | 349 | 945 | 1658 | 2073 |
+| 4194304 | 39 | 270 | 216 | 520 | 3782 | 4789 | 5986 |
+| 16777216 | 26 | 507 | 144 | 803 | 10085 | 11540 | 14425 |
+all four N: 143 processes, 18862 s (5.24 h), of which the end-of-run text dumps 15049 s (4.18 h); without the dumps 3814 s (1.06 h)
+
+
+## measured inputs: per-run Born, loop elapsed and last-step Custom of B7398318 (extracted from its run logs)
+m1_budget_cold_N262144_r1                  born  7.17  loop elapsed   9.53  last-step Custom  3.63  blocks 551
+m1_budget_cold_N262144_r2                  born  7.17  loop elapsed   9.06  last-step Custom  3.19  blocks 551
+m1_budget_cold_N262144_r3                  born  7.18  loop elapsed   8.41  last-step Custom  3.27  blocks 551
+m1_budget_warm_N262144_r1                  born  7.16  loop elapsed  12.10  last-step Custom  5.69  blocks 551
+m1_budget_warm_N262144_r2                  born  7.19  loop elapsed  11.72  last-step Custom  5.45  blocks 551
+m1_budget_warm_N262144_r3                  born  7.17  loop elapsed  11.41  last-step Custom  5.34  blocks 551
+m1_event_cold_N262144_r1                   born  7.17  loop elapsed   9.45  last-step Custom  3.68  blocks 551
+m1_event_cold_N262144_r2                   born  7.17  loop elapsed   8.64  last-step Custom  3.38  blocks 551
+m1_event_cold_N262144_r3                   born  7.17  loop elapsed   9.14  last-step Custom  3.57  blocks 551
+m1_event_warm_N262144_r1                   born  7.17  loop elapsed  14.01  last-step Custom  7.36  blocks 551
+m1_event_warm_N262144_r2                   born  7.17  loop elapsed  14.91  last-step Custom  8.05  blocks 551
+m1_event_warm_N262144_r3                   born  7.17  loop elapsed  14.65  last-step Custom  8.02  blocks 551
+m1_none_cold_N262144_r1                    born  7.20  loop elapsed   9.92  last-step Custom  3.88  blocks 551
+m1_none_cold_N262144_r2                    born  7.16  loop elapsed   9.75  last-step Custom  3.81  blocks 551
+m1_none_cold_N262144_r3                    born  7.17  loop elapsed   9.60  last-step Custom  3.88  blocks 551
+m1_none_warm_N262144_r1                    born  7.16  loop elapsed  11.17  last-step Custom  5.04  blocks 551
+m1_none_warm_N262144_r2                    born  7.17  loop elapsed   9.13  last-step Custom  3.83  blocks 551
+m1_none_warm_N262144_r3                    born  7.17  loop elapsed   9.54  last-step Custom  4.26  blocks 551
+m1_poisson_cold_N262144_r1                 born  7.16  loop elapsed   9.22  last-step Custom  3.71  blocks 551
+m1_poisson_cold_N262144_r2                 born  7.16  loop elapsed   9.60  last-step Custom  3.79  blocks 551
+m1_poisson_cold_N262144_r3                 born  7.17  loop elapsed  10.44  last-step Custom  4.12  blocks 551
+m1_poisson_warm_N262144_r1                 born  7.18  loop elapsed  17.10  last-step Custom  9.77  blocks 551
+m1_poisson_warm_N262144_r2                 born  7.19  loop elapsed  17.13  last-step Custom  9.81  blocks 551
+m1_poisson_warm_N262144_r3                 born  7.18  loop elapsed  17.46  last-step Custom  9.95  blocks 551
+m5budget_budget_warm_N262144_r1            born  7.17  loop elapsed  14.38  last-step Custom  5.43  blocks 551
+m5pic_none_warm_N262144_r1                 born  0.00  loop elapsed  12.51  last-step Custom  3.75  blocks 551
+m5poisson_pic_poisson_warm_N262144_r1      born  0.00  loop elapsed   7.12  last-step Custom  0.00  blocks 323
+m5poisson_poisson_warm_N262144_r1          born  7.18  loop elapsed  22.46  last-step Custom 10.07  blocks 551
+complete runs 27 sum born 186.5, sum loop elapsed 322.4, sum last-step 145.7
+partial [('m5poisson_pic_poisson_warm_N262144_r1', 0.0, 7.118, 0.00141, 323)]

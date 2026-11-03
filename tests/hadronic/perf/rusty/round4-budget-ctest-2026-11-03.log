@@ -1,0 +1,312 @@
+# round 4 budgets: HADRONIC::perf_smoke, perf_driver_replay (21 checks), perf_job_selftest (91 checks), ctest -V, Mac; Claude 1, 2026-11-03
+UpdateCTestConfiguration  from :/Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/builds/perf-single/DartConfiguration.tcl
+Test project /Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/builds/perf-single
+Constructing a list of tests
+Done constructing a list of tests
+Updating test list for fixtures
+Added 0 tests to meet fixture requirements
+Checking test dependency graph...
+Checking test dependency graph end
+test 167
+    Start 167: HADRONIC::perf_smoke
+
+167: Test command: /opt/homebrew/bin/cmake "-E" "env" "PERF_N=65536" "PERF_REPEATS=1" "PERF_WARMUP=20" "PERF_MEASURED=100" "PERF_DIAG=1" "PERF_M5=1" "PERF_LABEL=ctest-smoke" "bash" "/Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/dev-hadronic-perf/tests/hadronic/perf/perf_driver.sh" "/Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/builds/perf-single/src/entity.xc" "/Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/builds/perf-single/tests/hadronic/bh_check" "/Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/dev-hadronic-perf/tests/hadronic/perf/inputs" "/Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/builds/perf-single/tests/hadronic/work/perf_smoke"
+167: Working Directory: /Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/builds/perf-single/tests/hadronic
+167: Test timeout computed to be: 3600
+167: selector probe: the generated input holds qk_source = "born" (/Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/builds/perf-single/tests/hadronic/work/perf_smoke/selector_probe/input.toml)
+167: run m1_none_warm_N65536_r1: Custom 0.405450 ms/step (6.1867 ns per ion-step), pusher 0.245240, deposit 0.000000, total 0.650920 ms (progress avg 0.720000 ms), leptons (e- + e+) 0, qk_source born, ok 1, timers_ok 1, exit 0
+167: run m1_none_cold_N65536_r1: Custom 0.131750 ms/step (2.0103 ns per ion-step), pusher 0.263920, deposit 0.000000, total 0.395940 ms (progress avg 0.445000 ms), leptons (e- + e+) 0, qk_source born, ok 1, timers_ok 1, exit 0
+167: run m1_poisson_warm_N65536_r1: Custom 0.756110 ms/step (11.5373 ns per ion-step), pusher 0.350160, deposit 0.000000, total 1.106300 ms (progress avg 1.157000 ms), leptons (e- + e+) 20104, qk_source born, ok 1, timers_ok 1, exit 0
+167: run m1_poisson_cold_N65536_r1: Custom 0.129650 ms/step (1.9783 ns per ion-step), pusher 0.238980, deposit 0.000000, total 0.368850 ms (progress avg 0.422000 ms), leptons (e- + e+) 0, qk_source born, ok 1, timers_ok 1, exit 0
+167: run m1_budget_warm_N65536_r1: Custom 0.917740 ms/step (14.0036 ns per ion-step), pusher 0.229530, deposit 0.000000, total 1.147760 ms (progress avg 1.158000 ms), leptons (e- + e+) 0, qk_source born, ok 1, timers_ok 1, exit 0
+167: run m1_budget_cold_N65536_r1: Custom 0.248360 ms/step (3.7897 ns per ion-step), pusher 0.252820, deposit 0.000000, total 0.501420 ms (progress avg 0.550000 ms), leptons (e- + e+) 0, qk_source born, ok 1, timers_ok 1, exit 0
+167: run m1_event_warm_N65536_r1: Custom 0.773890 ms/step (11.8086 ns per ion-step), pusher 0.381180, deposit 0.000000, total 1.155100 ms (progress avg 1.204000 ms), leptons (e- + e+) 20100, qk_source born, ok 1, timers_ok 1, exit 0
+167: run m1_event_cold_N65536_r1: Custom 0.166440 ms/step (2.5397 ns per ion-step), pusher 0.256290, deposit 0.000000, total 0.422930 ms (progress avg 0.468000 ms), leptons (e- + e+) 0, qk_source born, ok 1, timers_ok 1, exit 0
+167: run m5pic_none_warm_N65536_r1: Custom 0.009830 ms/step (0.1500 ns per ion-step), pusher 0.261520, deposit 0.275220, total 0.679690 ms (progress avg 0.741000 ms), leptons (e- + e+) 0, qk_source n/a, ok 1, timers_ok 1, exit 0
+167: run m5poisson_poisson_warm_N65536_r1: Custom 0.722420 ms/step (11.0233 ns per ion-step), pusher 0.351070, deposit 0.388780, total 1.592700 ms (progress avg 1.674000 ms), leptons (e- + e+) 20104, qk_source born, ok 1, timers_ok 1, exit 0
+167: run m5poisson_pic_poisson_warm_N65536_r1 (restart of m5poisson_poisson_warm_N65536_r1 at step 00000121, hadronic off): pusher 0.380580 ms/step, deposit 0.395250, total 0.936190 ms, ions 65500, leptons (e- + e+) 20200 [%.2e-rounded diagnostics], ok 1, timers_ok 1, exit 0
+167: run m5budget_budget_warm_N65536_r1: Custom 1.014220 ms/step (15.4758 ns per ion-step), pusher 0.248680, deposit 0.274720, total 1.666600 ms (progress avg 1.664000 ms), leptons (e- + e+) 0, qk_source born, ok 1, timers_ok 1, exit 0
+167: run m5budget_pic_budget_warm_N65536_r1 (restart of m5budget_budget_warm_N65536_r1 at step 00000121, hadronic off): pusher 0.252680 ms/step, deposit 0.279400, total 0.658810 ms, ions 65500, leptons (e- + e+) 0 [%.2e-rounded diagnostics], ok 1, timers_ok 1, exit 0
+167: ---- medians (/Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/builds/perf-single/tests/hadronic/work/perf_smoke/perf_medians.csv)
+167: label,tag_mode_variant_N,runs,median_custom_ms_per_step,median_custom_ns_per_ion_step,median_pusher_ms_per_step,median_deposit_ms_per_step,median_total_ms_per_step,all_ok
+167: ctest-smoke,m1_none_warm_65536,1,0.405450,6.1867,0.245240,0.000000,0.650920,1
+167: ctest-smoke,m1_none_cold_65536,1,0.131750,2.0103,0.263920,0.000000,0.395940,1
+167: ctest-smoke,m1_poisson_warm_65536,1,0.756110,11.5373,0.350160,0.000000,1.106300,1
+167: ctest-smoke,m1_poisson_cold_65536,1,0.129650,1.9783,0.238980,0.000000,0.368850,1
+167: ctest-smoke,m1_budget_warm_65536,1,0.917740,14.0036,0.229530,0.000000,1.147760,1
+167: ctest-smoke,m1_budget_cold_65536,1,0.248360,3.7897,0.252820,0.000000,0.501420,1
+167: ctest-smoke,m1_event_warm_65536,1,0.773890,11.8086,0.381180,0.000000,1.155100,1
+167: ctest-smoke,m1_event_cold_65536,1,0.166440,2.5397,0.256290,0.000000,0.422930,1
+167: ctest-smoke,m5pic_none_warm_65536,1,0.009830,0.1500,0.261520,0.275220,0.679690,1
+167: ctest-smoke,m5poisson_poisson_warm_65536,1,0.722420,11.0233,0.351070,0.388780,1.592700,1
+167: ctest-smoke,m5poisson_pic_poisson_warm_65536,1,0.007890,n/a,0.380580,0.395250,0.936190,1
+167: ctest-smoke,m5budget_budget_warm_65536,1,1.014220,15.4758,0.248680,0.274720,1.666600,1
+167: ctest-smoke,m5budget_pic_budget_warm_65536,1,0.007400,n/a,0.252680,0.279400,0.658810,1
+167: perf_driver.sh summary: 13 runs executed, 0 scientific failures, 0 infrastructure failures, label ctest-smoke
+1/3 Test #167: HADRONIC::perf_smoke .............   Passed   44.28 sec
+test 168
+    Start 168: HADRONIC::perf_driver_replay
+
+168: Test command: /bin/bash "/Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/dev-hadronic-perf/tests/hadronic/perf/perf_driver_replay.sh" "/Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/builds/perf-single/tests/hadronic/bh_check" "/Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/dev-hadronic-perf/tests/hadronic/perf/inputs" "/Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/builds/perf-single/tests/hadronic/work/perf_smoke" "/Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/builds/perf-single/tests/hadronic/work/perf_driver_replay"
+168: Working Directory: /Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/builds/perf-single/tests/hadronic
+168: Test timeout computed to be: 600
+168: REPLAY ok: control: exit 0, 0 FAIL, 0 INFRA lines
+168: REPLAY ok: missing-deposit: exit 3, 0 FAIL, 13 INFRA lines
+168: REPLAY ok: nan-deposit: exit 3, 0 FAIL, 13 INFRA lines
+168: REPLAY ok: zero-deposit: exit 3, 0 FAIL, 5 INFRA lines
+168: REPLAY ok: missing-custom: exit 3, 0 FAIL, 13 INFRA lines
+168: REPLAY ok: short-timers: exit 3, 0 FAIL, 13 INFRA lines
+168: REPLAY ok: bad-ledger: exit 1, 10 FAIL, 0 INFRA lines
+168: REPLAY ok: unreadable-ledger: exit 3, 0 FAIL, 10 INFRA lines
+168: REPLAY ok: wrong-source: exit 3, 0 FAIL, 10 INFRA lines
+168: REPLAY ok: missing-startup: exit 3, 0 FAIL, 10 INFRA lines
+168: REPLAY ok: no-placeholder: exit 3, 0 FAIL, 1 INFRA lines
+168: REPLAY ok: fixed-born: exit 3, 0 FAIL, 1 INFRA lines
+168: REPLAY ok: no-placeholder and fixed-born: no run started (no run.log), the probe input retained
+168: REPLAY ok: control: 13/13 generated inputs hold exactly one qk_source = "born"
+168: REPLAY ok: control CSV: qk_source = born on the 10 hadronic-on rows, n/a on the 3 others
+168: REPLAY ok: control CSV: 13 rows, every timing column finite, restart rows custom_ns_per_ion_step = n/a
+168: REPLAY ok: control medians: the two restart rows' median_custom_ns_per_ion_step = n/a
+168: REPLAY ok: slice (poisson warm, M5 poisson pair): exit 0, exactly its 3 processes
+168: REPLAY ok: combined medians over two parts: m1 poisson warm from 2 rows, m5pic from 1; no run, no CSV written
+168: REPLAY ok: combine into a directory with medians: refused (exit 3), its CSV and medians untouched
+168: REPLAY ok: combine of parts at two commits refused (exit 3)
+168: perf_driver_replay summary: 21 checks, 0 mismatches
+2/3 Test #168: HADRONIC::perf_driver_replay .....   Passed    9.82 sec
+test 169
+    Start 169: HADRONIC::perf_job_selftest
+
+169: Test command: /opt/homebrew/bin/cmake "-E" "env" "PERF_SELFTEST=1" "bash" "/Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/dev-hadronic-perf/tests/hadronic/perf/rusty/p2-perf-a100.sbatch"
+169: Working Directory: /Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/builds/perf-single/tests/hadronic
+169: Test timeout computed to be: 300
+169: [20:08:24 +0s] START probe-ok [sci] (budget 60 s): /usr/bin/true
+169: [20:08:24 +0s] END probe-ok: exit 0 (ok, 0 s)
+169: probe-ok returned 0
+169: [20:08:24 +0s] START probe-injected-failure [sci] (budget 60 s): /usr/bin/false
+169: [20:08:24 +0s] END probe-injected-failure: exit 1 (infrastructure_failure, 0 s)
+169: probe-injected-failure returned 1 (exit 1 without a FAIL line)
+169: [20:08:24 +0s] START probe-sci-fail [sci] (budget 60 s): bash -c echo "FAIL: injected scientific check"; exit 1
+169: [20:08:24 +0s] END probe-sci-fail: exit 1 (scientific_check_failure, 0 s)
+169: probe-sci-fail returned 1
+169: [20:08:24 +0s] START probe-ctest-banner [sci] (budget 60 s): bash -c echo "The following tests FAILED:"; exit 1
+169: [20:08:24 +0s] END probe-ctest-banner: exit 1 (infrastructure_failure, 0 s)
+169: probe-ctest-banner returned 1 (CTest's FAILED banner is not an executed check)
+169: [20:08:24 +0s] START probe-mixed [sci] (budget 60 s): bash -c echo "FAIL: injected scientific check"; echo "INFRA: injected fault"; exit 4
+169: [20:08:24 +0s] END probe-mixed: exit 4 (infrastructure_failure, 0 s)
+169: [20:08:24 +0s] probe-mixed: the log also carries executed check failures (FAIL lines): recorded as probe-mixed-scientific
+169: probe-mixed returned 4
+169: [20:08:24 +0s] START probe-timeout [infra] (budget 1 s): sleep 5
+169: [20:08:25 +1s] END probe-timeout: exit 124 (infrastructure_failure, 1 s)
+169: probe-timeout returned 124
+169: [20:08:25 +1s] SKIPPED probe-skipped: -1 s remain, budget 60 s
+169: probe-skipped returned 98
+169: [20:08:25 +1s] BLOCKED probe-blocked: the checkout/build gate did not pass
+169: probe-blocked returned 99
+169: [20:08:25 +1s] MISSING for probe-inventory: /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/does-not-exist
+169: SELFTEST ok: require_files (missing file) returned 1
+169: [20:08:25 +1s] MISSING for probe-noexec: /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/not-executable
+169: SELFTEST ok: require_files (not executable) returned 1
+169: SELFTEST ok: build_complete (exit 0, inventory complete) returned 0
+169: SELFTEST ok: build_complete (build exit 1, one target present) returned 1
+169: [20:08:25 +1s] MISSING for probe-build-partial: /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/missing-target.xc
+169: SELFTEST ok: build_complete (exit 0, inventory incomplete) returned 1
+169: SELFTEST ok: build_complete (build skipped) returned 1
+169: [20:08:25 +1s] START probe-f8-pass [sci] (budget 60 s): python3 /Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/dev-hadronic-perf/tests/hadronic/perf/rusty/f8_ctest.py --build /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/probe-f8-pass --dest /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/probe-f8-pass/plan --launcher /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/mock/mpirun -n 1 --timeout 2 FRAMEWORK::f8_tracers
+169: [20:08:26 +2s] END probe-f8-pass: exit 0 (ok, 1 s)
+169: probe-f8-pass returned 0
+169: [20:08:26 +2s] START probe-f8-notrun [sci] (budget 60 s): python3 /Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/dev-hadronic-perf/tests/hadronic/perf/rusty/f8_ctest.py --build /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/probe-f8-notrun --dest /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/probe-f8-notrun/plan --launcher /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/mock/mpirun -n 1 --timeout 2 FRAMEWORK::f8_tracers
+169: [20:08:26 +2s] END probe-f8-notrun: exit 4 (infrastructure_failure, 0 s)
+169: probe-f8-notrun returned 4
+169: [20:08:26 +2s] START probe-f8-timeout [sci] (budget 60 s): python3 /Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/dev-hadronic-perf/tests/hadronic/perf/rusty/f8_ctest.py --build /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/probe-f8-timeout --dest /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/probe-f8-timeout/plan --launcher /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/mock/mpirun -n 1 --timeout 2 FRAMEWORK::f8_tracers
+169: [20:08:28 +4s] END probe-f8-timeout: exit 4 (infrastructure_failure, 2 s)
+169: probe-f8-timeout returned 4
+169: [20:08:28 +4s] START probe-f8-segv [sci] (budget 60 s): python3 /Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/dev-hadronic-perf/tests/hadronic/perf/rusty/f8_ctest.py --build /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/probe-f8-segv --dest /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/probe-f8-segv/plan --launcher /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/mock/mpirun -n 1 --timeout 2 FRAMEWORK::f8_tracers
+169: [20:08:28 +4s] END probe-f8-segv: exit 4 (infrastructure_failure, 0 s)
+169: probe-f8-segv returned 4
+169: [20:08:28 +4s] START probe-f8-exception [sci] (budget 60 s): python3 /Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/dev-hadronic-perf/tests/hadronic/perf/rusty/f8_ctest.py --build /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/probe-f8-exception --dest /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/probe-f8-exception/plan --launcher /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/mock/mpirun -n 1 --timeout 2 FRAMEWORK::f8_tracers
+169: [20:08:28 +4s] END probe-f8-exception: exit 4 (infrastructure_failure, 0 s)
+169: probe-f8-exception returned 4
+169: [20:08:28 +4s] START probe-f8-no-assertion [sci] (budget 60 s): python3 /Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/dev-hadronic-perf/tests/hadronic/perf/rusty/f8_ctest.py --build /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/probe-f8-no-assertion --dest /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/probe-f8-no-assertion/plan --launcher /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/mock/mpirun -n 1 --timeout 2 FRAMEWORK::f8_tracers
+169: [20:08:28 +4s] END probe-f8-no-assertion: exit 4 (infrastructure_failure, 0 s)
+169: probe-f8-no-assertion returned 4
+169: [20:08:28 +4s] START probe-f8-assertion [sci] (budget 60 s): python3 /Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/dev-hadronic-perf/tests/hadronic/perf/rusty/f8_ctest.py --build /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/probe-f8-assertion --dest /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/probe-f8-assertion/plan --launcher /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/mock/mpirun -n 1 --timeout 2 FRAMEWORK::f8_tracers
+169: [20:08:29 +5s] END probe-f8-assertion: exit 1 (scientific_check_failure, 1 s)
+169: probe-f8-assertion returned 1
+169: [20:08:29 +5s] START probe-f8-stock-fail [sci] (budget 60 s): python3 /Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/dev-hadronic-perf/tests/hadronic/perf/rusty/f8_ctest.py --build /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/probe-f8-stock-fail --dest /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/probe-f8-stock-fail/plan --launcher /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/mock/mpirun -n 1 --timeout 2 KERNELS::deposit
+169: [20:08:29 +5s] END probe-f8-stock-fail: exit 1 (scientific_check_failure, 0 s)
+169: probe-f8-stock-fail returned 1
+169: [20:08:29 +5s] START probe-f8-mpi-slots [sci] (budget 60 s): python3 /Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/dev-hadronic-perf/tests/hadronic/perf/rusty/f8_ctest.py --build /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/probe-f8-mpi-slots --dest /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/probe-f8-mpi-slots/plan --launcher /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/mock/mpirun -n 1 --timeout 2 FRAMEWORK::particles_sort
+169: [20:08:29 +5s] END probe-f8-mpi-slots: exit 4 (infrastructure_failure, 0 s)
+169: probe-f8-mpi-slots returned 4
+169: [20:08:29 +5s] START probe-f8-weights-exception [sci] (budget 60 s): python3 /Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/dev-hadronic-perf/tests/hadronic/perf/rusty/f8_ctest.py --build /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/probe-f8-weights-exception --dest /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/probe-f8-weights-exception/plan --launcher /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/mock/mpirun -n 1 --timeout 2 KERNELS::injectors_global_weights
+169: [20:08:29 +5s] END probe-f8-weights-exception: exit 4 (infrastructure_failure, 0 s)
+169: probe-f8-weights-exception returned 4
+169: [20:08:29 +5s] START probe-f8-rsw-exception [sci] (budget 60 s): python3 /Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/dev-hadronic-perf/tests/hadronic/perf/rusty/f8_ctest.py --build /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/probe-f8-rsw-exception --dest /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/probe-f8-rsw-exception/plan --launcher /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/mock/mpirun -n 1 --timeout 2 KERNELS::reduced_stats_weights
+169: [20:08:29 +5s] END probe-f8-rsw-exception: exit 4 (infrastructure_failure, 0 s)
+169: probe-f8-rsw-exception returned 4
+169: [20:08:29 +5s] START probe-f8-no-results [sci] (budget 60 s): python3 /Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/dev-hadronic-perf/tests/hadronic/perf/rusty/f8_ctest.py --build /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/probe-f8-no-results --dest /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/probe-f8-no-results/plan --launcher /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/mock/mpirun -n 1 --timeout 2 KERNELS::reduced_stats_weights
+169: [20:08:29 +5s] END probe-f8-no-results: exit 4 (infrastructure_failure, 0 s)
+169: probe-f8-no-results returned 4
+169: [20:08:29 +5s] START probe-f8-stock-unparsed [sci] (budget 60 s): python3 /Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/dev-hadronic-perf/tests/hadronic/perf/rusty/f8_ctest.py --build /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/probe-f8-stock-unparsed --dest /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/probe-f8-stock-unparsed/plan --launcher /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/mock/mpirun -n 1 --timeout 2 KERNELS::deposit
+169: [20:08:30 +6s] END probe-f8-stock-unparsed: exit 4 (infrastructure_failure, 1 s)
+169: probe-f8-stock-unparsed returned 4
+169: [20:08:30 +6s] START probe-f8-weights-assertion [sci] (budget 60 s): python3 /Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/dev-hadronic-perf/tests/hadronic/perf/rusty/f8_ctest.py --build /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/probe-f8-weights-assertion --dest /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/probe-f8-weights-assertion/plan --launcher /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/mock/mpirun -n 1 --timeout 2 KERNELS::injectors_global_weights
+169: [20:08:30 +6s] END probe-f8-weights-assertion: exit 1 (scientific_check_failure, 0 s)
+169: probe-f8-weights-assertion returned 1
+169: [20:08:30 +6s] START probe-f8-raise-check [sci] (budget 60 s): python3 /Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/dev-hadronic-perf/tests/hadronic/perf/rusty/f8_ctest.py --build /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/probe-f8-raise-check --dest /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/probe-f8-raise-check/plan --launcher /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/mock/mpirun -n 1 --timeout 2 FRAMEWORK::particles_sort
+169: [20:08:30 +6s] END probe-f8-raise-check: exit 1 (scientific_check_failure, 0 s)
+169: probe-f8-raise-check returned 1
+169: [20:08:30 +6s] START probe-f8-fail-then-exception [sci] (budget 60 s): python3 /Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/dev-hadronic-perf/tests/hadronic/perf/rusty/f8_ctest.py --build /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/probe-f8-fail-then-exception --dest /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/probe-f8-fail-then-exception/plan --launcher /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/mock/mpirun -n 1 --timeout 2 KERNELS::reduced_stats_weights
+169: [20:08:30 +6s] END probe-f8-fail-then-exception: exit 4 (infrastructure_failure, 0 s)
+169: [20:08:30 +6s] probe-f8-fail-then-exception: the log also carries executed check failures (FAIL lines): recorded as probe-f8-fail-then-exception-scientific
+169: probe-f8-fail-then-exception returned 4
+169: SELFTEST ok: R1 weights-exception control alone: overall, class, infrastructure flag, scientific flag returned infrastructure_failure 20 1 0
+169: [20:08:30 +6s] START probe-f8-unregistered [sci] (budget 60 s): python3 /Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/dev-hadronic-perf/tests/hadronic/perf/rusty/f8_ctest.py --build /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/probe-f8-unregistered --dest /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/probe-f8-unregistered/plan --launcher /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root/mock/mpirun -n 1 FRAMEWORK::f8_tracers
+169: [20:08:30 +6s] END probe-f8-unregistered: exit 3 (infrastructure_failure, 0 s)
+169: probe-f8-unregistered returned 3
+169: [20:08:30 +6s] START probe-prof-ok [infra] (budget 60 s): bash -c profile_nsys event production && profile_ncu event production
+169: [20:08:31 +7s] END probe-prof-ok: exit 0 (ok, 1 s)
+169: probe-prof-ok returned 0
+169: [20:08:31 +7s] START probe-prof-one-launch-24-rows [infra] (budget 60 s): bash -c profile_nsys event production && profile_ncu event production
+169: [20:08:31 +7s] END probe-prof-one-launch-24-rows: exit 4 (infrastructure_failure, 0 s)
+169: probe-prof-one-launch-24-rows returned 4
+169: [20:08:31 +7s] START probe-prof-wrong-n [infra] (budget 60 s): bash -c profile_nsys event production && profile_ncu event production
+169: [20:08:31 +7s] END probe-prof-wrong-n: exit 4 (infrastructure_failure, 0 s)
+169: probe-prof-wrong-n returned 4
+169: [20:08:31 +7s] START probe-prof-wrong-kernel [infra] (budget 60 s): bash -c profile_nsys event production && profile_ncu event production
+169: [20:08:32 +8s] END probe-prof-wrong-kernel: exit 4 (infrastructure_failure, 1 s)
+169: probe-prof-wrong-kernel returned 4
+169: [20:08:32 +8s] START probe-prof-other-range [infra] (budget 60 s): bash -c profile_nsys event production && profile_ncu event production
+169: [20:08:32 +8s] END probe-prof-other-range: exit 4 (infrastructure_failure, 0 s)
+169: probe-prof-other-range returned 4
+169: SELFTEST ok: PERF_N_M3=65536 inherited from the environment: refusal returned 6
+169: SELFTEST ok: PERF_N_M3=65536: no run root created returned absent
+169: SELFTEST ok: PERF_N_M3=4194304 (the fixed value): dry run returned 0
+169: SELFTEST ok: B1 selector probe, real template, PERF_QK_SOURCE=fit returned 0
+169: SELFTEST ok: B1 probe input holds qk_source = "fit"
+169: SELFTEST ok: B1 selector probe, real template, PERF_QK_SOURCE=born returned 0
+169: SELFTEST ok: B1 probe input holds qk_source = "born"
+169: SELFTEST ok: B1 negative control: template without the placeholder refused returned 3
+169: SELFTEST ok: the embedded ceiling table equals perf_budget.py --emit-table
+169: SELFTEST ok: perf_budget.py --plan (every part fits, exact coverage) returned 0
+169: SELFTEST ok: part guard no-part returned 7
+169: SELFTEST ok: part guard no-part: no run root returned absent
+169: SELFTEST ok: part guard unknown-part returned 7
+169: SELFTEST ok: part guard unknown-part: no run root returned absent
+169: SELFTEST ok: part guard engine-no-n returned 7
+169: SELFTEST ok: part guard engine-no-n: no run root returned absent
+169: SELFTEST ok: part guard engine-no-basis returned 7
+169: SELFTEST ok: part guard engine-no-basis: no run root returned absent
+169: SELFTEST ok: part guard engine-full-2to24 returned 7
+169: SELFTEST ok: part guard engine-full-2to24: no run root returned absent
+169: SELFTEST ok: part guard engine-2to22-two-repeats returned 7
+169: SELFTEST ok: part guard engine-2to22-two-repeats: no run root returned absent
+169: SELFTEST ok: part guard engine-repeat-beyond returned 7
+169: SELFTEST ok: part guard engine-repeat-beyond: no run root returned absent
+169: SELFTEST ok: part guard engine-empty-slice returned 7
+169: SELFTEST ok: part guard engine-empty-slice: no run root returned absent
+169: SELFTEST ok: part guard kernel-ncu-off returned 0
+169: SELFTEST ok: part guard kernel-ncu-on returned 0
+169: SELFTEST ok: kernel part: four nsys steps; four ncu steps not_requested by default (overall unaffected), run with PERF_NCU=1
+169: SELFTEST ok: part guard engine-e03 returned 0
+169: SELFTEST ok: engine part E03: step2-engine-N4194304 budget 1912 s (the slice's 13 process ceilings)
+169: SELFTEST ok: part guard plan-K returned 0
+169: SELFTEST ok: part guard plan-E01 returned 0
+169: SELFTEST ok: part guard plan-E02 returned 0
+169: SELFTEST ok: part guard plan-E03 returned 0
+169: SELFTEST ok: part guard plan-E04 returned 0
+169: SELFTEST ok: part guard plan-E05 returned 0
+169: SELFTEST ok: part guard plan-E06 returned 0
+169: SELFTEST ok: part guard plan-E07 returned 0
+169: SELFTEST ok: part guard plan-E08 returned 0
+169: SELFTEST ok: part guard plan-E09 returned 0
+169: SELFTEST ok: part guard plan-E10 returned 0
+169: SELFTEST ok: part guard plan-E11 returned 0
+169: SELFTEST ok: part guard plan-E12 returned 0
+169: SELFTEST ok: part guard plan-E13 returned 0
+169: SELFTEST ok: part guard plan-E14 returned 0
+169: SELFTEST ok: the plan's part count returned 15
+169: SELFTEST ok: launcher plan (direct command wrapped in mpirun -n 1, two-rank command unchanged)
+169: SELFTEST ok: probe-ok -> ok
+169: SELFTEST ok: probe-injected-failure -> infrastructure_failure
+169: SELFTEST ok: probe-sci-fail -> scientific_check_failure
+169: SELFTEST ok: probe-ctest-banner -> infrastructure_failure
+169: SELFTEST ok: probe-mixed -> infrastructure_failure
+169: SELFTEST ok: probe-mixed-scientific -> scientific_check_failure
+169: SELFTEST ok: probe-timeout -> infrastructure_failure
+169: SELFTEST ok: probe-skipped -> skipped
+169: SELFTEST ok: probe-blocked -> blocked
+169: SELFTEST ok: probe-inventory-inventory -> infrastructure_failure
+169: SELFTEST ok: probe-noexec-inventory -> infrastructure_failure
+169: SELFTEST ok: probe-build-partial-inventory -> infrastructure_failure
+169: SELFTEST ok: probe-f8-pass -> ok
+169: SELFTEST ok: probe-f8-notrun -> infrastructure_failure
+169: SELFTEST ok: probe-f8-timeout -> infrastructure_failure
+169: SELFTEST ok: probe-f8-segv -> infrastructure_failure
+169: SELFTEST ok: probe-f8-exception -> infrastructure_failure
+169: SELFTEST ok: probe-f8-no-assertion -> infrastructure_failure
+169: SELFTEST ok: probe-f8-assertion -> scientific_check_failure
+169: SELFTEST ok: probe-f8-stock-fail -> scientific_check_failure
+169: SELFTEST ok: probe-f8-mpi-slots -> infrastructure_failure
+169: SELFTEST ok: probe-f8-weights-exception -> infrastructure_failure
+169: SELFTEST ok: probe-f8-rsw-exception -> infrastructure_failure
+169: SELFTEST ok: probe-f8-no-results -> infrastructure_failure
+169: SELFTEST ok: probe-f8-stock-unparsed -> infrastructure_failure
+169: SELFTEST ok: probe-f8-weights-assertion -> scientific_check_failure
+169: SELFTEST ok: probe-f8-raise-check -> scientific_check_failure
+169: SELFTEST ok: probe-f8-fail-then-exception -> infrastructure_failure
+169: SELFTEST ok: probe-f8-fail-then-exception-scientific -> scientific_check_failure
+169: SELFTEST ok: probe-f8-unregistered -> infrastructure_failure
+169: SELFTEST ok: probe-prof-ok -> ok
+169: SELFTEST ok: probe-prof-one-launch-24-rows -> infrastructure_failure
+169: SELFTEST ok: probe-prof-wrong-n -> infrastructure_failure
+169: SELFTEST ok: probe-prof-wrong-kernel -> infrastructure_failure
+169: SELFTEST ok: probe-prof-other-range -> infrastructure_failure
+169: SELFTEST ok: status.json overall infrastructure_failure (20) with the scientific and skipped/blocked flags set
+169: ---- steps.tsv
+169: probe-ok	sci	60	0	0	ok
+169: probe-injected-failure	sci	60	0	1	infrastructure_failure
+169: probe-sci-fail	sci	60	0	1	scientific_check_failure
+169: probe-ctest-banner	sci	60	0	1	infrastructure_failure
+169: probe-mixed	sci	60	0	4	infrastructure_failure
+169: probe-mixed-scientific	sci	0	0	4	scientific_check_failure
+169: probe-timeout	infra	1	1	124	infrastructure_failure
+169: probe-skipped	sci	60	0	-	skipped
+169: probe-blocked	sci	60	0	-	blocked
+169: probe-inventory-inventory	infra	0	0	-	infrastructure_failure
+169: probe-noexec-inventory	infra	0	0	-	infrastructure_failure
+169: probe-build-partial-inventory	infra	0	0	-	infrastructure_failure
+169: probe-f8-pass	sci	60	1	0	ok
+169: probe-f8-notrun	sci	60	0	4	infrastructure_failure
+169: probe-f8-timeout	sci	60	2	4	infrastructure_failure
+169: probe-f8-segv	sci	60	0	4	infrastructure_failure
+169: probe-f8-exception	sci	60	0	4	infrastructure_failure
+169: probe-f8-no-assertion	sci	60	0	4	infrastructure_failure
+169: probe-f8-assertion	sci	60	1	1	scientific_check_failure
+169: probe-f8-stock-fail	sci	60	0	1	scientific_check_failure
+169: probe-f8-mpi-slots	sci	60	0	4	infrastructure_failure
+169: probe-f8-weights-exception	sci	60	0	4	infrastructure_failure
+169: probe-f8-rsw-exception	sci	60	0	4	infrastructure_failure
+169: probe-f8-no-results	sci	60	0	4	infrastructure_failure
+169: probe-f8-stock-unparsed	sci	60	1	4	infrastructure_failure
+169: probe-f8-weights-assertion	sci	60	0	1	scientific_check_failure
+169: probe-f8-raise-check	sci	60	0	1	scientific_check_failure
+169: probe-f8-fail-then-exception	sci	60	0	4	infrastructure_failure
+169: probe-f8-fail-then-exception-scientific	sci	0	0	4	scientific_check_failure
+169: probe-f8-unregistered	sci	60	0	3	infrastructure_failure
+169: probe-prof-ok	infra	60	1	0	ok
+169: probe-prof-one-launch-24-rows	infra	60	0	4	infrastructure_failure
+169: probe-prof-wrong-n	infra	60	0	4	infrastructure_failure
+169: probe-prof-wrong-kernel	infra	60	1	4	infrastructure_failure
+169: probe-prof-other-range	infra	60	0	4	infrastructure_failure
+169: SELFTEST summary: 91 checks, 0 mismatches (root /var/folders/r3/c8h5g7016014lypdf8k76l980000gn/T/p2perf-selftest.IoQ0DZ/root)
+3/3 Test #169: HADRONIC::perf_job_selftest ......   Passed    9.15 sec
+
+The following tests passed:
+	HADRONIC::perf_smoke
+	HADRONIC::perf_driver_replay
+	HADRONIC::perf_job_selftest
+
+100% tests passed out of 3
+
+Total Test time (real) =  63.25 sec

@@ -114,5 +114,42 @@ n_check=$((n_check + 1))
 if awk -F, 'NR > 1 && $2 ~ /_pic_/ { if ($5 != "n/a") b++; n++ } END { exit !(n == 2 && b + 0 == 0) }' "$SCR/control/perf_medians.csv"; then
   echo "REPLAY ok: control medians: the two restart rows' median_custom_ns_per_ion_step = n/a"
 else echo "REPLAY MISMATCH: control medians ($SCR/control/perf_medians.csv)"; n_bad=$((n_bad + 1)); fi
+# round 4 (one-hour parts): a slice (one mode and variant, the poisson M5 pair only) runs exactly its 3 processes; the
+# medians over the parts (PERF_COMBINE) count a key once per row across the CSVs; a combine never overwrites an existing
+# medians file and refuses parts of different commits
+REPLAY_MODE=control PERF_N=65536 PERF_REPEATS=1 PERF_WARMUP=20 PERF_MEASURED=100 PERF_DIAG=1 PERF_M5=1 PERF_LABEL=replay-slice \
+  PERF_MODES=poisson PERF_VARIANTS=warm PERF_M5_SETS=poisson PERF_QK_SOURCE=born \
+  bash "$HERE/perf_driver.sh" "$SCR/replay-entity.sh" "$CHECK" "$INP" "$SCR/slice" > "$SCR/slice.log" 2>&1
+rc=$?
+n_check=$((n_check + 1))
+tags=$(tail -n +2 "$SCR/slice/perf_runs.csv" | cut -d, -f2,3,4 | tr '\n' ' ')
+if [ "$rc" = "0" ] && [ "$tags" = "m1,poisson,warm m5poisson,poisson,warm m5poisson_pic,poisson,warm " ]; then
+  echo "REPLAY ok: slice (poisson warm, M5 poisson pair): exit 0, exactly its 3 processes"
+else echo "REPLAY MISMATCH: slice: exit $rc, rows '$tags'"; n_bad=$((n_bad + 1)); fi
+PERF_COMBINE="$SCR/control/perf_runs.csv:$SCR/slice/perf_runs.csv" PERF_LABEL=replay-combined \
+  bash "$HERE/perf_driver.sh" "$SCR/replay-entity.sh" "$CHECK" "$INP" "$SCR/combined" > "$SCR/combined.log" 2>&1
+rc=$?
+n_check=$((n_check + 1))
+if [ "$rc" = "0" ] && grep -q '^replay-combined,m1_poisson_warm_65536,2,' "$SCR/combined/perf_medians.csv" \
+   && grep -q '^replay-combined,m5pic_none_warm_65536,1,' "$SCR/combined/perf_medians.csv" && [ ! -e "$SCR/combined/perf_runs.csv" ]; then
+  echo "REPLAY ok: combined medians over two parts: m1 poisson warm from 2 rows, m5pic from 1; no run, no CSV written"
+else echo "REPLAY MISMATCH: combined medians (exit $rc, $SCR/combined)"; n_bad=$((n_bad + 1)); fi
+cp "$SCR/control/perf_medians.csv" "$SCR/control-medians-before.csv"
+PERF_COMBINE="$SCR/control/perf_runs.csv" bash "$HERE/perf_driver.sh" "$SCR/replay-entity.sh" "$CHECK" "$INP" "$SCR/control" > "$SCR/combine-overwrite.log" 2>&1
+rc=$?
+n_check=$((n_check + 1))
+if [ "$rc" = "3" ] && cmp -s "$SCR/control/perf_medians.csv" "$SCR/control-medians-before.csv" && [ "$(wc -l < "$SCR/control/perf_runs.csv" | tr -d ' ')" = "14" ]; then
+  echo "REPLAY ok: combine into a directory with medians: refused (exit 3), its CSV and medians untouched"
+else echo "REPLAY MISMATCH: combine-overwrite (exit $rc)"; n_bad=$((n_bad + 1)); fi
+mkdir -p "$SCR/commits"
+for c in 1111111111111111111111111111111111111111 2222222222222222222222222222222222222222; do
+  sed "2,\$ s/^[^,]*,/a100-9-$c,/" "$SCR/slice/perf_runs.csv" > "$SCR/commits/$c.csv"
+done
+PERF_COMBINE="$SCR/commits/1111111111111111111111111111111111111111.csv:$SCR/commits/2222222222222222222222222222222222222222.csv" \
+  bash "$HERE/perf_driver.sh" "$SCR/replay-entity.sh" "$CHECK" "$INP" "$SCR/commits-combined" > "$SCR/combine-commits.log" 2>&1
+rc=$?
+n_check=$((n_check + 1))
+if [ "$rc" = "3" ] && grep -q "different commits" "$SCR/combine-commits.log"; then echo "REPLAY ok: combine of parts at two commits refused (exit 3)"
+else echo "REPLAY MISMATCH: combine of two commits (exit $rc)"; n_bad=$((n_bad + 1)); fi
 echo "perf_driver_replay summary: $n_check checks, $n_bad mismatches"
 [ "$n_bad" -eq 0 ]
