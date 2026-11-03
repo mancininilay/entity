@@ -84,3 +84,13 @@ or nested extended lambdas, enclosing constructors, deduced return types, privat
 structured bindings and host objects in device code, host exceptions, static locals, function-local types in
 launches); `rusty/cuda_lambda_scan_controls.txt` holds its synthetic controls. A clean scan is evidence, not proof:
 the proof is the CUDA compile-only job.
+
+q_k selector (round 4, Codex 1's B1 of job 7398318: the template had no `@QK_SOURCE@`, so all 28 engine inputs of
+that job omitted `qk_source`, the parser's default Born was used and the requested fit never reached the engine).
+`inputs/perf_template.toml` carries `qk_source = "@QK_SOURCE@"`; `perf_driver.sh` (1) refuses the campaign before any
+run (exit 3, one `INFRA: ` line) when a probe input generated from the template does not hold exactly one
+`qk_source = "<PERF_QK_SOURCE>"`, (2) checks every generated input the same way before starting its run, and (3)
+requires each hadronic-on run's startup line `bh_proto: qk_source = <PERF_QK_SOURCE>:`; the effective source is the
+last CSV column. Controls: `HADRONIC::perf_job_selftest` (real template with fit and born; a template without the
+placeholder refused) and `HADRONIC::perf_driver_replay` (fit requested on Born logs, the startup line removed, a
+template without the placeholder and one with a fixed value; the 13 generated inputs and the CSV column checked).

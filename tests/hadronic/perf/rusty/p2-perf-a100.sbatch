@@ -361,6 +361,21 @@ NCU
   expect_rc "PERF_N_M3=65536: no run root created" "$([ -e "$ROOT/guard-65536" ] && echo exists || echo absent)" absent
   env -u PERF_SELFTEST PERF_N_M3=4194304 DRY_RUN=1 ENTITY_COMMIT=selftest PERF_ROOT="$ROOT/guard-fixed" bash "$0" > "$LOG/guard-fixed.log" 2>&1
   expect_rc "PERF_N_M3=4194304 (the fixed value): dry run" $? 0
+  # B1 (round 4, Codex 1's readback of B7398318: the template had no @QK_SOURCE@ and the fit request never reached the
+  # engine): the real driver and the real template, input generation and the selector check only (PERF_CHECK_INPUTS_ONLY,
+  # no engine run); negative control: the same inputs with the template's qk_source line removed must be refused (exit 3).
+  # The runtime half of B1 (the engine's startup line against the request) is HADRONIC::perf_driver_replay's.
+  INP_REAL="$HERE/../inputs"; mkdir -p "$ROOT/inputs-no-placeholder"; cp "$INP_REAL"/*.toml "$ROOT/inputs-no-placeholder/"
+  grep -v '^ *qk_source *=' "$INP_REAL/perf_template.toml" > "$ROOT/inputs-no-placeholder/perf_template.toml"
+  for q in fit born; do
+    env -u PERF_SELFTEST PERF_CHECK_INPUTS_ONLY=1 PERF_QK_SOURCE=$q bash "$HERE/../perf_driver.sh" /nonexistent /nonexistent "$INP_REAL" "$ROOT/selector-$q" > "$LOG/selector-$q.log" 2>&1
+    expect_rc "B1 selector probe, real template, PERF_QK_SOURCE=$q" $? 0
+    N_CHECK=$((N_CHECK + 1))
+    if grep -Eq '^ *qk_source *= *"'"$q"'" *$' "$ROOT/selector-$q/selector_probe/input.toml"; then echo "SELFTEST ok: B1 probe input holds qk_source = \"$q\""
+    else echo "SELFTEST MISMATCH: B1 probe input lacks qk_source = \"$q\""; N_BAD=$((N_BAD + 1)); fi
+  done
+  env -u PERF_SELFTEST PERF_CHECK_INPUTS_ONLY=1 PERF_QK_SOURCE=fit bash "$HERE/../perf_driver.sh" /nonexistent /nonexistent "$ROOT/inputs-no-placeholder" "$ROOT/selector-none" > "$LOG/selector-none.log" 2>&1
+  expect_rc "B1 negative control: template without the placeholder refused" $? 3
   # the launcher plan: the direct command prefixed by the launcher, the two-rank command left as it is
   N_CHECK=$((N_CHECK + 1))
   if grep -q "\[=\[$MOCK/mpirun\]=\] \[=\[-n\]=\] \[=\[1\]=\] \[=\[/bin/sh\]=\]" "$ROOT/probe-f8-pass/plan/CTestTestfile.cmake" \

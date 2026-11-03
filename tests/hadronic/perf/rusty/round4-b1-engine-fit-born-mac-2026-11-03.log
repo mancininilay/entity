@@ -1,0 +1,39 @@
+# round 4 B1: the real engine through the driver with PERF_QK_SOURCE=fit and =born (Mac, 2^16 ions, event and budget, warm, 20 + 100 steps); Claude 1, 2026-11-03
+## PERF_QK_SOURCE=fit
+selector probe: the generated input holds qk_source = "fit" (<scratch>/engine-fit/selector_probe/input.toml)
+run m1_event_warm_N65536_r1: Custom 1.497300 ms/step (22.8470 ns per ion-step), pusher 0.575150, deposit 0.000000, total 2.072800 ms (progress avg 2.122000 ms), leptons (e- + e+) 20150, qk_source fit, ok 1, timers_ok 1, exit 0
+run m1_budget_warm_N65536_r1: Custom 1.968900 ms/step (30.0430 ns per ion-step), pusher 0.471210, deposit 0.000000, total 2.441100 ms (progress avg 2.404000 ms), leptons (e- + e+) 0, qk_source fit, ok 1, timers_ok 1, exit 0
+---- medians (<scratch>/engine-fit/perf_medians.csv)
+label,tag_mode_variant_N,runs,median_custom_ms_per_step,median_custom_ns_per_ion_step,median_pusher_ms_per_step,median_deposit_ms_per_step,median_total_ms_per_step,all_ok
+mac-b1-fit,m1_event_warm_65536,1,1.497300,22.8470,0.575150,0.000000,2.072800,1
+mac-b1-fit,m1_budget_warm_65536,1,1.968900,30.0430,0.471210,0.000000,2.441100,1
+perf_driver.sh summary: 2 runs executed, 0 scientific failures, 0 infrastructure failures, label mac-b1-fit
+### startup and table lines, generated input selector
+m1_budget_warm_N65536_r1:
+bh_proto: qk_source = fit: q_k from the Chodorowski et al. 1992 eq. 3.7 fit (step 1)
+bh_proto: table: 466 nodes (fine 257, coarse 209), gamma_th = 2.125, gamma_min = 2.13000880784, gamma_max = 91.8102230891, y_min = -2.300265629, y_max = 1.952720893, eps'_max = 91.8075, I_peak = 1.9930346905e+02 at gamma = 91.81022309, mu_r = 1836.15, qk_source = chodorowski-3.7
+  qk_source           = "fit"
+m1_event_warm_N65536_r1:
+bh_proto: qk_source = fit: q_k from the Chodorowski et al. 1992 eq. 3.7 fit (step 1)
+bh_proto: table: 466 nodes (fine 257, coarse 209), gamma_th = 2.125, gamma_min = 2.13000880784, gamma_max = 91.8102230891, y_min = -2.300265629, y_max = 1.952720893, eps'_max = 91.8075, I_peak = 1.9930346905e+02 at gamma = 91.81022309, mu_r = 1836.15, qk_source = chodorowski-3.7
+bh_proto: event mode: gamma_p_typical: Gamma_p = 3, K = 3672.3, D_max,unweighted = 14.23773247, a_max = f_max K / D_max = 2.57927 (a <D> / (f_max K) = 1.4048e-01 with <D> = 5.15872), lambda = R dt / a = 1.2719e-03
+  qk_source           = "fit"
+## PERF_QK_SOURCE=born
+selector probe: the generated input holds qk_source = "born" (<scratch>/engine-born/selector_probe/input.toml)
+run m1_event_warm_N65536_r1: Custom 1.486100 ms/step (22.6761 ns per ion-step), pusher 0.573850, deposit 0.000000, total 2.060200 ms (progress avg 2.109000 ms), leptons (e- + e+) 20150, qk_source born, ok 1, timers_ok 1, exit 0
+run m1_budget_warm_N65536_r1: Custom 1.962100 ms/step (29.9393 ns per ion-step), pusher 0.470140, deposit 0.000000, total 2.432500 ms (progress avg 2.385000 ms), leptons (e- + e+) 0, qk_source born, ok 1, timers_ok 1, exit 0
+---- medians (<scratch>/engine-born/perf_medians.csv)
+label,tag_mode_variant_N,runs,median_custom_ms_per_step,median_custom_ns_per_ion_step,median_pusher_ms_per_step,median_deposit_ms_per_step,median_total_ms_per_step,all_ok
+mac-b1-born,m1_event_warm_65536,1,1.486100,22.6761,0.573850,0.000000,2.060200,1
+mac-b1-born,m1_budget_warm_65536,1,1.962100,29.9393,0.470140,0.000000,2.432500,1
+perf_driver.sh summary: 2 runs executed, 0 scientific failures, 0 infrastructure failures, label mac-b1-born
+### startup and table lines, generated input selector
+m1_budget_warm_N65536_r1:
+bh_proto: qk_source = born: q_k from the Born machinery (3D-2000) on 513 nodes (64 per decade of eps' - 2 from 1.0e-05 to 1000), cubic spline of ln q_k in ln(eps' - 2), threshold slope 0.2500000623, built in 3.977 s
+bh_proto: table: 466 nodes (fine 257, coarse 209), gamma_th = 2.125, gamma_min = 2.13000435761, gamma_max = 91.8102230891, y_min = -2.300651663, y_max = 1.952720893, eps'_max = 91.8075, I_peak = 1.9857990989e+02 at gamma = 91.81022309, mu_r = 1836.15, qk_source = born-3D2000
+  qk_source           = "born"
+m1_event_warm_N65536_r1:
+bh_proto: qk_source = born: q_k from the Born machinery (3D-2000) on 513 nodes (64 per decade of eps' - 2 from 1.0e-05 to 1000), cubic spline of ln q_k in ln(eps' - 2), threshold slope 0.2500000623, built in 3.866 s
+bh_proto: table: 466 nodes (fine 257, coarse 209), gamma_th = 2.125, gamma_min = 2.13000435761, gamma_max = 91.8102230891, y_min = -2.300651663, y_max = 1.952720893, eps'_max = 91.8075, I_peak = 1.9857990989e+02 at gamma = 91.81022309, mu_r = 1836.15, qk_source = born-3D2000
+bh_proto: event mode: gamma_p_typical: Gamma_p = 3, K = 3672.3, D_max,unweighted = 14.23773247, a_max = f_max K / D_max = 2.57927 (a <D> / (f_max K) = 1.3993e-01 with <D> = 5.13877), lambda = R dt / a = 1.2719e-03
+  qk_source           = "born"

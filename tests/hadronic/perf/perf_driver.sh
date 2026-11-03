@@ -31,6 +31,15 @@
 #                 themselves (hadronic on, growing population) stay as diagnostics. A zero-pair budget population is
 #                 reported as it is (t_latency = 0 in the perf budget input).
 #   PERF_LABEL    free label written in every row (e.g. "mac-openmp-smoke" or "a100")             [unlabelled]
+#   PERF_CHECK_INPUTS_ONLY  1: generate the selector probe input, check it (below) and exit (0 or 3) without any run   [0]
+# The q_k selector (round 4, Codex 1's B1 of B7398318: the template had no @QK_SOURCE@, so all 28 generated inputs of that
+# job omitted qk_source and the engine ran on the parser's default, Born, while fit had been requested). Three checks, each
+# an INFRASTRUCTURE failure (a wrong effective input, never a scientific result): (1) before any run, a probe input is
+# generated from the template and must hold exactly one line qk_source = "<PERF_QK_SOURCE>" (else the driver refuses the
+# whole campaign, exit 3, nothing run); (2) every generated input is checked the same way before its run (else that run is
+# not started); (3) every hadronic-on run's log must print exactly one startup line "bh_proto: qk_source = <PERF_QK_SOURCE>:"
+# (pgens/bh_proto/pgen.hpp) and no other source. The effective source read from the log is the last CSV column qk_source
+# ("n/a" for the hadronic-off runs, which build no table; "missing" when no startup line was found).
 # The ledger row (and the per-ion dump of bh_proto's post-step, an O(N) host pass with text output) is written
 # once, at the last step (ledger.every = total steps): the "Custom" timer then holds the stage alone, not the
 # diagnostics output; the startup capacity estimate is set to warn (the actual capacity policy stays error).
@@ -78,7 +87,7 @@ MU_R=1836.15
 mkdir -p "$WD"
 CSV="$WD/perf_runs.csv"
 MED="$WD/perf_medians.csv"
-echo "label,tag,mode,variant,N,repeat,samples,custom_ms_per_step,custom_ns_per_ion_step,pusher_ms_per_step,deposit_ms_per_step,total_ms_per_step,progress_avg_ms,npart_ion_end,npart_pairs_end,ledger_ok,timers_ok,exit" > "$CSV"
+echo "label,tag,mode,variant,N,repeat,samples,custom_ms_per_step,custom_ns_per_ion_step,pusher_ms_per_step,deposit_ms_per_step,total_ms_per_step,progress_avg_ms,npart_ion_end,npart_pairs_end,ledger_ok,timers_ok,exit,qk_source" > "$CSV"
 n_run=0; n_fail=0; n_infra=0   # n_fail: scientific failures (FAIL lines); n_infra: infrastructure failures (INFRA lines)
 
 # one extra diagnostics block at the end: the last step runs bh_proto's finish() (final summary, array identity, the
@@ -145,6 +154,16 @@ deposit_measured() {
 pairs_from_ledger() {
   grep -v '^#' "$1" 2>/dev/null | tail -1 | awk '{ if (NF >= 43) printf "%.0f", $42 + $43; else print 0 }'
 }
+# selector_ok <input.toml>: 0 when the input holds exactly one qk_source line and its value is PERF_QK_SOURCE (B1)
+selector_ok() {
+  [ "$(grep -c '^ *qk_source *=' "$1")" = "1" ] && grep -Eq '^ *qk_source *= *"'"$PERF_QK_SOURCE"'" *$' "$1"
+}
+# runtime_qk_source <log>: the source of the startup line "bh_proto: qk_source = <src>: ..." (pgen.hpp); "missing" when
+# there is none, "multiple:<a,b>" when there is more than one
+runtime_qk_source() {
+  sed -n 's/^bh_proto: qk_source = \([a-z]*\): .*/\1/p' "$1" 2>/dev/null | awk '
+    { v[++n] = $1 } END { if (n == 0) print "missing"; else if (n == 1) print v[1]; else { s = v[1]; for (i = 2; i <= n; i++) s = s "," v[i]; print "multiple:" s } }'
+}
 
 make_input() {
   # make_input <name> <mode> <N> <K> <deposit> <hadronic> [ckpt interval] -> $WD/<name>/input.toml
@@ -175,8 +194,13 @@ run_one() {
   # the checkpoint is written at the last MEASURED step (the final step runs finish() and the engine does not reach a
   # checkpoint at the step count itself); the restart then continues from that population
   if [ "$ckpt" = "ckpt" ]; then make_input "$name" "$mode" "$N" "$K" "$dep" "$had" "$((PERF_WARMUP + PERF_MEASURED))"; else make_input "$name" "$mode" "$N" "$K" "$dep" "$had"; fi
-  ( cd "$WD/$name" && "$EXE" -input input.toml > run.log 2>&1 ); rc=$?
   n_run=$((n_run + 1))
+  # B1 (2): the generated input must carry the requested selector; otherwise the run is not started
+  if ! selector_ok "$WD/$name/input.toml"; then
+    echo "INFRA: $name: the generated input does not hold exactly one qk_source = \"$PERF_QK_SOURCE\" (run not started)"; n_infra=$((n_infra + 1))
+    echo "$PERF_LABEL,$tag,$mode,$var,$N,$rep,$PERF_MEASURED,nan,nan,nan,nan,nan,nan,0,0,0,0,3,missing" >> "$CSV"; return
+  fi
+  ( cd "$WD/$name" && "$EXE" -input input.toml > run.log 2>&1 ); rc=$?
   custom=$(timer_per_step "$WD/$name/run.log" "Custom" "$blocks_skip" "$PERF_MEASURED")
   pusher=$(timer_per_step "$WD/$name/run.log" "ParticlePusher" "$blocks_skip" "$PERF_MEASURED")
   deposit=$(timer_per_step "$WD/$name/run.log" "CurrentDeposit" "$blocks_skip" "$PERF_MEASURED")
@@ -197,6 +221,14 @@ run_one() {
     ok=0; echo "INFRA: $name: timer output incomplete or non-finite ($nblocks diagnostics blocks, expected $((blocks_skip + PERF_MEASURED + 1)); Custom $custom, pusher $pusher, deposit $deposit (deposit on: $dep), total $total, progress $progress)"; n_infra=$((n_infra + 1))
   fi
   if [ "$N" -le 0 ] || [ "$PERF_MEASURED" -le 0 ]; then ok=0; echo "INFRA: $name: N and PERF_MEASURED must be positive"; n_infra=$((n_infra + 1)); fi
+  # B1 (3): the source the engine actually used, from its startup line (a hadronic-off run builds no table)
+  qk_eff="n/a"
+  if [ "$had" = "true" ]; then
+    qk_eff=$(runtime_qk_source "$WD/$name/run.log")
+    if [ $rc -eq 0 ] && [ "$qk_eff" != "$PERF_QK_SOURCE" ]; then
+      ok=0; echo "INFRA: $name: the engine ran with qk_source '$qk_eff' (startup line), requested '$PERF_QK_SOURCE'"; n_infra=$((n_infra + 1))
+    fi
+  fi
   ledger_ok=1
   if [ "$had" = "true" ] && [ $rc -eq 0 ]; then
     lrc=0
@@ -210,8 +242,8 @@ run_one() {
     elif [ $lrc -ne 0 ]; then ledger_ok=0; ok=0; echo "INFRA: $name: bh_check could not check the ledger (exit $lrc, see ledger_check.log)"; n_infra=$((n_infra + 1)); fi
   fi
   ns=$(awk -v c="$custom" -v n="$N" 'BEGIN { if (c == "nan" || n == 0) print "nan"; else printf "%.4f", c * 1.0e6 / n }')
-  echo "$PERF_LABEL,$tag,$mode,$var,$N,$rep,$PERF_MEASURED,$custom,$ns,$pusher,$deposit,$total,$progress,$nion,$((npm + npp)),$ok,$timers_ok,$rc" >> "$CSV"
-  echo "run $name: Custom $custom ms/step ($ns ns per ion-step), pusher $pusher, deposit $deposit, total $total ms (progress avg $progress ms), leptons (e- + e+) $((npm + npp)), ok $ok, timers_ok $timers_ok, exit $rc"
+  echo "$PERF_LABEL,$tag,$mode,$var,$N,$rep,$PERF_MEASURED,$custom,$ns,$pusher,$deposit,$total,$progress,$nion,$((npm + npp)),$ok,$timers_ok,$rc,$qk_eff" >> "$CSV"
+  echo "run $name: Custom $custom ms/step ($ns ns per ion-step), pusher $pusher, deposit $deposit, total $total ms (progress avg $progress ms), leptons (e- + e+) $((npm + npp)), qk_source $qk_eff, ok $ok, timers_ok $timers_ok, exit $rc"
 }
 
 # run_restart_pic <source run name> <tag> <mode> <N> <rep>: the M5 reference on the end-loaded population (F8). The source
@@ -230,13 +262,13 @@ run_restart_pic() {
   n_run=$((n_run + 1))
   if [ ! -d "$ckdir" ]; then
     echo "INFRA: $name: no checkpoint directory under $WD/$src (the source run must write one at its last step)"; n_infra=$((n_infra + 1))
-    echo "$PERF_LABEL,$tag,$mode,warm,$N,$rep,$PERF_MEASURED,nan,nan,nan,nan,nan,nan,0,0,0,0,3" >> "$CSV"; return
+    echo "$PERF_LABEL,$tag,$mode,warm,$N,$rep,$PERF_MEASURED,nan,nan,nan,nan,nan,nan,0,0,0,0,3,n/a" >> "$CSV"; return
   fi
   cp -R "$ckdir" "$dir/restart.ckpt"
   meta=$(ls "$dir/restart.ckpt"/meta-*.toml 2>/dev/null | sort | tail -1)
   if [ -z "$meta" ]; then
     echo "INFRA: $name: no meta file in $ckdir"; n_infra=$((n_infra + 1))
-    echo "$PERF_LABEL,$tag,$mode,warm,$N,$rep,$PERF_MEASURED,nan,nan,nan,nan,nan,nan,0,0,0,0,3" >> "$CSV"; return
+    echo "$PERF_LABEL,$tag,$mode,warm,$N,$rep,$PERF_MEASURED,nan,nan,nan,nan,nan,nan,0,0,0,0,3,n/a" >> "$CSV"; return
   fi
   # the setup block of the checkpoint's meta is what the resumed run takes: hadronic off there
   sed -e 's/^\( *hadronic\.enabled *= *\)true/\1false/' "$meta" > "$meta.tmp" && mv "$meta.tmp" "$meta"
@@ -267,9 +299,20 @@ run_restart_pic() {
   if [ $rc -ne 0 ]; then ok=0; echo "INFRA: $name: entity.xc -restart exit $rc"; n_infra=$((n_infra + 1)); fi
   if [ $rc -eq 0 ] && [ $timers_ok -ne 1 ]; then ok=0; echo "INFRA: $name: timer output incomplete or non-finite ($nblocks blocks, expected $((blocks_skip + PERF_MEASURED + 1)); Custom $custom, pusher $pusher, deposit $deposit, total $total, progress $progress)"; n_infra=$((n_infra + 1)); fi
   if [ $rc -eq 0 ] && grep -q "hadronic.enabled *= *true\|bh_proto: table:" "$dir/run.log"; then ok=0; echo "INFRA: $name: the restarted run still has the hadronic stage enabled"; n_infra=$((n_infra + 1)); fi
-  echo "$PERF_LABEL,$tag,$mode,warm,$N,$rep,$PERF_MEASURED,$custom,n/a,$pusher,$deposit,$total,$progress,$nion,$((npm + npp)),$ok,$timers_ok,$rc" >> "$CSV"
+  echo "$PERF_LABEL,$tag,$mode,warm,$N,$rep,$PERF_MEASURED,$custom,n/a,$pusher,$deposit,$total,$progress,$nion,$((npm + npp)),$ok,$timers_ok,$rc,n/a" >> "$CSV"
   echo "run $name (restart of $src at step $step, hadronic off): pusher $pusher ms/step, deposit $deposit, total $total ms, ions $nion, leptons (e- + e+) $((npm + npp)) [%.2e-rounded diagnostics], ok $ok, timers_ok $timers_ok, exit $rc"
 }
+
+# B1 (1): before any run, a probe input generated from the template must carry the requested selector; a template without
+# the placeholder (or with a fixed value) refuses the whole campaign here, before an hour is spent on the wrong tables
+make_input selector_probe event 1 "$(awk -v m="$MU_R" 'BEGIN { printf "%.6f", m * 2.0 }')" false true
+if ! selector_ok "$WD/selector_probe/input.toml"; then
+  echo "INFRA: the input template $INP/perf_template.toml does not yield exactly one qk_source = \"$PERF_QK_SOURCE\" (probe $WD/selector_probe/input.toml): campaign refused, no run started"
+  echo "perf_driver.sh summary: 0 runs executed, 0 scientific failures, 1 infrastructure failures, label $PERF_LABEL"
+  exit 3
+fi
+echo "selector probe: the generated input holds qk_source = \"$PERF_QK_SOURCE\" ($WD/selector_probe/input.toml)"
+[ "${PERF_CHECK_INPUTS_ONLY:-0}" = "1" ] && exit 0
 
 for N in $PERF_N; do
   reps="$PERF_REPEATS"; [ "$N" = "$N_TOP" ] && reps="$PERF_REPEATS_TOP"

@@ -8,6 +8,11 @@
 # FAIL lines only) and a ledger bh_check cannot read (infrastructure). Each control has a pre-registered expectation:
 # the driver's exit code, the number of FAIL and INFRA lines, and (control) every timing column finite with the two
 # restart rows' custom_ns_per_ion_step = n/a. Bash 3.2 compatible.
+# Round 4 (Codex 1's B1 of B7398318, the q_k selector): the control's 13 generated inputs must each hold exactly one
+# qk_source = "born" and its CSV must report the effective source (born on the 10 hadronic-on rows, n/a on the 3 others);
+# negative controls: fit requested while the replayed engine logs say born (B7398318's situation: 10 INFRA), the startup
+# line removed from the logs (10 INFRA), a template WITHOUT the placeholder (the campaign refused before any run: 1 INFRA,
+# no run directory), and a template with a fixed qk_source = "born" while fit is requested (refused the same way).
 # Usage: perf_driver_replay.sh <bh_check> <inputs dir> <perf_smoke workdir> <scratch dir>
 set -u
 CHECK="$1"; INP="$2"; SMOKE="$(cd "$3" && pwd)"; SCR="$4"
@@ -37,6 +42,7 @@ case "$REPLAY_MODE" in
   nan-deposit)     sed 's/^\( *CurrentDeposit\.*\)[0-9.]* [a-zµ]*s/\1nan ms/' "$src/run.log" ;;
   zero-deposit)    sed 's/^\( *CurrentDeposit\.*\)[0-9.]* [a-zµ]*s/\10.00 ns/' "$src/run.log" ;;
   missing-custom)  grep -v '^ *Custom\.' "$src/run.log" ;;
+  missing-startup) grep -v '^bh_proto: qk_source = ' "$src/run.log" ;;
   short-timers)    awk '/^Timestep duration/ { n++ } n <= 13 { print }' "$src/run.log" ;;
   *)               cat "$src/run.log" ;;
 esac
@@ -45,11 +51,11 @@ FAKE
 chmod +x "$SCR/replay-entity.sh"
 export REPLAY_SMOKE="$SMOKE"
 
-# control <mode> <expected exit> <expected FAIL lines> <expected INFRA lines>
+# control <mode> <expected exit> <expected FAIL lines> <expected INFRA lines> [requested qk_source [inputs dir]]
 control() {
-  local mode="$1" ex="$2" ef="$3" ei="$4" rc nf ni
+  local mode="$1" ex="$2" ef="$3" ei="$4" qk="${5:-born}" inp="${6:-$INP}" rc nf ni
   REPLAY_MODE="$mode" PERF_N=65536 PERF_REPEATS=1 PERF_WARMUP=20 PERF_MEASURED=100 PERF_DIAG=1 PERF_M5=1 PERF_LABEL="replay-$mode" \
-    bash "$HERE/perf_driver.sh" "$SCR/replay-entity.sh" "$CHECK" "$INP" "$SCR/$mode" > "$SCR/$mode.log" 2>&1
+    PERF_QK_SOURCE="$qk" bash "$HERE/perf_driver.sh" "$SCR/replay-entity.sh" "$CHECK" "$inp" "$SCR/$mode" > "$SCR/$mode.log" 2>&1
   rc=$?
   nf=$(grep -c '^FAIL: ' "$SCR/$mode.log"); ni=$(grep -c '^INFRA: ' "$SCR/$mode.log")
   n_check=$((n_check + 1))
@@ -67,6 +73,34 @@ control missing-custom 3 0 13
 control short-timers 3 0 13
 control bad-ledger 1 10 0           # the ten hadronic-on runs: an executed identity check fails, nothing else
 control unreadable-ledger 3 0 10    # bh_check exits 2 on a row with a missing column: infrastructure
+# B1: the q_k selector (the template copies: the real inputs with the template's qk_source line removed or fixed)
+mkdir -p "$SCR/inputs-no-placeholder" "$SCR/inputs-fixed-born"
+cp "$INP"/*.toml "$SCR/inputs-no-placeholder/"; cp "$INP"/*.toml "$SCR/inputs-fixed-born/"
+grep -v '^ *qk_source *=' "$INP/perf_template.toml" > "$SCR/inputs-no-placeholder/perf_template.toml"
+sed 's/^\( *qk_source *= *\)"@QK_SOURCE@"/\1"born"/' "$INP/perf_template.toml" > "$SCR/inputs-fixed-born/perf_template.toml"
+control wrong-source 3 0 10 fit     # fit requested, the engine logs say born (B7398318): every hadronic-on run
+control missing-startup 3 0 10      # no startup line in the hadronic-on logs: the effective source is unknown
+control no-placeholder 3 0 1 born "$SCR/inputs-no-placeholder"   # refused before any run, whatever the request
+control fixed-born 3 0 1 fit "$SCR/inputs-fixed-born"            # a fixed value is not the requested selector
+n_check=$((n_check + 1))
+n_dirs=$(find "$SCR/no-placeholder" "$SCR/fixed-born" -name run.log 2>/dev/null | wc -l | tr -d ' ')
+if [ "$n_dirs" = "0" ] && [ -s "$SCR/no-placeholder/selector_probe/input.toml" ] && [ ! -e "$SCR/no-placeholder/perf_runs.csv" -o "$(wc -l < "$SCR/no-placeholder/perf_runs.csv" | tr -d ' ')" = "1" ]; then
+  echo "REPLAY ok: no-placeholder and fixed-born: no run started (no run.log), the probe input retained"
+else echo "REPLAY MISMATCH: a refused campaign started $n_dirs run(s) or lost its probe input"; n_bad=$((n_bad + 1)); fi
+n_check=$((n_check + 1))
+n_in=0; n_good=0
+for f in "$SCR"/control/*/input.toml; do
+  case "$f" in */selector_probe/*) continue ;; esac
+  n_in=$((n_in + 1))
+  [ "$(grep -c '^ *qk_source *=' "$f")" = "1" ] && grep -Eq '^ *qk_source *= *"born" *$' "$f" && n_good=$((n_good + 1))
+done
+if [ "$n_in" = "13" ] && [ "$n_good" = "13" ]; then echo "REPLAY ok: control: 13/13 generated inputs hold exactly one qk_source = \"born\""
+else echo "REPLAY MISMATCH: control: $n_good of $n_in generated inputs hold the selector (13 expected)"; n_bad=$((n_bad + 1)); fi
+n_check=$((n_check + 1))
+if awk -F, 'NR > 1 { if ($2 ~ /^m1$|^m5poisson$|^m5budget$/) { if ($19 == "born") on++ } else if ($19 == "n/a") off++; n++ }
+            END { exit !(n == 13 && on == 10 && off == 3) }' "$SCR/control/perf_runs.csv"; then
+  echo "REPLAY ok: control CSV: qk_source = born on the 10 hadronic-on rows, n/a on the 3 others"
+else echo "REPLAY MISMATCH: control CSV qk_source column ($SCR/control/perf_runs.csv)"; n_bad=$((n_bad + 1)); fi
 
 # the control's CSV: every timing column finite in every row; the restart rows carry n/a (not nan) in custom_ns_per_ion_step
 n_check=$((n_check + 1))
