@@ -23,3 +23,8 @@ These inputs are accepted at parse time by the bh_proto generator (checked by
   `bh_check ledger --file hadronic_ledger_1.txt` on rank 0's output),
   `E_exported_host = E_exported` over the ranks, every absorbed ion harvested
   exactly once (C-MPI-1: the remnants of the transported ions carry no debt).
+- `arrays_restframe_periodic.toml`: the array closure after migration (D2 fix, 2026-11-03). Periodic 1D box of 32
+  cells (8 per domain on 4 ranks; Entity requires at least 5), event mode, restframe spectrum, 32 ions in all.
+  `tests/hadronic/arrays_species.sh` sets the domains, `ions.per_K = 16 / ranks`, the mode, the bath and the box and runs
+  1, 2 and 4 ranks (`HADRONIC::arrays_species`). Expected: every pair complete and residual - E_round within 1e-5
+  (single) or 1e-12 (double) on every rank count; the old index-paired sum fails on 2 and 4 ranks.

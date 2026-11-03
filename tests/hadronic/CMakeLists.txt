@@ -90,6 +90,18 @@ if("${pgen}" STREQUAL "bh_proto")
            COMMAND bash ${BH_SCRIPTS}/event_e8.sh ${BH_SINGLE_ENTITY} $<TARGET_FILE:bh_check>
                    ${BH_INPUTS} ${BH_WORK}/event_e8 ${BH_TESTING_ENTITY})
   set_tests_properties("HADRONIC::event_e8" PROPERTIES TIMEOUT 1800)
+  # [fork:hadronic/P2 closing round, Codex 1's D2] the array closure and the pair dump species by species after MPI migration:
+  # restframe periodic box on 1, 2 and 4 ranks in an MPI build (1 rank otherwise), the old index-paired sum as a negative
+  # control, the delta control, the absorbing box with lone survivors; python3 reads the complete dumps
+  if(${mpi})
+    set(BH_ARRAYS_RANKS "1 2 4")
+  else()
+    set(BH_ARRAYS_RANKS "1")
+  endif()
+  add_test(NAME "HADRONIC::arrays_species"
+           COMMAND bash ${BH_SCRIPTS}/arrays_species.sh ${BH_SINGLE_ENTITY} ${BH_INPUTS}/mpi ${BH_WORK}/arrays_species
+                   ${precision} "${BH_ARRAYS_RANKS}" ${MPIEXEC_EXECUTABLE})
+  set_tests_properties("HADRONIC::arrays_species" PROPERTIES TIMEOUT 1800 ENVIRONMENT "OMP_NUM_THREADS=1")
   # step 5: the restart refusal (a continuous-mode checkpoint resumed in the event mode) and its controls
   add_test(NAME "HADRONIC::event_restart"
            COMMAND bash ${BH_SCRIPTS}/event_restart.sh ${BH_SINGLE_ENTITY} $<TARGET_FILE:bh_check>
