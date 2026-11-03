@@ -2258,44 +2258,49 @@ namespace user {
         pair_npart_minus = domain.species[pair_minus - 1].npart();
         pair_npart_plus  = domain.species[pair_plus - 1].npart();
       }
-      // pair-side sums from the arrays (dd): sum w_s (gamma- + gamma+ - eps_s) over
-      // kernel-born pairs (birth payload > 0), with the same per-pair expression as
-      // the kernel's E_pairs
+      // pair-side sums from the arrays (dd), species by species over every alive kernel-born lepton (birth
+      // payload > 0) of this rank, then summed over the ranks: sum w gamma over e- plus sum w gamma over e+ minus
+      // the absorbed photon energy. No partner is looked up: after a migration or a sort the slots of the two species
+      // are not partners, and the two leptons of a pair may sit on different ranks (Codex 1's D2). The photon energy
+      // lives on BOTH leptons: spawn_pair_vec writes the same stored weight w_s and the same eps payload (slot 2) to
+      // each, and nothing changes them afterwards. Each lepton therefore subtracts half, w_s eps_s / 2 (the factor is
+      // exact in binary): a pair with both leptons alive, on any ranks and in any slots, is counted w_s eps_s exactly
+      // once, and a lepton that died takes its own half with it, so nothing is ever counted twice. The closure is a
+      // statement about complete pairs (the periodic box): n_born_minus and n_born_plus against the ledger's n_spawned
+      // say whether every pair is complete (the "array leptons" line below).
       kernel::hadronic::dd pairs_net, pairs_E, pairs_eps, pairs_w;
-      unsigned long long   n_pairs_born = 0;
+      unsigned long long   n_born_minus = 0, n_born_plus = 0;
       if (pair_minus != 0) {
-        auto& spm = domain.species[pair_minus - 1];
-        auto& spp = domain.species[pair_plus - 1];
-        const npart_t n = std::min(spm.npart(), spp.npart());
         auto mirror = [](const auto& v) {
           auto h = Kokkos::create_mirror_view(v);
           Kokkos::deep_copy(h, v);
           return h;
         };
-        auto wm = mirror(spm.weight), wp = mirror(spp.weight);
-        auto u1m = mirror(spm.ux1), u2m = mirror(spm.ux2), u3m = mirror(spm.ux3);
-        auto u1p = mirror(spp.ux1), u2p = mirror(spp.ux2), u3p = mirror(spp.ux3);
-        auto pm = mirror(spm.pld_r), pp = mirror(spp.pld_r);
-        auto tm = mirror(spm.tag), tp = mirror(spp.tag);
-        for (npart_t k = 0; k < n; ++k) {
-          if (tm(k) != ParticleTag::alive || tp(k) != ParticleTag::alive) {
-            continue; // C-MPI-1: only alive leptons (a sent lepton's remnant is dead with zero payloads)
+        auto sum_species = [&](auto& sp, unsigned long long& n_born) {
+          auto w  = mirror(sp.weight);
+          auto u1 = mirror(sp.ux1), u2 = mirror(sp.ux2), u3 = mirror(sp.ux3);
+          auto pl = mirror(sp.pld_r);
+          auto tg = mirror(sp.tag);
+          for (npart_t k = 0; k < sp.npart(); ++k) {
+            if (tg(k) != ParticleTag::alive) {
+              continue; // C-MPI-1: only alive leptons (a sent lepton's remnant is dead with zero payloads)
+            }
+            if (!(pl(k, 0) > ZERO)) {
+              continue; // background particle slot
+            }
+            const double ws  = static_cast<double>(w(k));
+            const double g   = kernel::hadronic::lepton_gamma(u1(k), u2(k), u3(k));
+            const double eps = static_cast<double>(pl(k, 2));
+            pairs_E.add_prod(ws, g);
+            pairs_eps.add_prod(0.5 * ws, eps);
+            pairs_net.add_prod(ws, g);
+            pairs_net.add_prod(-0.5 * ws, eps);
+            pairs_w.add(0.5 * ws);
+            ++n_born;
           }
-          if (!(pm(k, 0) > ZERO) || !(pp(k, 0) > ZERO)) {
-            continue; // background particle slot
-          }
-          const double ws   = static_cast<double>(wm(k));
-          const double gm   = kernel::hadronic::lepton_gamma(u1m(k), u2m(k), u3m(k));
-          const double gp   = kernel::hadronic::lepton_gamma(u1p(k), u2p(k), u3p(k));
-          const double E_s  = gm + gp;
-          const double eps  = static_cast<double>(pm(k, 2));
-          pairs_E.add_prod(ws, E_s);
-          pairs_eps.add_prod(ws, eps);
-          pairs_net.add_prod(ws, E_s);
-          pairs_net.add_prod(-ws, eps);
-          pairs_w.add(ws);
-          ++n_pairs_born;
-        }
+        };
+        sum_species(domain.species[pair_minus - 1], n_born_minus);
+        sum_species(domain.species[pair_plus - 1], n_born_plus);
         write_pairs(domain);
       }
       // the pair-side sums are global (3.1): hi and lo of each dd summed over the ranks
@@ -2318,7 +2323,10 @@ namespace user {
       reduce_dd(pairs_E);
       reduce_dd(pairs_eps);
       reduce_dd(pairs_w);
-      n_pairs_born = mpi_sum_u64(n_pairs_born);
+      n_born_minus = mpi_sum_u64(n_born_minus);
+      n_born_plus  = mpi_sum_u64(n_born_plus);
+      // complete pairs, half-counting a lepton without a partner (equal to n_spawned in the periodic box)
+      const unsigned long long n_pairs_born = (n_born_minus + n_born_plus + 1) / 2;
       const auto npm_g = mpi_sum_npart(pair_npart_minus), npp_g = mpi_sum_npart(pair_npart_plus);
       for (auto& sp : domain.species) {
         if (ion_mass.count(sp.index()) == 0) {
@@ -2355,7 +2363,8 @@ namespace user {
                     (int)sp.index(), wK_init - wK_final, C.E_drag.value(),
                     (wK_init - wK_final) - C.E_drag.value(),
                     C.E_drag.value() != 0.0 ? ((wK_init - wK_final) - C.E_drag.value()) / C.E_drag.value() : 0.0);
-        // T11 array identity: sum_pairs w_s (E- + E+ - eps_s) = sum_ions w (K_init - K_final)
+        // T11 array identity, its left side summed species by species (above):
+        //                     sum_pairs w_s (E- + E+ - eps_s) = sum_ions w (K_init - K_final)
         //                     - sum_ions w r_stored - E_exported - E_lost_nopairs [+ debt_initial]
         {
           kernel::hadronic::dd rhs;
@@ -2376,6 +2385,11 @@ namespace user {
                       pairs_eps.value(), rhs.value(), res.value(), C.E_round.value(),
                       res.value() - C.E_round.value(), C.B_budget.value(),
                       C.B_budget.value() > 0.0 ? std::abs(res.value()) / C.B_budget.value() : 0.0);
+          std::printf("bh_proto: array leptons species %d : alive kernel-born e- %llu e+ %llu, n_spawned %llu: %s\n",
+                      (int)sp.index(), n_born_minus, n_born_plus, C.n_spawned,
+                      n_born_minus == C.n_spawned && n_born_plus == C.n_spawned
+                        ? "every pair complete"
+                        : "incomplete pairs: leptons left the arrays, the array identity does not apply");
         }
         std::printf("bh_proto: ledger species %d : E_drag %.17g E_pairs %.17g E_absorbed %.17g "
                     "E_exported %.17g E_round %.17g E_stochastic %.17g E_lost_nopairs %.17g pending_discarded %.17g "
