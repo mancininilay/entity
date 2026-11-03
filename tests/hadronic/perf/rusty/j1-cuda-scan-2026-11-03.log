@@ -1,0 +1,133 @@
+# cuda_lambda_scan.py on the CUDA-compiled units of the closing jobs, dev/hadronic-perf (5fd07849 + the J1 fix) and the two demo-branch test files at origin/dev/hadronic-demo 32530fea; Claude 1, 2026-11-03
+=== src/kernels/hadronic/bethe_heitler.hpp: 0 extended lambdas, 26 device-callable functions, 0 launches, 0 function-local types; 2 flagged
+  device fn:435   ulp_real                                 D4 constexpr host call std::numeric_limits
+  device fn:1014  operator                                 D4 constexpr host call std::numeric_limits
+=== src/archetypes/hadronic/bh_born_qk.h: 0 extended lambdas, 0 device-callable functions, 0 launches, 0 function-local types; 0 flagged
+=== src/archetypes/hadronic/bh_calibrated_test.h: 0 extended lambdas, 0 device-callable functions, 0 launches, 0 function-local types; 0 flagged
+=== src/archetypes/hadronic/bh_event_host.h: 0 extended lambdas, 0 device-callable functions, 0 launches, 0 function-local types; 0 flagged
+=== src/archetypes/hadronic/bh_exact_chain_cdf.h: 0 extended lambdas, 0 device-callable functions, 0 launches, 0 function-local types; 0 flagged
+=== src/archetypes/hadronic/bh_interpolate.h: 0 extended lambdas, 0 device-callable functions, 0 launches, 0 function-local types; 0 flagged
+=== src/archetypes/hadronic/bh_options.h: 0 extended lambdas, 0 device-callable functions, 0 launches, 0 function-local types; 0 flagged
+=== src/archetypes/hadronic/bh_physics.h: 0 extended lambdas, 0 device-callable functions, 0 launches, 0 function-local types; 0 flagged
+=== src/archetypes/hadronic/bh_restframe.h: 0 extended lambdas, 0 device-callable functions, 0 launches, 0 function-local types; 0 flagged
+=== src/archetypes/hadronic/bh_sampler_device.h: 0 extended lambdas, 15 device-callable functions, 0 launches, 0 function-local types; 0 flagged
+=== src/archetypes/hadronic/bh_sampler_host.h: 0 extended lambdas, 0 device-callable functions, 0 launches, 0 function-local types; 0 flagged
+=== src/archetypes/hadronic/bh_sampler_io.h: 0 extended lambdas, 0 device-callable functions, 0 launches, 0 function-local types; 0 flagged
+=== src/archetypes/hadronic/bh_table_io.h: 0 extended lambdas, 0 device-callable functions, 0 launches, 0 function-local types; 0 flagged
+=== src/archetypes/hadronic/bh_tables_device.h: 0 extended lambdas, 8 device-callable functions, 0 launches, 0 function-local types; 0 flagged
+=== src/archetypes/hadronic/bh_threshold_series.inc: 0 extended lambdas, 0 device-callable functions, 0 launches, 0 function-local types; 0 flagged
+=== src/engines/srpic/hadronic.h: 0 extended lambdas, 0 device-callable functions, 0 launches, 0 function-local types; 0 flagged
+=== pgens/bh_proto/pgen.hpp: 1 extended lambdas, 9 device-callable functions, 3 launches, 0 function-local types; 0 flagged
+  lambda   :1355  Lambda      in zero_payloads                clean
+  launch   :1251  parallel_for     functor clean  (" ", CreateParticleRangePolicy<Dim::_1D>({ 0u }, { n_new }), kern)
+  launch   :1353  parallel_for     lambda  clean  (" ", CreateParticleRangePolicy<Dim::_1D>({ p0 }, { p1 }), Lambda(prtlidx_t p) {
+  launch   :1581  parallel_reduce  functor clean  ( " ", CreateParticleRangePolicy<Dim::_1D>({ 0u }, { sp.npart() }), kernel::hadr
+=== pgens/bh_proto/bh_proto_params.h: 0 extended lambdas, 0 device-callable functions, 0 launches, 0 function-local types; 0 flagged
+=== src/kernels/injectors.hpp: 0 extended lambdas, 10 device-callable functions, 0 launches, 0 function-local types; 0 flagged
+=== src/kernels/comm.hpp: 0 extended lambdas, 3 device-callable functions, 0 launches, 0 function-local types; 0 flagged
+=== src/kernels/reduced_stats.hpp: 0 extended lambdas, 4 device-callable functions, 0 launches, 0 function-local types; 0 flagged
+=== src/kernels/particle_moments.hpp: 0 extended lambdas, 14 device-callable functions, 0 launches, 0 function-local types; 0 flagged
+=== tests/kernels/bh_loss.cpp: 3 extended lambdas, 0 device-callable functions, 4 launches, 2 function-local types; 0 flagged
+  lambda   :416   Lambda      in test_device_tables           clean
+  lambda   :460   Lambda      in test_device_tables           clean
+  lambda   :486   Lambda      in test_device_tables           clean
+  launch   :297   parallel_reduce  functor clean  ( " ", CreateParticleRangePolicy<Dim::_1D>({ 0u }, { ions.n }), kh::BetheHeitler
+  launch   :415   parallel_for     lambda  clean  ( " ", N, Lambda(const int i) { bool a = false; I_dev(i) = tab.I(g_dev(i), a); a
+  launch   :459   parallel_for     lambda  clean  ( " ", M, Lambda(const int i) { Im_dev(i) = tab.I(gm_dev(i)); })
+  launch   :485   parallel_for     lambda  clean  ( " ", 1, Lambda(const int) { bool a; e_dev(0) = tab.I(tab.gamma_min * (1.0 - 1.
+  local type:763   Row
+  local type:1050  Case
+=== tests/kernels/bh_pairs.cpp: 1 extended lambdas, 0 device-callable functions, 4 launches, 0 function-local types; 0 flagged
+  lambda   :1588  Lambda      in sample_poisson               clean
+  launch   :449   parallel_reduce  functor clean  (" ", CreateParticleRangePolicy<Dim::_1D>({ 0u }, { ions.n }), kh::BetheHeitler_
+  launch   :1587  parallel_for     lambda  clean  ( " ", n, Lambda(int i) { auto gen = pool.get_state(); unsigned long long c = 0;
+  launch   :1833  parallel_for     functor clean  (" ", ns, Packer(buf_int, buf_r, buf_dx, buf_pr, buf_i, NINTS, NREALS, NPRTLDX, 
+  launch   :1925  parallel_for     functor clean  (" ", nrecv, Extractor(rb_int, rb_real, rb_dx, rb_pr, rb_pi, NINTS, NREALS, NPRT
+=== tests/kernels/bh_event.cpp: 0 extended lambdas, 0 device-callable functions, 3 launches, 2 function-local types; 0 flagged
+  launch   :499   parallel_reduce  functor clean  (" ", Kokkos::RangePolicy<Kokkos::Serial>(0, ions.n), kern, Kokkos::Sum<kh::Loss
+  launch   :502   parallel_reduce  functor clean  (" ", CreateParticleRangePolicy<Dim::_1D>({ 0u }, { ions.n }), kern, Kokkos::Sum
+  launch   :506   parallel_reduce  functor clean  (" ", CreateParticleRangePolicy<Dim::_1D>({ 0u }, { ions.n }), kern, Kokkos::Sum
+  local type:1398  Case
+  local type:1471  Combo
+=== tests/kernels/bh_sampler.cpp: 0 extended lambdas, 3 device-callable functions, 2 launches, 1 function-local types; 0 flagged
+  launch   :465   parallel_reduce  functor clean  (" ", CreateParticleRangePolicy<Dim::_1D>({ 0u }, { ions.n }), kh::BetheHeitler_
+  launch   :608   parallel_reduce  functor clean  (" ", Kokkos::RangePolicy<>(0, n_threads), DrawKernel { T.sampler, pool, gamma, 
+  local type:1041  Combo
+=== tests/kernels/bh_perf.cpp: 0 extended lambdas, 1 device-callable functions, 2 launches, 2 function-local types; 0 flagged
+  launch   :84    parallel_reduce  functor clean  (label, CreateParticleRangePolicy<Dim::_1D>({ 0u }, { ions.n }), kern, Kokkos::S
+  launch   :367   parallel_for     functor clean  (" ", CreateParticleRangePolicy<Dim::_1D>({ 0u }, { N }), k)
+  local type:413   Case
+  local type:540   Cfg
+=== tests/kernels/bh_reduction_timing.cpp: 0 extended lambdas, 7 device-callable functions, 6 launches, 0 function-local types; 0 flagged
+  launch   :103   parallel_reduce  functor clean  ( Kokkos::TeamThreadRange(team, begin, end), [&](const std::uint64_t i, double& 
+  launch   :207   parallel_reduce  functor clean  (" ", Kokkos::RangePolicy<Kokkos::IndexType<std::uint64_t>>(0, npart), ReducerKe
+  launch   :214   parallel_reduce  functor clean  (" ", Kokkos::RangePolicy<Kokkos::IndexType<std::uint64_t>>(0, npart), Sum3Kerne
+  launch   :222   parallel_for     functor clean  (" ", Kokkos::RangePolicy<Kokkos::IndexType<std::uint64_t>>(0, npart), AtomicKer
+  launch   :232   parallel_for     functor clean  (" ", Kokkos::TeamPolicy<>(league, Kokkos::AUTO), TeamAtomicKernel { tsums, npar
+  launch   :306   parallel_reduce  functor clean  (" ", Kokkos::RangePolicy<Kokkos::IndexType<std::uint64_t>>(0, npart).set_chunk_
+=== tests/kernels/perf/bh_perf_kernel_variant.hpp: 0 extended lambdas, 9 device-callable functions, 0 launches, 0 function-local types; 1 flagged
+  device fn:507   operator                                 D4 constexpr host call std::numeric_limits
+=== tests/kernels/perf/bh_perf_tables.h: 0 extended lambdas, 13 device-callable functions, 0 launches, 0 function-local types; 0 flagged
+=== tests/archetypes/bh_born_qk.cpp: 0 extended lambdas, 0 device-callable functions, 0 launches, 0 function-local types; 0 flagged
+=== tests/archetypes/bh_chain.cpp: 0 extended lambdas, 0 device-callable functions, 0 launches, 2 function-local types; 0 flagged
+  local type:564   Res
+  local type:633   Res
+=== tests/archetypes/bh_fixtures.cpp: 0 extended lambdas, 0 device-callable functions, 0 launches, 0 function-local types; 0 flagged
+=== tests/archetypes/bh_ka2008.cpp: 0 extended lambdas, 0 device-callable functions, 0 launches, 0 function-local types; 0 flagged
+=== tests/archetypes/bh_physics.cpp: 0 extended lambdas, 0 device-callable functions, 0 launches, 4 function-local types; 0 flagged
+  local type:609   Row
+  local type:1133  Bad
+  local type:1491  Row
+  local type:1675  C
+=== tests/archetypes/bh_restframe.cpp: 0 extended lambdas, 0 device-callable functions, 0 launches, 2 function-local types; 0 flagged
+  local type:329   P
+  local type:678   P
+=== tests/archetypes/bh_sampler_fixtures.cpp: 0 extended lambdas, 0 device-callable functions, 0 launches, 2 function-local types; 0 flagged
+  local type:195   Pair
+  local type:503   Case
+=== tests/hadronic/bh_check.cpp: 0 extended lambdas, 0 device-callable functions, 0 launches, 0 function-local types; 0 flagged
+=== tests/hadronic/bh_proto_params.cpp: 0 extended lambdas, 0 device-callable functions, 0 launches, 0 function-local types; 0 flagged
+=== tests/framework/f8_tracers.cpp: 3 extended lambdas, 0 device-callable functions, 6 launches, 0 function-local types; 0 flagged
+  lambda   :221   Lambda      in rewrite_prev                 clean
+  lambda   :234   Lambda      in rewrite_prev                 clean
+  lambda   :249   Lambda      in rewrite_prev                 clean
+  launch   :220   parallel_for     lambda  clean  ( " ", n, Lambda(npart_t s) { if (tg(s) == ParticleTag::dead) { return; } p1(s) 
+  launch   :233   parallel_for     lambda  clean  ( " ", n, Lambda(npart_t s) { if (tg(s) == ParticleTag::dead) { return; } p1(s) 
+  launch   :248   parallel_for     lambda  clean  ( " ", n, Lambda(npart_t s) { if (tg(s) == ParticleTag::dead) { return; } p1(s) 
+  launch   :287   parallel_for     functor clean  (" ", p.npart(), kernel::DepositCurrents_kernel<SimEngine::SRPIC, M, 1>(Js, stat
+  launch   :301   parallel_for     functor clean  (" ", p.npart(), kernel::DepositCurrents_kernel<SimEngine::SRPIC, M, 1>(Js, stat
+  launch   :317   parallel_for     functor clean  (" ", p.npart(), kernel::DepositCurrents_kernel<SimEngine::SRPIC, M, 1>(Js, stat
+=== tests/framework/particles_sort.cpp: 2 extended lambdas, 0 device-callable functions, 2 launches, 0 function-local types; 0 flagged
+  lambda   :45    Lambda      in main                         clean
+  lambda   :202   Lambda      in main                         clean
+  launch   :42    parallel_for     lambda  clean  ( " ", prtls.maxnpart(), Lambda(prtlidx_t p) { if (p < 66u) { tag_p(p) = (p % 10
+  launch   :199   parallel_for     lambda  clean  ( " ", prtls.maxnpart(), Lambda(prtlidx_t p) { if (p < 66u) { tag_p(p) = (p % 10
+=== tests/framework/checkpoint-data.cpp: 0 extended lambdas, 0 device-callable functions, 0 launches, 0 function-local types; 0 flagged
+=== tests/framework/checkpoint-extents.cpp: 0 extended lambdas, 0 device-callable functions, 0 launches, 0 function-local types; 0 flagged
+=== tests/framework/spectra.cpp: 0 extended lambdas, 0 device-callable functions, 0 launches, 0 function-local types; 0 flagged
+=== tests/kernels/deposit.cpp: 4 extended lambdas, 1 device-callable functions, 5 launches, 0 function-local types; 0 flagged
+  lambda   :173   Lambda      in testDeposit                  clean
+  lambda   :182   Lambda      in testDeposit                  clean
+  lambda   :188   Lambda      in testDeposit                  clean
+  lambda   :194   Lambda      in testDeposit                  clean
+  launch   :157   parallel_for     functor clean  (" ", 10, kernel::DepositCurrents_kernel<S, M, O>(J_scat, pa, metric, charge, in
+  launch   :170   parallel_reduce  lambda  clean  ( " ", range, Lambda(const int i, const int j, real_t& sum) { sum += J(i, j, cur
+  launch   :179   parallel_reduce  lambda  clean  ( " ", range, Lambda(const int i, const int j, real_t& sum) { sum += J(i, j, cur
+  launch   :185   parallel_reduce  lambda  clean  ( " ", range, Lambda(const int i, const int j, real_t& sum) { sum += J(i, j, cur
+  launch   :191   parallel_reduce  lambda  clean  ( " ", range, Lambda(const int i, const int j, real_t& sum) { sum += J(i, j, cur
+=== tests/kernels/injectors_global_weights.cpp: 0 extended lambdas, 0 device-callable functions, 0 launches, 0 function-local types; 0 flagged
+=== tests/kernels/reduced_stats_weights.cpp: 0 extended lambdas, 0 device-callable functions, 1 launches, 0 function-local types; 0 flagged
+  launch   :104   parallel_reduce  functor clean  (" ", prtls.rangeActiveParticles(), kernel::ReducedParticleMoments_kernel<SimEng
+=== origin/dev/hadronic-demo:tests/kernels/bh_event.cpp: 0 extended lambdas, 0 device-callable functions, 3 launches, 2 function-local types; 0 flagged
+  launch   :508   parallel_reduce  functor clean  (" ", Kokkos::RangePolicy<Kokkos::Serial>(0, ions.n), kern, Kokkos::Sum<kh::Loss
+  launch   :511   parallel_reduce  functor clean  (" ", CreateParticleRangePolicy<Dim::_1D>({ 0u }, { ions.n }), kern, Kokkos::Sum
+  launch   :515   parallel_reduce  functor clean  (" ", CreateParticleRangePolicy<Dim::_1D>({ 0u }, { ions.n }), kern, Kokkos::Sum
+  local type:1425  Case
+  local type:1498  Combo
+=== origin/dev/hadronic-demo:tests/kernels/bh_pairs.cpp: 1 extended lambdas, 0 device-callable functions, 4 launches, 1 function-local types; 0 flagged
+  lambda   :1595  Lambda      in sample_poisson               clean
+  launch   :456   parallel_reduce  functor clean  (" ", CreateParticleRangePolicy<Dim::_1D>({ 0u }, { ions.n }), kh::BetheHeitler_
+  launch   :1594  parallel_for     lambda  clean  ( " ", n, Lambda(int i) { auto gen = pool.get_state(); unsigned long long c = 0;
+  launch   :1840  parallel_for     functor clean  (" ", ns, Packer(buf_int, buf_r, buf_dx, buf_pr, buf_i, NINTS, NREALS, NPRTLDX, 
+  launch   :1932  parallel_for     functor clean  (" ", nrecv, Extractor(rb_int, rb_real, rb_dx, rb_pr, rb_pi, NINTS, NREALS, NPRT
+  local type:1994  Case

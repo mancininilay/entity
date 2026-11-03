@@ -203,30 +203,61 @@ namespace {
 
     // what the pusher does before any deposit: rewrite the previous positions of every alive slot (from the id
     // carried in pld_i, as a deterministic stand-in for the pushed trajectory)
+    //
+    // One extended lambda per dimension, each body free of `if constexpr` (J1, job 7386833: NVCC refuses an
+    // extended __host__ __device__ lambda that first captures a variable inside a constexpr-if branch of its body;
+    // the per-dimension launch is the pattern of src/framework/domain/comm/fields_sync.cpp, which compiled there).
+    // The second- and third-dimension arrays are captured only where they exist.
     void rewrite_prev() {
       auto&      p  = *prtls;
       const auto n  = p.npart();
-      auto       i1 = p.i1, i2 = p.i2, i3 = p.i3;
-      auto       p1 = p.i1_prev, p2 = p.i2_prev, p3 = p.i3_prev;
-      auto       q1 = p.dx1_prev, q2 = p.dx2_prev, q3 = p.dx3_prev;
-      auto       d1 = p.dx1, d2 = p.dx2, d3 = p.dx3;
+      auto       i1 = p.i1;
+      auto       p1 = p.i1_prev;
+      auto       q1 = p.dx1_prev;
+      auto       d1 = p.dx1;
       auto       tg = p.tag;
-      Kokkos::parallel_for(
-        "rewrite_prev", n, Lambda(npart_t s) {
-          if (tg(s) == ParticleTag::dead) {
-            return;
-          }
-          p1(s) = i1(s);
-          q1(s) = d1(s) - static_cast<prtldx_t>(0.125);
-          if constexpr (D >= Dim::_2D) {
+      if constexpr (D == Dim::_1D) {
+        Kokkos::parallel_for(
+          "rewrite_prev", n, Lambda(npart_t s) {
+            if (tg(s) == ParticleTag::dead) {
+              return;
+            }
+            p1(s) = i1(s);
+            q1(s) = d1(s) - static_cast<prtldx_t>(0.125);
+          });
+      } else if constexpr (D == Dim::_2D) {
+        auto i2 = p.i2;
+        auto p2 = p.i2_prev;
+        auto q2 = p.dx2_prev;
+        auto d2 = p.dx2;
+        Kokkos::parallel_for(
+          "rewrite_prev", n, Lambda(npart_t s) {
+            if (tg(s) == ParticleTag::dead) {
+              return;
+            }
+            p1(s) = i1(s);
+            q1(s) = d1(s) - static_cast<prtldx_t>(0.125);
             p2(s) = i2(s);
             q2(s) = d2(s);
-          }
-          if constexpr (D == Dim::_3D) {
+          });
+      } else {
+        auto i2 = p.i2, i3 = p.i3;
+        auto p2 = p.i2_prev, p3 = p.i3_prev;
+        auto q2 = p.dx2_prev, q3 = p.dx3_prev;
+        auto d2 = p.dx2, d3 = p.dx3;
+        Kokkos::parallel_for(
+          "rewrite_prev", n, Lambda(npart_t s) {
+            if (tg(s) == ParticleTag::dead) {
+              return;
+            }
+            p1(s) = i1(s);
+            q1(s) = d1(s) - static_cast<prtldx_t>(0.125);
+            p2(s) = i2(s);
+            q2(s) = d2(s);
             p3(s) = i3(s);
             q3(s) = d3(s);
-          }
-        });
+          });
+      }
       Kokkos::fence();
     }
   };

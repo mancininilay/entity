@@ -1,0 +1,27 @@
+// synthetic controls for cuda_lambda_scan.py: every flag must fire once where marked
+struct A {
+  A(int n) { Kokkos::parallel_for("c", n, Lambda(int i) { v(i) = 0; }); }               // L4
+  auto deduced(int n) { Kokkos::parallel_for("d", n, Lambda(int i) { v(i) = 0; }); }    // L5
+  auto trailing(int n) -> int { Kokkos::parallel_for("t", n, Lambda(int i) { v(i) = 0; }); return 0; } // clean
+private:
+  void priv(int n) { Kokkos::parallel_for("p", n, Lambda(int i) { v(i) = 0; }); }       // L6
+public:
+  void cls(int n) { Kokkos::parallel_for("k", n, ClassLambda(int i) { v(i) = 0; }); }   // L9
+};
+template <Dimension D>
+void f(int n) {
+  auto run = [&](auto x) { Kokkos::parallel_for("g", n, Lambda(int i) { w(i) = x; }); }; // L7
+  Kokkos::parallel_for("a", n, Lambda(auto i) { w(i) = 0; });                             // L2
+  std::vector<double> hv(3);
+  Kokkos::parallel_for("h", n, Lambda(int i) { w(i) = hv[0]; });                          // L8 host
+  auto [ra, rb] = pair();
+  Kokkos::parallel_for("s", n, Lambda(int i) { w(i) = ra; });                             // L8 binding
+  Kokkos::parallel_for("x", n, Lambda(int i) { if (i < 0) { throw 1; } static int c = 0; w(i) = std::max(1, i); }); // D1 D2 D4
+  struct Local { int a; };
+  Kokkos::parallel_for("l", n, Lambda(int i) { Local q { 1 }; w(i) = q.a; });             // K1
+  Kokkos::parallel_for("q", n, Lambda(int i) { if constexpr (D == Dim::_2D) { u(i) = 0; } }); // L1
+}
+template <int S, class M>
+struct T1 { void f(int n) { Kokkos::parallel_for("tp", n, Lambda(int i) { w(i) = 0; }); } };   // clean (class is a template parameter)
+class C1 { void g(int n) { Kokkos::parallel_for("cp", n, Lambda(int i) { w(i) = 0; }); } };    // L6 (class default private)
+struct K { Inline void op() const { raise::KernelError(HERE, "x"); } Inline void bad() const { raise::Error("y", HERE); } }; // D1 once

@@ -75,3 +75,12 @@ and the two weights tests) and an exit 1 without the entry's anchored check-fail
 non-zero exit is not presumed to be a check failure (Codex 1's reclosure R1); a missing entry is the selection gate
 (exit 3). Each
 precision's F8 run starts only when its own build exited 0 and produced the complete inventory of its binaries.
+
+CUDA compile (J1, job 7386833: NVCC refused the F8 tracer's extended lambda, which first captured the second- and
+third-dimension views inside `if constexpr` branches of its body; fixed with one lambda per dimension). The Mac cannot
+compile CUDA: `rusty/cuda_lambda_scan.py <files>` lists, file and line, every extended lambda, device-callable function
+and kernel launch with the NVCC restrictions a host compiler does not enforce (constexpr-if first captures, generic
+or nested extended lambdas, enclosing constructors, deduced return types, private or local enclosing classes,
+structured bindings and host objects in device code, host exceptions, static locals, function-local types in
+launches); `rusty/cuda_lambda_scan_controls.txt` holds its synthetic controls. A clean scan is evidence, not proof:
+the proof is the CUDA compile-only job.

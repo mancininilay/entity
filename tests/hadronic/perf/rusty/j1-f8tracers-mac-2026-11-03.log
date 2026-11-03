@@ -1,0 +1,85 @@
+# F8 tracer after the J1 fix, Mac (AppleClang, OpenMP, 2 threads), single and double; Claude 1, 2026-11-03
+## single
+f8_tracers: execution space OpenMP, real_t = float, sort path BinSort, tiled_deposit OFF
+
+=== F8 tracers, 1D, real_t = float, 1024 tracers (768 alive), 16 cells per axis ===
+PASS: 1D S1: BinSort path: npart() = 1024 unchanged
+PASS: 1D S2: alive prefix in non-decreasing tile index (tile size 1), no alive after a dead
+PASS: 1D S3: the alive id set after the sort equals the injected one (768 ids)
+PASS: 1D S4: weight, payloads, momenta, cell and displacement of every alive slot equal the id's injected values (one permutation)
+PASS: 1D S5: sum(w) = 49152.000000 and sum(w ux1) = 0.125000 over the alive particles equal the injected sums exactly
+PASS: 1D D1 gate: the deposited current is non-zero (|J| = 1.776709e+03)
+PASS: 1D D1: J(sorted) vs J(unsorted) relative L2 = 1.010e-08 (tolerance 1e-05)
+PASS: 1D D2: J(split in two, sorted) vs J(unsplit) relative L2 = 2.818e-08 (tolerance 1e-05)
+PASS: 1D C0: the checkpoint of the sorted population was written (1024 particles)
+PASS: 1D C1: npart after the read-back 1024 = 1024
+PASS: 1D C2: every particle array equals the written one exactly over [0, npart)
+
+=== F8 tracers, 2D, real_t = float, 1024 tracers (768 alive), 16 cells per axis ===
+PASS: 2D S1: BinSort path: npart() = 1024 unchanged
+PASS: 2D S2: alive prefix in non-decreasing tile index (tile size 1), no alive after a dead
+PASS: 2D S3: the alive id set after the sort equals the injected one (768 ids)
+PASS: 2D S4: weight, payloads, momenta, cell and displacement of every alive slot equal the id's injected values (one permutation)
+PASS: 2D S5: sum(w) = 49152.000000 and sum(w ux1) = 0.125000 over the alive particles equal the injected sums exactly
+PASS: 2D D1 gate: the deposited current is non-zero (|J| = 1.402900e+03)
+PASS: 2D D1: J(sorted) vs J(unsorted) relative L2 = 5.189e-09 (tolerance 1e-05)
+PASS: 2D D2: J(split in two, sorted) vs J(unsplit) relative L2 = 6.078e-09 (tolerance 1e-05)
+PASS: 2D C0: the checkpoint of the sorted population was written (1024 particles)
+PASS: 2D C1: npart after the read-back 1024 = 1024
+PASS: 2D C2: every particle array equals the written one exactly over [0, npart)
+
+=== F8 tracers, 3D, real_t = float, 1024 tracers (768 alive), 16 cells per axis ===
+PASS: 3D S1: BinSort path: npart() = 1024 unchanged
+PASS: 3D S2: alive prefix in non-decreasing tile index (tile size 1), no alive after a dead
+PASS: 3D S3: the alive id set after the sort equals the injected one (768 ids)
+PASS: 3D S4: weight, payloads, momenta, cell and displacement of every alive slot equal the id's injected values (one permutation)
+PASS: 3D S5: sum(w) = 49152.000000 and sum(w ux1) = 0.125000 over the alive particles equal the injected sums exactly
+PASS: 3D D1 gate: the deposited current is non-zero (|J| = 1.108555e+03)
+PASS: 3D D1: J(sorted) vs J(unsorted) relative L2 = 8.993e-08 (tolerance 1e-05)
+PASS: 3D D2: J(split in two, sorted) vs J(unsplit) relative L2 = 4.459e-07 (tolerance 1e-05)
+PASS: 3D C0: the checkpoint of the sorted population was written (1024 particles)
+PASS: 3D C1: npart after the read-back 1024 = 1024
+PASS: 3D C2: every particle array equals the written one exactly over [0, npart)
+f8_tracers summary: 33 passed, 0 failed
+## double
+f8_tracers: execution space OpenMP, real_t = double, sort path BinSort, tiled_deposit OFF
+
+=== F8 tracers, 1D, real_t = double, 1024 tracers (768 alive), 16 cells per axis ===
+PASS: 1D S1: BinSort path: npart() = 1024 unchanged
+PASS: 1D S2: alive prefix in non-decreasing tile index (tile size 1), no alive after a dead
+PASS: 1D S3: the alive id set after the sort equals the injected one (768 ids)
+PASS: 1D S4: weight, payloads, momenta, cell and displacement of every alive slot equal the id's injected values (one permutation)
+PASS: 1D S5: sum(w) = 49152.000000 and sum(w ux1) = 0.125000 over the alive particles equal the injected sums exactly
+PASS: 1D D1 gate: the deposited current is non-zero (|J| = 1.776709e+03)
+PASS: 1D D1: J(sorted) vs J(unsorted) relative L2 = 1.685e-17 (tolerance 1e-10)
+PASS: 1D D2: J(split in two, sorted) vs J(unsplit) relative L2 = 3.516e-17 (tolerance 1e-10)
+PASS: 1D C0: the checkpoint of the sorted population was written (1024 particles)
+PASS: 1D C1: npart after the read-back 1024 = 1024
+PASS: 1D C2: every particle array equals the written one exactly over [0, npart)
+
+=== F8 tracers, 2D, real_t = double, 1024 tracers (768 alive), 16 cells per axis ===
+PASS: 2D S1: BinSort path: npart() = 1024 unchanged
+PASS: 2D S2: alive prefix in non-decreasing tile index (tile size 1), no alive after a dead
+PASS: 2D S3: the alive id set after the sort equals the injected one (768 ids)
+PASS: 2D S4: weight, payloads, momenta, cell and displacement of every alive slot equal the id's injected values (one permutation)
+PASS: 2D S5: sum(w) = 49152.000000 and sum(w ux1) = 0.125000 over the alive particles equal the injected sums exactly
+PASS: 2D D1 gate: the deposited current is non-zero (|J| = 1.402900e+03)
+PASS: 2D D1: J(sorted) vs J(unsorted) relative L2 = 1.028e-17 (tolerance 1e-10)
+PASS: 2D D2: J(split in two, sorted) vs J(unsplit) relative L2 = 1.811e-17 (tolerance 1e-10)
+PASS: 2D C0: the checkpoint of the sorted population was written (1024 particles)
+PASS: 2D C1: npart after the read-back 1024 = 1024
+PASS: 2D C2: every particle array equals the written one exactly over [0, npart)
+
+=== F8 tracers, 3D, real_t = double, 1024 tracers (768 alive), 16 cells per axis ===
+PASS: 3D S1: BinSort path: npart() = 1024 unchanged
+PASS: 3D S2: alive prefix in non-decreasing tile index (tile size 1), no alive after a dead
+PASS: 3D S3: the alive id set after the sort equals the injected one (768 ids)
+PASS: 3D S4: weight, payloads, momenta, cell and displacement of every alive slot equal the id's injected values (one permutation)
+PASS: 3D S5: sum(w) = 49152.000000 and sum(w ux1) = 0.125000 over the alive particles equal the injected sums exactly
+PASS: 3D D1 gate: the deposited current is non-zero (|J| = 1.108556e+03)
+PASS: 3D D1: J(sorted) vs J(unsorted) relative L2 = 0.000e+00 (tolerance 1e-10)
+PASS: 3D D2: J(split in two, sorted) vs J(unsplit) relative L2 = 0.000e+00 (tolerance 1e-10)
+PASS: 3D C0: the checkpoint of the sorted population was written (1024 particles)
+PASS: 3D C1: npart after the read-back 1024 = 1024
+PASS: 3D C2: every particle array equals the written one exactly over [0, npart)
+f8_tracers summary: 33 passed, 0 failed

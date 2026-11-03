@@ -1,0 +1,38 @@
+# cuda_lambda_scan.py on its synthetic controls (cuda_lambda_scan_controls.txt; every marked flag fires, the two clean sites stay clean) and on the J1 site at 5fd07849 (L1 must fire); Claude 1, 2026-11-03
+=== tests/hadronic/perf/rusty/cuda_lambda_scan_controls.txt: 14 extended lambdas, 2 device-callable functions, 14 launches, 1 function-local types; 14 flagged
+  lambda   :3     Lambda      in A                            L4 enclosing function is a constructor/destructor
+  lambda   :4     Lambda      in deduced                      L5 enclosing function has a deduced return type
+  lambda   :5     Lambda      in trailing                     clean
+  lambda   :7     Lambda      in priv                         L6 enclosing member function is private
+  lambda   :9     ClassLambda in cls                          L9 this / *this capture
+  lambda   :13    Lambda      in f                            L7 inside a generic host lambda
+  lambda   :14    Lambda      in f                            L2 auto parameter
+  lambda   :16    Lambda      in f                            L8 uses host object "hv" (vector)
+  lambda   :18    Lambda      in f                            L8 uses structured binding "ra"
+  lambda   :19    Lambda      in f                            D1 throw; D2 static local: static int c; D4 constexpr host call std::max
+  lambda   :21    Lambda      in f                            K1 local type Local (line 20) used in the body
+  lambda   :22    Lambda      in f                            L1 if constexpr in the body
+  lambda   :25    Lambda      in f                            clean
+  lambda   :26    Lambda      in g                            L6 enclosing member function is private
+  device fn:27    bad                                      D1 host raise::Error
+  launch   :3     parallel_for     lambda  clean  (" ", n, Lambda(int i) { v(i) = 0; })
+  launch   :4     parallel_for     lambda  clean  (" ", n, Lambda(int i) { v(i) = 0; })
+  launch   :5     parallel_for     lambda  clean  (" ", n, Lambda(int i) { v(i) = 0; })
+  launch   :7     parallel_for     lambda  clean  (" ", n, Lambda(int i) { v(i) = 0; })
+  launch   :9     parallel_for     lambda  clean  (" ", n, ClassLambda(int i) { v(i) = 0; })
+  launch   :13    parallel_for     lambda  clean  (" ", n, Lambda(int i) { w(i) = x; })
+  launch   :14    parallel_for     lambda  clean  (" ", n, Lambda(auto i) { w(i) = 0; })
+  launch   :16    parallel_for     lambda  clean  (" ", n, Lambda(int i) { w(i) = hv[0]; })
+  launch   :18    parallel_for     lambda  clean  (" ", n, Lambda(int i) { w(i) = ra; })
+  launch   :19    parallel_for     lambda  clean  (" ", n, Lambda(int i) { if (i < 0) { throw 1; } static int c = 0; w(i) = std::m
+  launch   :21    parallel_for     lambda  K1 local type Local (line 20) in the launch  (" ", n, Lambda(int i) { Local q { 1 }; w(i) = q.a; })
+  launch   :22    parallel_for     lambda  clean  (" ", n, Lambda(int i) { if constexpr (D == Dim::_2D) { u(i) = 0; } })
+  launch   :25    parallel_for     lambda  clean  (" ", n, Lambda(int i) { w(i) = 0; })
+  launch   :26    parallel_for     lambda  clean  (" ", n, Lambda(int i) { w(i) = 0; })
+  local type:20    Local
+=== 5fd07849:tests/framework/f8_tracers.cpp: 1 extended lambdas, 0 device-callable functions, 4 launches, 0 function-local types; 1 flagged
+  lambda   :215   Lambda      in rewrite_prev                 L1 if constexpr in the body
+  launch   :214   parallel_for     lambda  clean  ( " ", n, Lambda(npart_t s) { if (tg(s) == ParticleTag::dead) { return; } p1(s) 
+  launch   :256   parallel_for     functor clean  (" ", p.npart(), kernel::DepositCurrents_kernel<SimEngine::SRPIC, M, 1>(Js, stat
+  launch   :270   parallel_for     functor clean  (" ", p.npart(), kernel::DepositCurrents_kernel<SimEngine::SRPIC, M, 1>(Js, stat
+  launch   :286   parallel_for     functor clean  (" ", p.npart(), kernel::DepositCurrents_kernel<SimEngine::SRPIC, M, 1>(Js, stat
