@@ -202,7 +202,10 @@ namespace {
 } // namespace
 
 auto main(int argc, char* argv[]) -> int {
-  Kokkos::initialize(argc, argv);
+  // the lifecycle of the stock MPI-built tests (particles_sort, spectra, checkpoint-*): Kokkos, then MPI_Init in an
+  // MPI build; the one-domain Metadomain of run_case queries MPI_Comm_size (Codex 1's B5 of job 7398318: with
+  // Kokkos alone the MPI build aborted before any check)
+  ntt::GlobalInitialize(argc, argv);
   int rc = 0;
   try {
     std::printf("injectors_global_weights: real_t = %s, execution space = %s\n",
@@ -221,6 +224,6 @@ auto main(int argc, char* argv[]) -> int {
     std::fprintf(stderr, "injectors_global_weights: exception: %s\n", e.what());
     rc = 2;
   }
-  Kokkos::finalize();
+  ntt::GlobalFinalize();
   return rc;
 }
