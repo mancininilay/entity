@@ -408,6 +408,31 @@ if [ "${PERF_SELFTEST:-0}" = "1" ]; then
   f8_probe probe-f8-assertion FRAMEWORK::f8_tracers /bin/sh -c 'echo "FAIL: S3 1D: alive id set exact"; echo "f8_tracers summary: 32 passed, 1 failed"; exit 1'
   f8_probe probe-f8-stock-fail KERNELS::deposit /bin/sh -c 'echo "DepositCurrents_kernel::SumDivJ != 0" >&2; exit 1'
   f8_probe probe-f8-mpi-slots FRAMEWORK::particles_sort "$MOCK/mpiexec" -n 2 "$MOCK/fake-test.xc"
+  # Round 4, evidence retention (Codex 1's readback of B7398318): two entries of one invocation keep two Test.xml files,
+  # each naming its own entry, with the full output (a 100-line, ~5.6 kB passed output); negative control: CTest's own
+  # 1024-byte limit truncates it and the tool reports a NOTE (classification unchanged: both passed)
+  LONG='i=0; while [ $i -lt 100 ]; do echo "PASS: line $i of a long verdict output ................"; i=$((i+1)); done; echo "f8_tracers summary: 100 passed, 0 failed"'
+  for lim in default 1024; do
+    d="$ROOT/probe-f8-retention-$lim"; mkdir -p "$d"
+    printf 'add_test([=[FRAMEWORK::f8_tracers]=] [=[/bin/sh]=] [=[-c]=] [=[%s]=])\nadd_test([=[KERNELS::deposit]=] [=[/bin/sh]=] [=[-c]=] [=[echo deposit ok]=])\n' "$LONG" > "$d/CTestTestfile.cmake"
+    extra=""; [ "$lim" = "1024" ] && extra="--passed-output-size 1024"
+    python3 "$F8_TOOL" --build "$d" --dest "$d/plan" --launcher "$MOCK/mpirun -n 1" --timeout 5 $extra FRAMEWORK::f8_tracers KERNELS::deposit > "$d/tool.log" 2>&1
+    expect_rc "retention ($lim): the tool's exit (both entries passed)" $? 0
+  done
+  N_CHECK=$((N_CHECK + 1))
+  d="$ROOT/probe-f8-retention-default/plan"
+  if grep -q "<Name>FRAMEWORK::f8_tracers</Name>" "$d"/entry-00/Testing/*/Test.xml && grep -q "<Name>KERNELS::deposit</Name>" "$d"/entry-01/Testing/*/Test.xml \
+     && ! grep -q "<Name>KERNELS::deposit</Name>" "$d"/entry-00/Testing/*/Test.xml && ls "$d"/entry-00/Testing/Temporary/LastTest_*.log "$d"/entry-01/Testing/Temporary/LastTest_*.log > /dev/null 2>&1 \
+     && grep -q "PASS: line 99 " "$d/output-00.txt" && grep -q "PASS: line 99 " "$d/junit-00.xml" && grep -q "0 truncated stored outputs" "$ROOT/probe-f8-retention-default/tool.log" \
+     && ! grep -q "^NOTE: " "$ROOT/probe-f8-retention-default/tool.log"; then
+    echo "SELFTEST ok: retention: two entries, two Test.xml and LastTest logs, full 100-line output in output-00.txt and JUnit, no NOTE"
+  else echo "SELFTEST MISMATCH: retention (default limits) in $d"; N_BAD=$((N_BAD + 1)); fi
+  N_CHECK=$((N_CHECK + 1))
+  d="$ROOT/probe-f8-retention-1024/plan"
+  if grep -q "^NOTE: F8 entry FRAMEWORK::f8_tracers: CTest truncated" "$ROOT/probe-f8-retention-1024/tool.log" && ! grep -q "PASS: line 99 " "$d/output-00.txt" \
+     && grep -q "1 truncated stored outputs" "$ROOT/probe-f8-retention-1024/tool.log" && grep -q "F8 entry FRAMEWORK::f8_tracers: passed" "$ROOT/probe-f8-retention-1024/tool.log"; then
+    echo "SELFTEST ok: retention negative control: CTest's 1024-byte limit truncates the output and the tool reports it (entry still passed)"
+  else echo "SELFTEST MISMATCH: retention negative control in $d"; N_BAD=$((N_BAD + 1)); fi
   # R1 (Codex 1's reclosure at 49cd6aa5): scientific needs positive evidence of an executed failed check, read with the
   # native exit value (CTest Test.xml); a caught exception (exit 2) or an exit without a parsed check result is
   # infrastructure. Codex 1's control: the injector-weights test with a referee-injected exception before any check

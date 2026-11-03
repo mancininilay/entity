@@ -108,3 +108,11 @@ slice's sum of the embedded per-process table (`--emit-table`), and refuses (exi
 unknown, basis-less or oversized part; `preflight.sh` dry-runs the exported part through that guard. The parts' CSVs are
 combined by `PERF_COMBINE=<csv>:<csv>... perf_driver.sh` (medians over all rows, one commit, never overwriting). ncu is
 optional (`PERF_NCU=1`; off by default, recorded `not_requested`: Rusty's driver refused the counters), nsys always runs.
+
+Evidence retention (round 4, Codex 1's readback of B7398318: the F8 entries shared one CTest `Testing/` directory, so each
+`-T Test` overwrote the previous entry's Test.xml and LastTest log, and CTest stored only 1024 bytes of a passed output, 7
+of the tracer's 33 verdict lines). `rusty/f8_ctest.py` runs every entry in its own one-entry CTest directory `entry-NN/`
+(its Test.xml and LastTest log kept), raises CTest's stored-output limits to 16 MiB (`--test-output-size-passed/failed`),
+writes the stored output to `output-NN.txt`, and reports any remaining truncation on a `NOTE: ` line (classification
+unchanged). Controls in `HADRONIC::perf_job_selftest`: two entries keep two Test.xml files with a full 100-line output;
+CTest's own 1024-byte limit (negative control) is reported as truncated.

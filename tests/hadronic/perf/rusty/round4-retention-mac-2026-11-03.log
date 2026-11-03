@@ -1,0 +1,89 @@
+# round 4 evidence retention: f8_ctest.py per-entry CTest directories, raised stored-output limits, output-NN.txt; Mac (non-MPI, OpenMP), both precisions; Claude 1, 2026-11-03
+
+## new tool, perf-single, the eight F8 entries (launcher none: non-MPI build)
+F8 entry FRAMEWORK::f8_tracers: passed
+F8 entry FRAMEWORK::particles_sort: passed
+FAIL: F8 entry KERNELS::deposit: executed check failure ('DepositCurrents_kernel::SumDivJ != 0') [log <scratch>/f8mac-perf-single/ctest-02.log]
+F8 entry FRAMEWORK::checkpoint-data: passed
+F8 entry FRAMEWORK::checkpoint-extents: passed
+F8 entry FRAMEWORK::spectra: passed
+F8 entry KERNELS::injectors_global_weights: passed
+F8 entry KERNELS::reduced_stats_weights: passed
+F8: 8 entries, 7 passed, 1 scientific failures, 0 infrastructure failures, 0 truncated stored outputs
+per-entry Test.xml: 8; f8_tracers PASS lines: output-00.txt 33, junit-00.xml 33; injectors_global_weights PASS lines: output-06.txt 72
+
+## new tool, perf-double, the eight F8 entries (launcher none: non-MPI build)
+F8 entry FRAMEWORK::f8_tracers: passed
+F8 entry FRAMEWORK::particles_sort: passed
+F8 entry KERNELS::deposit: passed
+F8 entry FRAMEWORK::checkpoint-data: passed
+F8 entry FRAMEWORK::checkpoint-extents: passed
+F8 entry FRAMEWORK::spectra: passed
+F8 entry KERNELS::injectors_global_weights: passed
+F8 entry KERNELS::reduced_stats_weights: passed
+F8: 8 entries, 8 passed, 0 scientific failures, 0 infrastructure failures, 0 truncated stored outputs
+per-entry Test.xml: 8; f8_tracers PASS lines: output-00.txt 33, junit-00.xml 33; injectors_global_weights PASS lines: output-06.txt 72
+
+(the single-precision KERNELS::deposit failure is the known Mac deposit failure kept as history in Codex 1's readbacks; not touched here)
+
+## negative control: the 6e0c2cf7 tool, perf-double, f8_tracers then injectors_global_weights
+F8 entry FRAMEWORK::f8_tracers: passed
+F8 entry KERNELS::injectors_global_weights: passed
+F8: 2 entries, 2 passed, 0 scientific failures, 0 infrastructure failures
+Test.xml files: 1, naming: <Name>KERNELS::injectors_global_weights</Name> 
+f8_tracers PASS lines in junit-00.xml: 7 of 33; CTest truncation marker present: 1
+
+## new tool, f8_tracers output-00.txt (perf-double)
+Kokkos::OpenMP::initialize WARNING: OMP_PROC_BIND environment variable not set
+  In general, for best performance with OpenMP 4.0 or better set OMP_PROC_BIND=spread and OMP_PLACES=threads
+  For best performance with OpenMP 3.1 set OMP_PROC_BIND=true
+  For unit testing set OMP_PROC_BIND=false
+
+f8_tracers: execution space OpenMP, real_t = double, sort path BinSort, tiled_deposit OFF
+
+=== F8 tracers, 1D, real_t = double, 1024 tracers (768 alive), 16 cells per axis ===
+PASS: 1D S1: BinSort path: npart() = 1024 unchanged
+PASS: 1D S2: alive prefix in non-decreasing tile index (tile size 1), no alive after a dead
+PASS: 1D S3: the alive id set after the sort equals the injected one (768 ids)
+PASS: 1D S4: weight, payloads, momenta, cell and displacement of every alive slot equal the id's injected values (one permutation)
+PASS: 1D S5: sum(w) = 49152.000000 and sum(w ux1) = 0.125000 over the alive particles equal the injected sums exactly
+PASS: 1D D1 gate: the deposited current is non-zero (|J| = 1.776709e+03)
+PASS: 1D D1: J(sorted) vs J(unsorted) relative L2 = 1.685e-17 (tolerance 1e-10)
+PASS: 1D D2: J(split in two, sorted) vs J(unsplit) relative L2 = 2.088e-17 (tolerance 1e-10)
+PASS: 1D C0: the checkpoint of the sorted population was written (1024 particles)
+PASS: 1D C1: npart after the read-back 1024 = 1024
+PASS: 1D C2: every particle array equals the written one exactly over [0, npart)
+
+=== F8 tracers, 2D, real_t = double, 1024 tracers (768 alive), 16 cells per axis ===
+PASS: 2D S1: BinSort path: npart() = 1024 unchanged
+PASS: 2D S2: alive prefix in non-decreasing tile index (tile size 1), no alive after a dead
+PASS: 2D S3: the alive id set after the sort equals the injected one (768 ids)
+PASS: 2D S4: weight, payloads, momenta, cell and displacement of every alive slot equal the id's injected values (one permutation)
+PASS: 2D S5: sum(w) = 49152.000000 and sum(w ux1) = 0.125000 over the alive particles equal the injected sums exactly
+PASS: 2D D1 gate: the deposited current is non-zero (|J| = 1.402900e+03)
+PASS: 2D D1: J(sorted) vs J(unsorted) relative L2 = 1.028e-17 (tolerance 1e-10)
+PASS: 2D D2: J(split in two, sorted) vs J(unsplit) relative L2 = 1.578e-17 (tolerance 1e-10)
+PASS: 2D C0: the checkpoint of the sorted population was written (1024 particles)
+PASS: 2D C1: npart after the read-back 1024 = 1024
+PASS: 2D C2: every particle array equals the written one exactly over [0, npart)
+
+=== F8 tracers, 3D, real_t = double, 1024 tracers (768 alive), 16 cells per axis ===
+PASS: 3D S1: BinSort path: npart() = 1024 unchanged
+PASS: 3D S2: alive prefix in non-decreasing tile index (tile size 1), no alive after a dead
+PASS: 3D S3: the alive id set after the sort equals the injected one (768 ids)
+PASS: 3D S4: weight, payloads, momenta, cell and displacement of every alive slot equal the id's injected values (one permutation)
+PASS: 3D S5: sum(w) = 49152.000000 and sum(w ux1) = 0.125000 over the alive particles equal the injected sums exactly
+PASS: 3D D1 gate: the deposited current is non-zero (|J| = 1.108556e+03)
+PASS: 3D D1: J(sorted) vs J(unsorted) relative L2 = 0.000e+00 (tolerance 1e-10)
+PASS: 3D D2: J(split in two, sorted) vs J(unsplit) relative L2 = 0.000e+00 (tolerance 1e-10)
+PASS: 3D C0: the checkpoint of the sorted population was written (1024 particles)
+PASS: 3D C1: npart after the read-back 1024 = 1024
+PASS: 3D C2: every particle array equals the written one exactly over [0, npart)
+f8_tracers summary: 33 passed, 0 failed
+
+## job self-test retention controls
+SELFTEST ok: retention (default): the tool's exit (both entries passed) returned 0
+SELFTEST ok: retention (1024): the tool's exit (both entries passed) returned 0
+SELFTEST ok: retention: two entries, two Test.xml and LastTest logs, full 100-line output in output-00.txt and JUnit, no NOTE
+SELFTEST ok: retention negative control: CTest's 1024-byte limit truncates the output and the tool reports it (entry still passed)
+SELFTEST summary: 95 checks, 0 mismatches (root <scratch>/st5/p2perf-selftest.xnJmJq/root)
