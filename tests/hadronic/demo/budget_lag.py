@@ -7,9 +7,12 @@ pending payload; application when pending >= min(eta_u K, r_th_pre) (the double-
 r += applied loss, K0 set when r goes from 0 to positive; packets: the K0 trigger |K - K0| > f_r K0 pays the whole debt,
 otherwise r_th = min(r_th_factor <D>(Gamma), f_r K) is paid while r >= r_th; K0 reset when r returns to 0.
 
-The lag bias: a packet pays energy accrued over the K interval since the previous packet, but its pairs are drawn at
-the emission Gamma (the lowest Gamma of that interval), so N = sum r_i / <D>(K_i) exceeds the physical
-sum over the same intervals of the integral dK / <D>(K) by about (E[r^2] / 2 E[r]) d ln<D>/dK.
+The lag bias: the debt is paid in order, so packet i pays the path interval [K0 - Q_i, K0 - Q_i + r_i] (Q_i the paid
+energy through packet i) but its pairs are drawn at the emission point K_i = K0 - Q_i - d_i, below that interval by the
+debt d_i left after the packet; N = sum r_i / <D>(K_i) exceeds the physical integral of dK / <D> over the paid interval.
+To first order, with g = d ln<D>/dK (Codex 1's derivation, finding F3 of 2026-11-01), the whole-run excess is the
+PAIR-NUMBER-weighted sum (r_i/<D>_i) g_i (r_i/2 + d_i) / sum (r_i/<D>_i) (`est_n`); the energy-weighted
+sum r_i^2 g_i / (2 sum r_i) (`est`) drops the 1/<D> weights and d: an approximation, exact only for constant <D> and d = 0.
 Usage: budget_lag.py <campaign output root> <Gamma_p0> [run name]"""
 import json, sys
 import numpy as np
@@ -46,7 +49,7 @@ def model(OUT, G0):
               if k0: rp = r; nk0 += 1
               elif r >= rth: rp = rth
               else: break
-              packets.append((K, rp)); r -= rp
+              r -= rp; packets.append((K, rp, r))   # (emission K, packet energy, debt left after it)
               if k0: break
           if r == 0.0: Kk0 = 0.0
   P = np.array(packets)
@@ -57,8 +60,13 @@ def model(OUT, G0):
   Nphys = integral(K0i, K0i - Q)
   ED = np.array([T.Df_s(1.0 + k / MU_R) for k in P[:, 0]])
   dlnD = np.gradient(np.log(ED), P[:, 0])
-  est = float(np.sum(P[:, 1] ** 2 / 2 * dlnD) / Q)
-  return {'P': P, 'nk0': nk0, 'N': N, 'Q': Q, 'Nphys': Nphys, 'bias': N / Nphys - 1, 'est': est, 'Kfinal': K - pend, 'debt': r}
+  est = float(np.sum(P[:, 1] ** 2 / 2 * dlnD) / Q)                       # energy-weighted: an approximation (F3)
+  lnD = lambda k: np.log(T.Df_s(1.0 + k / MU_R))
+  g = np.array([(lnD(k + 0.5) - lnD(k - 0.5)) for k in P[:, 0]])           # d ln<D>/dK at the emission points (h = 0.5)
+  wn = P[:, 1] / ED
+  est_n = float(np.sum(wn * g * (P[:, 1] / 2 + P[:, 2])) / np.sum(wn))     # number-weighted with the debt left d (F3)
+  return {'P': P, 'nk0': nk0, 'N': N, 'Q': Q, 'Nphys': Nphys, 'bias': N / Nphys - 1, 'est': est, 'est_n': est_n,
+          'Kfinal': K - pend, 'debt': r}
 
 if __name__ == '__main__':
   OUT = sys.argv[1]; G0 = float(sys.argv[2]); RUN = sys.argv[3] if len(sys.argv) > 3 else f'demo_g{int(G0)}_budget_delta_double'
@@ -66,7 +74,8 @@ if __name__ == '__main__':
   K0i = MU_R * (G0 - 1); Klast = float(P[-1, 0])
   print(f'model Gamma_p0 = {G0:g}: packets/ion {len(P)}, K0 triggers {nk0}, Gp at emission {1 + P[:, 0].max() / MU_R:.6f} .. '
       f'{1 + Klast / MU_R:.6f}, final K {K - pend:.3f}, debt left {r:.3f}, Q {Q:.3f}, N {N:.5f}')
-  print(f'  lag bias N / int dK/<D> over the emitted interval - 1 = {N / Nphys - 1:+.4%} (first-order estimate sum r^2/2 dln<D>/dK / Q = {est:+.4%})')
+  print(f'  lag bias N / int dK/<D> over the emitted interval - 1 = {N / Nphys - 1:+.4%}; first order, number-weighted with the '
+        f'debt left: {M["est_n"]:+.4%}; energy-weighted approximation sum r^2/2 dln<D>/dK / Q: {est:+.4%}')
   try:
     z = np.load(f'{OUT}/{RUN}/reduced.npz'); j = json.load(open(f'{OUT}/{RUN}/reduced.json')); lf = j['log']['ledger_final']; NI = 1e5
     Nr = j['pairs']['w'] / NI; Qr = j['pairs']['wD'] / NI

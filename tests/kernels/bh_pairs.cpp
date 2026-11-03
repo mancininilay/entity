@@ -1968,7 +1968,9 @@ namespace {
    *        application; a K0 packet pays at most r_th + a with d = 0). Registered, with g = d ln<D>/dK > 0 and
    *        r_th1 = min(10 <D>, 0.02 K) on the path: (i) 0 < delta(s) <= U(s) = max g (s r_th1/2 + 1.5 a) (1 + s max
    *        r_th1 g); (ii) |2 delta(1/2) - delta(1)| <= 1.5 max (a g) + delta(1) max (r_th1 g) / 2; no dropped or
-   *        capped packet. The predictions of the one-ion model (tests/hadronic/demo/budget_lag.py, Born tables,
+   *        capped packet. U(s) and the residual bound are first-order envelopes for these two cooling paths, not
+   *        general theorems: the 1.5 a term follows from the loose bounds r <= s r_th + a, d <= a; a moving threshold and
+   *        the table's knots add higher-order terms (Codex 1's review of 2026-11-01, F3); the predicates are unchanged. The predictions of the one-ion model (tests/hadronic/demo/budget_lag.py, Born tables,
    *        recorded in the spec before this test ran) are printed beside the measured values.
    */
   void test_T18a(const Tables& T) {
@@ -2029,22 +2031,33 @@ namespace {
         Kmin                = std::min(Kmin, Kf_min - *std::max_element(pend.begin(), pend.end()));
         const double Nw = A.sum_wpair / N, Q = A.lhs / N;
         delta[j]        = Nw / n_phys(K0 - Q, K0) - 1.0;
-        // the first-order estimate from ion 0's own packets: sum r^2 g / 2 / sum r at the emission points
-        double sr = 0.0, sr2g = 0.0;
+        // first order from ion 0's own packets, in insertion (= payment) order (Codex 1's derivation, finding F3 of
+        // 2026-11-01): packet i pays [K0 - Q_i, K0 - Q_i + r_i] and is emitted at K_i = K0 - Q_i - d_i, d_i the debt
+        // left after it, so the whole-run excess is the pair-number-weighted sum (r/<D>) g (r/2 + d) / sum (r/<D>);
+        // the energy-weighted sum r^2 g / 2 / sum r drops the 1/<D> weights and d (an approximation). Diagnostics only.
+        double sr = 0.0, sr2g = 0.0, sn = 0.0, sng = 0.0, Qi = 0.0, d_min = 1e300, d_max = 0.0;
         for (const auto& r : pairs.rows()) {
           if (!(r.birth_m > 0.0) || r.i1m != 0) {
             continue;
           }
           const double rp = r.wm * (kh::lepton_gamma(r.u1m, r.u2m, r.u3m) + kh::lepton_gamma(r.u1p, r.u2p, r.u3p) - r.eps_m);
+          const double Ke = MU_R * (r.gp_m - 1.0), g = g_of(Ke);
+          Qi += rp;
+          const double d = K0 - Qi - Ke;
+          d_min          = std::min(d_min, d);
+          d_max          = std::max(d_max, d);
           sr += rp;
-          sr2g += rp * rp * g_of(MU_R * (r.gp_m - 1.0)) / 2.0;
+          sr2g += rp * rp * g / 2.0;
+          sn += rp / Dmean(Ke);
+          sng += rp / Dmean(Ke) * g * (rp / 2.0 + d);
         }
         std::printf("(diag) T18a G%g s = %g: packets/ion %.2f, K0 triggers/ion %.2f, final K %.6g (spread over ions %.3g), "
                     "pending %.4g, debt %.6g; N = %.8g, Q = %.8g, int dK/<D> over [K0 - Q, K0] = %.8g; delta = %+.5f %% "
-                    "(predicted %+.4f %%); first-order estimate from the packets %+.5f %%\n",
+                    "(predicted %+.4f %%); first order from the packets, number-weighted with the debt left d (d in [%.3g, %.3g]) "
+                    "%+.5f %%, energy-weighted approximation %+.5f %%\n",
                     c.Gp0, s, static_cast<double>(H.C.n_spawned) / N, static_cast<double>(H.C.n_k0_trigger) / N, Kf[0],
                     Kf_max - Kf_min, pend[0], debt[0], Nw, Q, n_phys(K0 - Q, K0), 100.0 * delta[j], 100.0 * c.predicted[j],
-                    100.0 * sr2g / sr);
+                    d_min, d_max, 100.0 * sng / sn, 100.0 * sr2g / sr);
         verdict(H.C.n_dropped == 0 && H.C.n_capped == 0, fmt("T18a G%g s = %g: no dropped or capped packet", c.Gp0, s),
                 static_cast<double>(H.C.n_dropped + H.C.n_capped), 0.0);
       }

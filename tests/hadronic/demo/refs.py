@@ -46,15 +46,19 @@ def plain_ode(T, tau0, K0, times, dt=0.5, sub=16):
         out.append(K)
     return np.array(out)
 
-def corrected(T, tau0, K0, tm, Vm, d2fun, a=1.0, h=0.5):
+def corrected(T, tau0, K0, tm, Vm, d2fun, a=1.0, h=0.5, tv=None, Vv=None):
     """The C++ `reference` with the run's records (tm, Vm): returns K_plain, K_corr, V_fb, V_fb_curv at tm.
-    h is the RK4 step (the run's dt, as the C++)."""
+    h is the RK4 step (the run's dt, as the C++). (tv, Vv), default (tm, Vm), is the variance record the Jensen term
+    interpolates linearly in t; it must start with the known initial record (0, 0), as the C++ reference records t = 0
+    (bh_event.cpp `cooling_run`): np.interp holds the first value to the left, so a record starting at the first
+    output time would invent Var K > 0 back to t = 0 (Codex 1's finding F1, 2026-11-01)."""
     I = lambda K: T.If_s(1.0 + K / MU_R); J = lambda K: T.Jf_s(1.0 + K / MU_R)
     Ipp = lambda K: (I(K + .02*K) - 2*I(K) + I(K - .02*K)) / (.02*K)**2
     Ip = lambda K: (I(K + .02*K) - I(K - .02*K)) / (2 * .02*K)
     B = lambda K: a * tau0 * J(K) * float(np.ravel(d2fun(gamma_of_K(K)))[0])
     Bpp = lambda K: (B(K + .02*K) - 2*B(K) + B(K - .02*K)) / (.02*K)**2
-    Vat = lambda t: float(np.interp(t, tm, Vm))
+    tv, Vv = (tm, Vm) if tv is None else (tv, Vv)
+    Vat = lambda t: float(np.interp(t, tv, Vv))
     fp = lambda K: -tau0 * I(K)
     fc = lambda K, t: -tau0 * (I(K) + .5 * Ipp(K) * Vat(t))
     Kp = Kc = K0; t = 0.0; vf = vf2 = 0.0

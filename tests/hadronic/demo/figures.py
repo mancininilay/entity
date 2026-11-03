@@ -72,7 +72,9 @@ def event_ref(g, spec, prec, r):
     if key not in REFCACHE:
         t, mK, vK, _, _ = blocks(r); T = table('double')
         d2 = (lambda G: d2fix().D2(G)) if spec == 'restframe' else (lambda G: T.Df(np.atleast_1d(G))**2)
-        REFCACHE[key] = corrected(T, TAU0[g], r['j']['K0'], t[1:], vK[1:], d2)
+        # the variance record with its known initial point (t = 0, Var K = 0) for the Jensen term (F1)
+        assert t[0] == 0.0 and vK[0] == 0.0
+        REFCACHE[key] = corrected(T, TAU0[g], r['j']['K0'], t[1:], vK[1:], d2, tv=t, Vv=vK)
     return REFCACHE[key]
 
 # ------------------------------------------------------------------ figure 1: cooling curves (E2, T5)
@@ -132,9 +134,11 @@ def fig1():
     fig.suptitle('Figure 1. Cooling: every mode against its own mean equation (E2, T5); 4 s.e. band')
     save(fig, 'fig1_cooling', """
 Figure 1. Cooling curves <K(t)>/K0 of 10^5 ions at Gamma_p0 = 6 and 3 for every mode (continuous none, poisson, budget;
-event; delta and restframe spectra), bh_proto through entity.xc on the merged head e7ba238c, Born loss tables, single (x)
-and double (o) precision. Residual panel: event mode against the Jensen-corrected ODE on the Born table with the run's own
-Var K (the registered E2/E10 statement, 4 s.e. of the sample mean); continuous modes against the plain ODE (RK4 at dt/16)
+event; delta and restframe spectra), bh_proto through entity.xc built from the production source of e7ba238c (the
+dev/hadronic-demo inputs), Born loss tables, single (x) and double (o) precision. Residual panel: event mode against the
+Jensen-corrected ODE on the Born table with the run's own Var K, interpolated linearly in t from the known Var K(0) = 0 as
+the C++ reference does (round 2, Codex 1's F1: the first version held the first record's Var K back to t = 0; history in
+figures/history/) (the registered E2/E10 statement, 4 s.e. of the sample mean); continuous modes against the plain ODE (RK4 at dt/16)
 in units of the event run's s.e. at the same time. The registered continuous E2 runs the continuous mode at dt/16 with this
 scale; the demonstration runs it at the production dt = 0.5 (and eta_u = 1e-4), where the explicit drag step leaves a
 smooth deterministic offset (the revision-1.0 history row, no verdict). All curves use K_eff = K - delta,
@@ -200,7 +204,7 @@ def fig2():
     save(fig, 'fig2_straggling', f"""
 Figure 2. Top: Var K(t)/K0^2 of the event mode (restframe solid, delta dashed; double precision) against the drift-feedback
 prediction dV/dt = -2 tau0 (dI/dK) V + a R E[D^2] (E[D^2] from the frozen bhref 0.2.0 D2mean for restframe, <D>^2 for
-delta), computed along the Jensen-corrected mean. Middle: relative deviation in % (o double, x single); red points lie
+delta), computed along the Jensen-corrected mean (Var K interpolated from Var K(0) = 0; round 2, F1). Middle: relative deviation in % (o double, x single); red points lie
 outside the registered domain of revision 1.1.1 (sigma_K/K <= 0.02, curvature budget <= 0.6 %, Delta K/K >= 1 %).
 Tolerance: 4 sqrt(2/N) = {tol*100:.3f} % (E3). Bottom: the K distribution at three times (event restframe and delta,
 double); the grey lines are the continuous-mode runs, where all ions share one K (Var K at rounding level). The delta
@@ -230,7 +234,8 @@ def fig3():
                 if r is None or f'hist_{q}_n' not in r['z'].files: continue
                 if src.startswith('budget'):
                     h = r['z'][f'hist_{q}_w']; h2 = r['z'][f'hist_{q}_w2']; S = r['j']['pairs']['w_window']
-                    d = h / S / w; sd = np.sqrt(h2) / S / w; lab = 'budget: $\\sum w$ (w = r/D)'
+                    # sd: the Poissonised weight proxy sqrt(sum w^2) (conservative, not a calibrated s.e.; F2)
+                    d = h / S / w; sd = np.sqrt(h2) / S / w; lab = 'budget: $\\sum w$ (w = r/D); bars: Poissonised proxy'
                 else:
                     h = r['z'][f'hist_{q}_n']; S = r['j']['pairs']['n_window']; d = h / S / w; sd = np.sqrt(h) / S / w
                     lab = f'{src}: counts (w = 1)'
@@ -239,9 +244,10 @@ def fig3():
                 chi2 = float(np.sum(pull[ok]**2)); ndf = int(ok.sum())
                 ax.plot(ctr[ok], d[ok], mk, ms=2.2, color=colr, label=lab if cc == 0 else None)
                 axr.plot(ctr[ok], pull[ok], mk, ms=2.2, color=colr)
-                num('3', f'Gamma_p={g} {q} {src} (double): chi2/ndf of the density against bhref 0.2.0 (bins with >= 100 reference counts)',
+                prox = ' [budget: run error = Poissonised weight proxy, conservative (F2)]' if src.startswith('budget') else ''
+                num('3', f'Gamma_p={g} {q} {src} (double): chi2/ndf of the density against bhref 0.2.0 (bins with >= 100 reference counts)' + prox,
                     f'{chi2:.1f}/{ndf} = {chi2/ndf:.3f}', r['name'])
-                num('3', f'Gamma_p={g} {q} {src} (double): max |pull|', np.max(np.abs(pull[ok])), r['name'], '{:.2f}')
+                num('3', f'Gamma_p={g} {q} {src} (double): max |pull|' + prox, np.max(np.abs(pull[ok])), r['name'], '{:.2f}')
                 num('3', f'Gamma_p={g} {src} (double): pairs in the window (parent Gamma_p within 0.5 % of {g})',
                     r['j']['pairs']['n_window'], r['name'], '{:.0f}')
             QL = {'Eminus': r'$E_-$', 'Eplus': r'$E_+$', 'D': r'$D = E_- + E_+ - \epsilon$'}[q]
@@ -258,8 +264,10 @@ Gamma_p = 3 and 10 (spectrum runs: 2.5e5 ions, 40 steps, restframe spectrum, dou
 lies within 0.5 % of the nominal value) by the poisson source (counts, w = 1), the event mode (counts) and the budget
 source (sum of the variable weights w = r/D: the D-weighted draw reweighted to the physical law), against the frozen
 bhref 0.2.0 unweighted-chain histograms (10^6 draws; the sampler law is unchanged by the Born q_k). Pull panel: (run -
-reference) / combined s.e. per bin, bins with >= 100 reference counts. The registered tests are E4 (calibrated
-Anderson-Darling family) and A10; the chi2/ndf here is a display statistic. Numbers: numbers.md, figure 3.""")
+reference) / combined error per bin, bins with >= 100 reference counts; for the budget source the run's error is the
+Poissonised weight proxy sqrt(sum w^2), conservative and not a calibrated sampling standard error (round 2, Codex 1's F2),
+so its pulls and chi2 are understated. The registered tests are E4 (calibrated Anderson-Darling family) and A10; the
+chi2/ndf here is a display statistic. Numbers: numbers.md, figure 3.""")
 
 # ------------------------------------------------------------------ figure 4: pairs per unit paid energy (A12, T10)
 BLAG = {}
@@ -290,11 +298,16 @@ def whole_run_yield(src, spec, g, r):
         num('4', f'event {spec} Gamma_p0={g} (double): end-point spread term (1/2) <D>\'/<D>^2 Var K_end / int dK/<D>', f'{endp:+.4%}', r['name'])
     elif src == 'budget':
         M = budget_model(g); exp_ = M['bias']; se = 0.0; what = 'emission lag, one-ion model'
-        if spec == 'restframe': se = np.sqrt(np.sum(z['Gbin_w2'])) / j['pairs']['w']
+        if spec == 'restframe':
+            # the Poissonised weight proxy (conservative, F2) and the pooled fixed-count diagnostic
+            se = np.sqrt(np.sum(z['Gbin_w2'])) / j['pairs']['w']; nb = z['Gbin_n']
+            sfc = np.sqrt(np.sum(np.maximum(z['Gbin_w2'] - z['Gbin_w']**2 / np.maximum(nb, 1), 0) * nb / np.maximum(nb - 1, 1))) / j['pairs']['w']
+            num('4', f'budget restframe Gamma_p0={g} (double): whole run, (measured - expected) / pooled fixed-count central-moment error (diagnostic, F2; the z in the row above uses the Poissonised weight proxy)',
+                f'{(Np / (np.trapezoid(f, K) * N_ION) - 1 - exp_) / sfc:+.2f} (error / proxy {sfc / se:.3f})', r['name'])
     else:
         exp_ = 0.0; se = np.sqrt(np.trapezoid(f * D2 / D**2, K) / np.trapezoid(f, K) / Np); what = 'none'
     zz = (dev - exp_) / se if se > 0 else float('nan')
-    num('4', f'{src} {spec} Gamma_p0={g} (double): whole run N_pairs / int dK/<D> over the paid interval - 1; expected ({what}); (measured - expected)/s.e.',
+    num('4', f'{src} {spec} Gamma_p0={g} (double): whole run N_pairs / int dK/<D> over the paid interval - 1; expected ({what}); (measured - expected)/' + ('Poissonised weight proxy' if (src, spec) == ('budget', 'restframe') else 's.e.'),
         f'{dev:+.4%}; {exp_:+.4%}; ' + (f'{zz:+.2f}' if np.isfinite(zz) else f'deterministic (no sampling error), difference {dev - exp_:+.1e}'), r['name'])
     return dev, exp_
 
@@ -313,7 +326,15 @@ def fig4():
                     Q = z['Gbin_wD']; N_ = z['Gbin_n']; sN = np.sqrt(np.maximum(z['Gbin_D2'] - z['Gbin_D']**2 / np.maximum(N_, 1), 0))
                     ratio = N_ / Q; sr = ratio * sN / np.maximum(Q, 1e-300)
                 elif src == 'budget':
+                    # sr: the CONSERVATIVE POISSONISED WEIGHT PROXY sqrt(sum w^2), not a calibrated sampling s.e.: the
+                    # budget trajectories and packet counts are deterministic here (79 or 42 packets per ion), so the
+                    # variance of sum w given the emission states is sum_j N_j Var(w_j | K_j), smaller than sum w^2,
+                    # which also counts a packet-number fluctuation this source does not have (Codex 1's finding F2).
+                    # sfc: the pooled fixed-count central-moment diagnostic of the retained sums (Codex 1's form), a
+                    # stated diagnostic only (the pooled bin still mixes different emission states)
                     Q = z['Gbin_wD']; N_ = z['Gbin_w']; ratio = N_ / Q; sr = np.sqrt(z['Gbin_w2']) / np.maximum(Q, 1e-300)
+                    nb = z['Gbin_n']
+                    sfc = np.sqrt(np.maximum(z['Gbin_w2'] - z['Gbin_w']**2 / np.maximum(nb, 1), 0) * nb / np.maximum(nb - 1, 1)) / np.maximum(Q, 1e-300)
                 else:
                     # poisson: CUMULATIVE from Gamma_p0 down to each bin's lower edge. The pairs carry the STORED parent
                     # Gamma_p, which moves only when the pending loss is applied (quanta of order eta_u K per ion), so a
@@ -351,6 +372,12 @@ def fig4():
                     # points and the deviation is their placement against the uniform bin average; no z is reported
                     num('4', f'{src} delta Gamma_p0={g} (double): max |N/Q * <D> - 1| over the bins (deterministic: point placement in the bin, no sampling error)',
                         f'{np.nanmax(np.abs(dev[ok])):.3f} %', r['name'])
+                elif src == 'budget':
+                    num('4', f'budget {spec} Gamma_p0={g} (double): max |N/Q * <D> - 1| over the bins (%), max |deviation| / Poissonised weight proxy sqrt(sum w^2) (conservative, not a calibrated s.e.)',
+                        f'{np.nanmax(np.abs(dev[ok])):.3f} %, {np.nanmax(np.abs(zz[ok])):.2f}', r['name'])
+                    zfc = (ratio / refv - 1) / (sfc / refv)
+                    num('4', f'budget {spec} Gamma_p0={g} (double): diagnostic (Codex 1, F2): pooled fixed-count central-moment error / proxy over the bins (min, max); max |deviation| / that error (not a gate: pooled bins mix emission states, the uniform-bin reference differs from their locations)',
+                        f'{np.nanmin(sfc[ok] / sr[ok]):.3f} to {np.nanmax(sfc[ok] / sr[ok]):.3f}; {np.nanmax(np.abs(zfc[ok])):.3f}', r['name'])
                 else:
                     num('4', f'{src} {spec} Gamma_p0={g} (double): max |N/Q * <D> - 1| over the bins (%), max |z|' + (' [cumulative from Gamma_p0]' if src == 'poisson' else ''),
                         f'{np.nanmax(np.abs(dev[ok])):.3f} %, {np.nanmax(np.abs(zz[ok])):.2f}', r['name'])
@@ -374,6 +401,8 @@ def fig4():
             num('4', f'budget Gamma_p0={g}: emission-lag offset of the whole-run number, one-ion model of the kernel rule (budget_lag.py): packets/ion, K0 triggers/ion, offset',
                 f"{len(M['P'])}, {M['nk0']}, {M['bias']*100:+.4f} %", 'model')
     axr.set_ylabel(r'number yield $\times \langle D\rangle - 1$ [%]'); axr.axhline(0, color='k', lw=0.6); axr.set_ylim(-1, 1)
+    axr.text(0.99, 0.04, r'budget bars: Poissonised weight proxy $\sqrt{\sum w^2}$ (conservative, not a calibrated s.e.)', transform=axr.transAxes,
+             ha='right', va='bottom', fontsize=6, color=COL['budget'])
     axe.set_ylabel('energy yield / expected $- 1$ [%]'); axe.axhline(0, color='k', lw=0.6); axe.set_xlabel(r'parent $\Gamma_p$'); axe.set_ylim(-0.5, 0.5)
     fig.suptitle('Figure 4. Pairs per unit paid ion energy: the physical yield in every mode (A12, T10)')
     save(fig, 'fig4_yield', """
@@ -383,16 +412,22 @@ of order eta_u K; per narrow bin that quantisation alone gives +-0.3 %), from th
 (Gamma_p0 = 6 and 3, double precision; restframe filled, delta open), against 1/<D>(Gamma_p) of the Born table averaged
 over the part of each bin the ions crossed. Paid energy Q: budget, the packet energies r = w D (exact); event, the sum of
 the event losses D (exact, a = 1); poisson, the continuous drag N_ion mu_r Delta Gamma_p over the bin (the pairs are a
-Poisson sample of it). Middle: relative deviation with its statistical error (none for the deterministic delta event and
-budget runs, where all ions follow the same path in K and a bin holds a fixed set of event or emission points); the
+Poisson sample of it). Middle: relative deviation with its error bar (none for the deterministic delta event and budget
+runs, where all ions follow the same path in K and a bin holds a fixed set of event or emission points). The budget bars
+are a conservative Poissonised weight proxy, sqrt(sum w^2), not a calibrated sampling standard error: the budget packet
+counts are deterministic here (79 or 42 per ion), so the variance of sum w given the emission states is smaller; a pooled
+fixed-count central-moment diagnostic is 0.41 to 0.69 of the proxy and is listed in numbers.md (round 2, Codex 1's F2);
+the poisson and event bars are counting errors. The
 bottom bins the ensemble crossed only in part are dropped. Box: the whole run against the continuum integral of
 dK/<D> over the paid interval, with each mode's expected offset in brackets: poisson none; event the finite jump (each
 event costs <D> at its pre-event state) plus the spread of the end points; budget the emission lag (a packet pays the
 energy accrued since the previous packet, but its pairs are drawn at the emission Gamma_p, the lowest of that interval,
 so the per-bin yield is physical while the pairs come late: a one-ion model of the kernel's rule reproduces the run's
 packets and the offset, budget_lag.py). Bottom: the energy yield
-sum w (E- + E+) / Q against 1 + eps <1/D> (mono bath, eps = 0.5). The registered statements are A12 (1 % cost, 2 %
-number and energy per node, N = 2e5, the sampler at fixed Gamma_p) and T10; neither sees the emission lag.
+sum w (E- + E+) / Q against 1 + eps <1/D> (mono bath, eps = 0.5). A12 (1 % cost, 2 % number and energy per node,
+N = 2e5, the sampler at fixed Gamma_p) and T10 test fixed states and do not see the emission lag; T18a does (registered
+2026-11-01, Nilay's decision; dev/hadronic-demo 32530fea, not yet merged: the cooling box of these runs, delta, packet
+scale 1, 1/2, 1/4, a first-order envelope for these paths and the linear shrinking with the packet scale).
 Numbers: numbers.md, figure 4.""")
 
 # ------------------------------------------------------------------ figure 5: energy bookkeeping (E1, T11, ledger identity)
@@ -434,7 +469,7 @@ def fig5():
     axc.set_xticks(range(len(CFGS))); axc.set_xticklabels([c.replace('_', '\n') for c in CFGS], fontsize=6.5)
     axc.set_title('from the particle arrays, independent of the ledger'); axc.set_ylabel('relative to E_drag (exact 0 drawn at 1e-19)')
     axc.legend(handles=[Line2D([], [], ls='', marker='o', color='k', ms=4, label='ions: |sum w dK - E_drag| (T11)'),
-                        Line2D([], [], ls='', marker='o', mfc='none', color='k', ms=6, label='pairs: |sum w (E- + E+ - eps) - rhs - E_round|'),
+                        Line2D([], [], ls='', marker='o', mfc='none', color='k', ms=6, label='pairs: |rhs - sum w (E- + E+ - eps) - E_round|'),
                         Line2D([], [], ls='', marker='o', color='0.5', ms=4, label='double (left of each pair of points)'),
                         Line2D([], [], ls='', marker='^', color='0.5', ms=4, label='single (right); Gamma_p0 = 6 left, 3 right')],
                fontsize=6, loc='upper center', bbox_to_anchor=(0.5, 0.9))
@@ -456,7 +491,7 @@ def fig5():
 Figure 5. Left: the ledger identity E_drag = (E_pairs - E_absorbed) + E_round + E_stochastic + debt + E_exported +
 E_lost_nopairs, residual relative to E_drag at every ledger row of the 28 runs (double lines, single crosses; colour by
 mode); registered 1e-12. Middle: two checks from the particle arrays, independent of the ledger: the ions,
-|sum w (K_init - K_final) - E_drag| / E_drag (T11), and the pairs, |sum_pairs w (E- + E+ - eps) - rhs - E_round| / E_drag
+|sum w (K_init - K_final) - E_drag| / E_drag (T11), and the pairs, |rhs - sum_pairs w (E- + E+ - eps) - E_round| / E_drag
 with rhs = sum w dK - sum w r - E_exported - E_lost_nopairs - E_stochastic + debt_initial: the ledger's E_round accounts
 for the whole float rounding of the pair energies (the rounding itself, the E1 statement, is in figure 6). Per mode,
 Gamma_p0 = 6 left and 3 right, double (o) and single (triangle). Right: the poisson source's E_stochastic = E_drag - sum W D, the signed random walk of a Poisson sample
@@ -612,47 +647,59 @@ def fig8(status_rows):
                   loc='upper center', cellLoc='center')
     tb.auto_set_font_size(False); tb.set_fontsize(8); tb.scale(1, 1.55)
     ax2 = fig.add_axes([0.01, 0.0, 0.98, 0.56]); ax2.axis('off')
-    tb2 = ax2.table(cellText=status_rows, colLabels=['registered test (merged head e7ba238c)', 'what it checks', 'status', 'source'],
-                    loc='upper center', cellLoc='left', colWidths=[0.21, 0.33, 0.22, 0.24])
+    tb2 = ax2.table(cellText=status_rows, colLabels=['registered test', 'what it checks', 'status', 'head and source'],
+                    loc='upper center', cellLoc='left', colWidths=[0.19, 0.30, 0.24, 0.27])
     tb2.auto_set_font_size(False); tb2.set_fontsize(7); tb2.scale(1, 1.32)
-    fig.suptitle('Figure 8. Mode comparison and the registered tests on the merged head')
+    fig.suptitle('Figure 8. Mode comparison; the registered tests on the production head e7ba238c and on the demo branch')
     save(fig, 'fig8_modes', """
 Figure 8. Top: per mode, the stage cost per ion-step from the Mac CPU smoke of the scaling harness (OpenMP, 2^16 ions,
-delta spectrum, rebased head 5e1da1d5; a smoke of the mechanics, not a performance measurement; the A100 column is filled
-when the scaling job returns), macro-pairs and RNG draws per ion over the Gamma_p0 = 6 demonstration run, the largest
-ledger-identity residual over all rows of the 28 runs, E_stochastic / E_drag, and the whole-run pair number against the
-continuum integral of dK/<D> over the paid interval with each mode's expected offset in brackets (figure 4: poisson none;
-budget the emission lag; event the finite jump). Bottom: the registered tests and their
-status on the merged head, with the source of each verdict. Numbers: numbers.md, figure 8.""")
+delta spectrum, perf branch at 5e1da1d5; a smoke of the mechanics, not a performance measurement; the A100 column is
+pending: the first A100 job, 7386833, measured nothing, J1), macro-pairs and RNG draws per ion over the Gamma_p0 = 6
+demonstration run, the largest ledger-identity residual over all rows of the 28 runs, E_stochastic / E_drag, and the
+whole-run pair number against the continuum integral of dK/<D> over the paid interval with each mode's expected offset in
+brackets (figure 4: poisson none; budget the emission lag; event the finite jump). Bottom: the registered tests, their
+status and where each verdict comes from, three provenances kept apart: the production head e7ba238c (merged into
+dev/hadronic); the demo branch dev/hadronic-demo (test registrations not yet merged: e7_born 2bc4bbb5, the R4 history
+label 3126ea01 of Nilay's decision, event contract revision 1.1.2, and T18a 32530fea; all three reviewed by Codex 1 on
+2026-11-01); the Mac smoke of the perf branch (5e1da1d5). The fitted-table restframe E3 row that failed (R4, 1.930 %
+single) is history, kept visible. Numbers: numbers.md, figure 8.""")
 
 def status_table():
-    e7 = {}
-    for prec in ('single', 'double'):
-        p = os.path.join(OUT, f'e7_born_{prec}', 'run.log')
-        if os.path.exists(p):
-            txt = open(p).read(); m = re.search(r'bh_event summary: (\d+) passed, (\d+) failed', txt)
-            if m: e7[prec] = f'{m[1]}/{int(m[1]) + int(m[2])}'
-    e7s = ('pass: ' + ', '.join(f'{v} {k}' for k, v in e7.items())) if e7 else 'running'
+    def summary(path, pat):
+        if not os.path.exists(path): return None
+        m = re.search(pat, open(path).read())
+        return f'{m[1]}/{int(m[1]) + int(m[2])}' if m else None
+    e7 = {prec: summary(os.path.join(OUT, f'e7_born_{prec}', 'run.log'), r'bh_event summary: (\d+) passed, (\d+) failed') for prec in ('single', 'double')}
+    e7s = ('pass: ' + ', '.join(f'{v} {k}' for k, v in e7.items() if v)) if any(e7.values()) else 'running'
+    t18 = {f'{tab} {prec}': summary(os.path.join(OUT, 't18a', f't18a_{tab}_{prec}.log'), r'bh_pairs summary: (\d+) passed, (\d+) failed')
+           for tab in ('born', 'fit') for prec in ('single', 'double')}
+    vals = [v for v in t18.values() if v]
+    t18s = (f'pass: {vals[0]} in all {len(vals)} builds' if len(set(vals)) == 1 else 'pass: ' + ', '.join(vals)) if vals else '-'
+    for k, v in t18.items():
+        if v: num('8', f'T18a {k}: checks passed / run (demo branch 32530fea)', v, f't18a/t18a_{k.replace(" ", "_")}.log')
     return [
-        ['T5, T5fine, T5b', 'continuous cooling vs RK4; dt convergence; float design', 'pass', 'integration ctest (born report §7.4)'],
-        ['T7a, T7b, T11, T12, T13', 'fields; massive accounting; capacity; Gauss', 'pass', 'integration ctest'],
-        ['T8 (Serial)', 'bit identity; explicit ledger snapshots', 'pass', 'Codex 1 reclosure R2'],
-        ['A7 Born (unweighted, all-node weighted)', '<D> per node, 4 s.e., no floor, 2169 nodes', 'pass (3.63 / 3.80 s.e.)', 'Codex 1 closure C3'],
-        ['A12 Born', 'cost 1 %, number and energy 2 % per node', 'pass (0.78 %)', 'Codex 1 closure C7'],
-        ['E1 restframe / delta', 'pairs vs ions from the arrays (single 1e-5)', 'pass / single delta: exception', 'revision 1.1 decision; fig. 6'],
-        ['E2 delta, E10 (restframe on Born)', 'event mean vs Jensen-corrected ODE, 4 s.e.', 'pass (<= 2.4 s.e.)', 'Codex 1 closure C6'],
-        ['E3 (domain of rev. 1.1.1)', 'drift-feedback variance, 4 sqrt(2/N)', 'Born: pass; fit G3 single: R4', 'R4 diagnostic: Nilay disposes'],
-        ['E4, E5, E6, E8', 'spectra (AD); mu_d; dt; failure paths', 'pass', 'event round 2, closure'],
-        ['E7 on Born (a = 1, 2, 4)', 'accelerated event mode, E2/E3', e7s, 'this step (e7_born)'],
-        ['E9 (MPI)', 'ledger over ranks', 'deferred (no MPI on Mac)', 'event contract'],
-        ['M6 stride n = 16 (harness)', 'frozen-hazard check at lambda = 0.8', 'observed exceedance', 'harness report §7'],
+        ['T5, T5fine, T5b', 'continuous cooling vs RK4; dt convergence; float design', 'pass', 'e7ba238c: integration ctest (Born report §7.4)'],
+        ['T7a, T7b, T11, T12, T13', 'fields; massive accounting; capacity; Gauss', 'pass', 'e7ba238c: integration ctest'],
+        ['T8 (Serial)', 'bit identity; explicit ledger snapshots', 'pass', 'e7ba238c: Codex 1 reclosure'],
+        ['A7 Born (unweighted, all-node weighted)', '<D> per node, 4 s.e., no floor, 2169 nodes', 'pass (3.63 / 3.80 s.e.)', 'e7ba238c: Codex 1 closure C3'],
+        ['A12 Born', 'cost 1 %, number and energy 2 % per node', 'pass (0.78 %)', 'e7ba238c: Codex 1 closure C7'],
+        ['E1 restframe / delta', 'pairs vs ions from the arrays (single 1e-5)', 'pass / single delta: exception', 'e7ba238c: revision 1.1 decision; fig. 6'],
+        ['E2 delta, E10 (restframe on Born)', 'event mean vs Jensen-corrected ODE, 4 s.e.', 'pass (<= 2.4 s.e.)', 'e7ba238c: Codex 1 closure C6'],
+        ['E3 (domain of rev. 1.1.1)', 'drift-feedback variance, 4 sqrt(2/N)', 'Born: pass; fit restframe: history (R4 1.930 %)',
+         'e7ba238c; history label: demo 3126ea01'],
+        ['E4, E5, E6, E8', 'spectra (AD); mu_d; dt; failure paths', 'pass', 'e7ba238c: event round 2, closure'],
+        ['E7 on Born (a = 1, 2, 4)', 'accelerated event mode, E2/E3', e7s, 'demo branch 2bc4bbb5 (e7_born)'],
+        ['T18a (budget emission lag)', 'whole-run pair number: envelope, linear in packet scale', t18s, 'demo branch 32530fea (rerun: identical)'],
+        ['E9 (MPI)', 'ledger over ranks', 'deferred (no MPI on Mac)', 'event contract; Rusty job D prepared'],
+        ['M6 stride n = 16 (harness)', 'frozen-hazard check at lambda = 0.8', 'observed exceedance', 'perf branch 5e1da1d5: Mac smoke'],
     ]
 
 def write_numbers():
     with open(os.path.join(FIG, 'numbers.md'), 'w') as f:
         f.write('# Demonstration numbers (P2 step 8; every number shown on a figure, with the run it came from)\n\n')
-        f.write('Runs: `Entity Local Experiments/p2-demo-20261031/<run>/` (reduced.json, reduced.npz, run.log, ledger); merged head e7ba238c, '
-                'branch dev/hadronic-demo; generated by `tests/hadronic/demo/figures.py`. For Codex 1\'s check.\n\n')
+        f.write('Runs: `Entity Local Experiments/p2-demo-20261031/<run>/` (reduced.json, reduced.npz, run.log, ledger), simulated with the '
+                'production source of e7ba238c built from branch dev/hadronic-demo; generated by `tests/hadronic/demo/figures.py`; round 2 '
+                '(2026-11-03, Codex 1\'s F1 to F4: no simulation rerun; the first set is in `history/`). For Codex 1\'s check.\n\n')
         cur = None
         for fig, what, val, run in NUM:
             if fig != cur:
