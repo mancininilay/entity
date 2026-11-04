@@ -2151,19 +2151,19 @@ namespace user {
       out << "# n " << n << " npart_minus " << n_m << " npart_plus " << n_p << "\n";
       out << std::setprecision(17);
       for (npart_t k = 0; k < n; ++k) {
-        // one side's value of slot k; beyond that species' own count the slot does not exist
+        // a side beyond its species' own count has no slot: its views are not read, because iterating to the larger
+        // count would run past the shorter species' allocation when the capacities differ (Codex 1's F1); each read
+        // sits inside its own conditional, so that it is evaluated only for a present side
         const bool hm = k < n_m, hp = k < n_p;
-        auto m_side = [hm](auto v) { return hm ? v : decltype(v) {}; };
-        auto p_side = [hp](auto v) { return hp ? v : decltype(v) {}; };
-        out << k << " " << m_side(i1m(k)) << " " << m_side((double)dxm(k)) << " " << p_side(i1p(k)) << " "
-            << p_side((double)dxp(k)) << " " << m_side((double)wm(k)) << " " << p_side((double)wp(k)) << " "
-            << m_side((double)u1m(k)) << " " << m_side((double)u2m(k)) << " " << m_side((double)u3m(k)) << " "
-            << p_side((double)u1p(k)) << " " << p_side((double)u2p(k)) << " " << p_side((double)u3p(k)) << " "
+        out << k << " " << (hm ? i1m(k) : 0) << " " << (hm ? (double)dxm(k) : 0.0) << " " << (hp ? i1p(k) : 0) << " "
+            << (hp ? (double)dxp(k) : 0.0) << " " << (hm ? (double)wm(k) : 0.0) << " " << (hp ? (double)wp(k) : 0.0) << " "
+            << (hm ? (double)u1m(k) : 0.0) << " " << (hm ? (double)u2m(k) : 0.0) << " " << (hm ? (double)u3m(k) : 0.0) << " "
+            << (hp ? (double)u1p(k) : 0.0) << " " << (hp ? (double)u2p(k) : 0.0) << " " << (hp ? (double)u3p(k) : 0.0) << " "
             << (hm ? tm(k) : static_cast<short>(-1)) << " " << (hp ? tp(k) : static_cast<short>(-1)) << " "
-            << m_side((double)pm(k, 0)) << " " << m_side((double)pm(k, 1)) << " " << m_side((double)pm(k, 2)) << " "
-            << p_side((double)pp(k, 0)) << " " << p_side((double)pp(k, 1)) << " " << p_side((double)pp(k, 2)) << " "
-            << m_side(i1pm(k)) << " " << m_side((double)dxpm(k)) << " " << p_side(i1pp(k)) << " "
-            << p_side((double)dxpp(k)) << "\n";
+            << (hm ? (double)pm(k, 0) : 0.0) << " " << (hm ? (double)pm(k, 1) : 0.0) << " " << (hm ? (double)pm(k, 2) : 0.0) << " "
+            << (hp ? (double)pp(k, 0) : 0.0) << " " << (hp ? (double)pp(k, 1) : 0.0) << " " << (hp ? (double)pp(k, 2) : 0.0) << " "
+            << (hm ? i1pm(k) : 0) << " " << (hm ? (double)dxpm(k) : 0.0) << " " << (hp ? i1pp(k) : 0) << " "
+            << (hp ? (double)dxpp(k) : 0.0) << "\n";
       }
     }
 

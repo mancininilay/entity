@@ -90,6 +90,26 @@ if("${pgen}" STREQUAL "bh_proto")
            COMMAND bash ${BH_SCRIPTS}/event_e8.sh ${BH_SINGLE_ENTITY} $<TARGET_FILE:bh_check>
                    ${BH_INPUTS} ${BH_WORK}/event_e8 ${BH_TESTING_ENTITY})
   set_tests_properties("HADRONIC::event_e8" PROPERTIES TIMEOUT 1800)
+  # [fork:hadronic/P2 closing round, Codex 1's F1] the pair dump under bounds-checked host views: the method text is copied out of
+  # pgen.hpp at build time, the frozen method of 22449c32 is the negative control; host only (no device views are involved)
+  if(NOT DEVICE_ENABLED)
+    set(BH_DUMP_METHOD ${CMAKE_CURRENT_BINARY_DIR}/dump_bounds_method.inc)
+    add_custom_command(OUTPUT ${BH_DUMP_METHOD}
+                       COMMAND python3 ${BH_SCRIPTS}/dump_bounds_extract.py ${CMAKE_SOURCE_DIR}/pgens/bh_proto/pgen.hpp ${BH_DUMP_METHOD}
+                       DEPENDS ${CMAKE_SOURCE_DIR}/pgens/bh_proto/pgen.hpp ${BH_SCRIPTS}/dump_bounds_extract.py
+                       VERBATIM)
+    add_executable(test-hadronic-dump_bounds.xc dump_bounds.cpp ${BH_DUMP_METHOD})
+    target_include_directories(test-hadronic-dump_bounds.xc PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+    add_executable(test-hadronic-dump_bounds_old.xc dump_bounds.cpp)
+    target_compile_definitions(test-hadronic-dump_bounds_old.xc PRIVATE BH_DUMP_OLD_METHOD)
+    foreach(exe test-hadronic-dump_bounds.xc test-hadronic-dump_bounds_old.xc)
+      target_include_directories(${exe} PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR})
+      target_link_libraries(${exe} PRIVATE ntt_global)
+    endforeach()
+    add_test(NAME "HADRONIC::dump_bounds"
+             COMMAND bash ${BH_SCRIPTS}/dump_bounds.sh $<TARGET_FILE:test-hadronic-dump_bounds.xc>
+                     $<TARGET_FILE:test-hadronic-dump_bounds_old.xc> ${BH_WORK}/dump_bounds)
+  endif()
   # [fork:hadronic/P2 closing round, Codex 1's D2] the array closure and the pair dump species by species after MPI migration:
   # restframe periodic box on 1, 2 and 4 ranks in an MPI build (1 rank otherwise), the old index-paired sum as a negative
   # control, the delta control, the absorbing box with lone survivors; python3 reads the complete dumps
