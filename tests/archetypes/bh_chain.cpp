@@ -339,12 +339,14 @@ namespace {
         continue;
       }
       const auto          t0 = std::chrono::steady_clock::now();
-      const std::size_t   ng = S.H.size();
+      // the tables' own nodes: the rate-table nodes plus Gamma_c of a bath with eps_min > 0
+      const auto&         nodes = S.eps_tables->gamma;
+      const std::size_t   ng    = nodes.size();
       std::vector<double> bias(2 * ng), conv(2 * ng), bias2(2 * ng);
       rf::parallel_for_index(2 * ng, [&](std::size_t n) {
         const std::size_t i  = n / 2;
         const bool        wt = (n % 2) == 1;
-        const double      g  = S.H.gamma[i];
+        const double      g  = nodes[i];
         const auto        m  = rf::photon_marginal_moments(*S.bath, cum, g, wt, 16384, 16);
         const auto        mr = rf::photon_marginal_moments(*S.bath, cum, g, wt, 32768, 16);
         bias[n]              = S.eps_tables->table_moment(i, wt, 1) / m.mean - 1.0;
@@ -356,7 +358,7 @@ namespace {
       for (std::size_t n = 0; n < 2 * ng; ++n) {
         if (std::abs(bias[n]) > wb) {
           wb  = std::abs(bias[n]);
-          gb  = S.H.gamma[n / 2];
+          gb  = nodes[n / 2];
           wbw = (n % 2) == 1;
         }
         wc  = std::max(wc, std::abs(conv[n]));
@@ -379,13 +381,13 @@ namespace {
       if (S.cb.name == "powerlaw") {
         // the referee's node (finding 3): Gamma = 1.048099570984, the paper marginal by quadrature 1.4946719776559543
         for (std::size_t i = 0; i < ng; ++i) {
-          if (std::abs(S.H.gamma[i] / 1.048099570984 - 1.0) < 1.0e-11) {
+          if (std::abs(nodes[i] / 1.048099570984 - 1.0) < 1.0e-11) {
             const double tm = S.eps_tables->table_moment(i, false, 1);
             impl_abs("photon table: <eps> at the referee's powerlaw node Gamma = 1.048099570984 vs the referee's "
                      "quadrature of the paper marginal 1.4946719776559543 (round 1: 1.494613576097, -3.9e-5)",
                      tm / 1.4946719776559543 - 1.0, 1.0e-6, "rel. dev.");
             diag("photon table at Gamma = %.12f: <eps> table %.13f, own quadrature %.13f",
-                 S.H.gamma[i], tm, rf::photon_marginal_moments(*S.bath, cum, S.H.gamma[i], false).mean);
+                 nodes[i], tm, rf::photon_marginal_moments(*S.bath, cum, nodes[i], false).mean);
           }
         }
       }

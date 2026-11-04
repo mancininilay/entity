@@ -52,6 +52,24 @@
  *     mono05 2.23125, 3, 10, powerlaw 1.09375, 3, 10; quantity 0..4 = E-, E+,
  *     cos-, cos+, D); at least 95% of the 30 comparisons must pass, the
  *     failures are listed
+ *   - offnode (Claude 3's kink, pre-registered 2026-11-03, brief
+ *     2026-11-03-claude1-local-brief-closing-fixes.md): the photon marginal
+ *     at Gamma_p between the nodes, where A7, A10 and A12 never look. The
+ *     powerlaw bath at Gamma_p = 10 and at the midpoint of the rate-table
+ *     cell that holds Gamma_c (where 2/(Gamma (1 + beta)) = eps_min) and at
+ *     two smooth-cell midpoints, the blackbody bath at two smooth-cell
+ *     midpoints; midpoints in y = log10(Gamma - Gamma_th), the tables'
+ *     interpolation variable; the smooth cells are those holding Gamma_p = 3
+ *     and 30 (powerlaw), 3 and 20 (blackbody: its table ends at Gamma_p =
+ *     24.2). N = 1e7 device draws of eps (`sample_eps`) per chain against
+ *     the marginal by host quadrature: per d ln eps, n(eps)/eps Phi(eps A - 2)
+ *     (unweighted chain) and n(eps)/eps F (the weighted chain's photon step,
+ *     before the D/D_max rejection, whose accepted marginal has no closed
+ *     form), with Phi and F integrated here from the closed-form sigma~ of
+ *     bh_physics.h: neither BathEpsTables nor SamplerCumulatives enters.
+ *     One-sample Kolmogorov-Smirnov, pass iff p >= 1e-3 at every tested point
+ *     and chain. Seeds 2026110300 + 100 bath + 10 point + chain.
+ *     Gamma_p = 10.1 and the bracketing nodes are diagnostics, not counted
  *
  * Verdict lines: "PASS" / "FAIL" with the measured number and the tolerance;
  * "(diag)" lines are reported only. One ctest entry per group.
@@ -191,6 +209,17 @@ namespace {
       spec.eps_max = 1.5;
       spec.index   = 2.0;
       T            = std::make_unique<Tables>(make_tables(spec));
+    }
+    return *T;
+  }
+
+  // the blackbody bath of step 1 (eps_min = 0: no kink), likewise
+  std::unique_ptr<Tables> g_blackbody;
+
+  const Tables& blackbody_tables() {
+    auto& T = g_blackbody;
+    if (!T) {
+      T = std::make_unique<Tables>(make_tables(rf::canonical_bath("blackbody").spec));
     }
     return *T;
   }
@@ -1034,6 +1063,270 @@ namespace {
     }
   }
 
+  // ---- offnode: the photon marginal between the nodes against host quadrature ----
+
+  /// the eps of one chain straight from the device sampler (the photon step of `SamplerTables::draw`)
+  struct EpsKernel {
+    bh::SamplerTables    S;
+    random_number_pool_t pool;
+    array_t<double*>     eps;
+    double               gamma;
+    bool                 weighted;
+
+    Inline void operator()(const std::size_t n) const {
+      auto gen = pool.get_state();
+      eps(n)   = S.sample_eps(gamma, weighted, gen.drand());
+      pool.free_state(gen);
+    }
+  };
+
+  /**
+   * Phi, Psi2 and Psir of delta (int_0^delta of k sigma~, k^2 sigma~ and k sigma~ sqrt(k^2 - 4), k = 2 + delta) from the
+   * closed-form sigma~ alone: panels uniform in ln delta and an exact partial panel up to the requested delta. Below
+   * DELTA0 the integrals are under 1e-24 of the marginals' scale (they grow as delta^4) and are dropped
+   */
+  class SigmaIntegrals {
+  public:
+    struct Value {
+      double phi { 0.0 }, psi2 { 0.0 }, psir { 0.0 };
+    };
+
+    SigmaIntegrals() : m_gl(12) {
+      const auto n = static_cast<std::size_t>(std::ceil((std::log(1.2e3) - T0) / H)) + 1;
+      m_cum.resize(n + 1);
+      for (std::size_t j = 0; j < n; ++j) {
+        const auto panel = over(T0 + H * j, T0 + H * (j + 1));
+        m_cum[j + 1].phi  = m_cum[j].phi + panel.phi;
+        m_cum[j + 1].psi2 = m_cum[j].psi2 + panel.psi2;
+        m_cum[j + 1].psir = m_cum[j].psir + panel.psir;
+      }
+    }
+
+    auto at(double delta) const -> Value {
+      if (!(delta > DELTA0)) {
+        return {};
+      }
+      const double t  = std::log(delta);
+      const auto   j  = std::min(static_cast<std::size_t>((t - T0) / H), m_cum.size() - 2);
+      const auto   tail = over(T0 + H * j, t);
+      return { m_cum[j].phi + tail.phi, m_cum[j].psi2 + tail.psi2, m_cum[j].psir + tail.psir };
+    }
+
+  private:
+    static constexpr double DELTA0 = 1.0e-6, H = 2.0e-3;
+    static inline const double T0 = std::log(DELTA0);
+
+    auto over(double a, double b) const -> Value {
+      Value        v;
+      const double mid = 0.5 * (a + b), half = 0.5 * (b - a);
+      for (int q = 0; q < m_gl.order(); ++q) {
+        const double delta = std::exp(mid + half * m_gl.x[q]);
+        const double k     = 2.0 + delta;
+        const double w     = half * m_gl.w[q] * delta * k * bh::sigma_tilde_delta(delta); // dk = delta dt
+        v.phi  += w;
+        v.psi2 += w * k;
+        v.psir += w * std::sqrt(delta * (k + 2.0));
+      }
+      return v;
+    }
+
+    bh::GaussLegendre  m_gl;
+    std::vector<Value> m_cum;
+  };
+
+  /// the marginal CDF in ln eps at the edges of uniform panels, linear between them
+  struct MarginalCdf {
+    double              lo { 0.0 }, h { 0.0 };
+    std::vector<double> cdf;
+
+    auto at(double ln_eps) const -> double {
+      const double x = (ln_eps - lo) / h;
+      if (!(x > 0.0)) {
+        return 0.0;
+      }
+      const auto j = static_cast<std::size_t>(x);
+      if (j + 1 >= cdf.size()) {
+        return 1.0;
+      }
+      return cdf[j] + (x - static_cast<double>(j)) * (cdf[j + 1] - cdf[j]);
+    }
+  };
+
+  /// both chains' marginals at Gamma: per d ln eps, n(eps)/eps Phi(eps A - 2) and n(eps)/eps F
+  void photon_marginals(const bh::PhotonBath& bath, const SigmaIntegrals& I, double g, MarginalCdf& unweighted,
+                        MarginalCdf& weighted) {
+    const int    panels = 1 << 15;
+    const double gb = std::sqrt((g - 1.0) * (g + 1.0)), A = g + gb;
+    const double lo = std::log(std::max(std::max(0.0, bath.eps_min()), 2.0 / A)), hi = std::log(bath.eps_max());
+    const double h  = (hi - lo) / panels;
+    const bh::GaussLegendre G(6);
+    for (auto* m : { &unweighted, &weighted }) {
+      m->lo = lo;
+      m->h  = h;
+      m->cdf.assign(panels + 1, 0.0);
+    }
+    for (int j = 0; j < panels; ++j) {
+      double cu = 0.0, cw = 0.0;
+      for (int q = 0; q < G.order(); ++q) {
+        const double eps   = std::exp(lo + h * (j + 0.5) + 0.5 * h * G.x[q]);
+        const double delta = eps * A - 2.0;
+        const double n     = bath.density(eps);
+        if (!(n > 0.0) || !(delta > 0.0)) {
+          continue;
+        }
+        const auto   v = I.at(delta);
+        const double w = 0.5 * h * G.w[q] * n / eps;
+        cu += w * v.phi;
+        cw += w * (g * v.psi2 - eps * v.phi + gb * v.psir);
+      }
+      unweighted.cdf[j + 1] = unweighted.cdf[j] + cu;
+      weighted.cdf[j + 1]   = weighted.cdf[j] + cw;
+    }
+    for (auto* m : { &unweighted, &weighted }) {
+      const double total = m->cdf.back();
+      for (auto& c : m->cdf) {
+        c /= total;
+      }
+    }
+  }
+
+  struct KsResult {
+    double d { 0.0 }, p { 0.0 }, mean_rel { 0.0 };
+  };
+
+  /// N device draws against the marginal: the Kolmogorov distance, its asymptotic p-value (Stephens' finite-N factor)
+  /// and <eps>_draws / <eps>_marginal - 1
+  KsResult ks_device(const Tables& T, double g, bool weighted, std::size_t n, unsigned long long seed, const MarginalCdf& F) {
+    array_t<double*>     eps { "offnode_eps", n };
+    random_number_pool_t pool(seed);
+    Kokkos::parallel_for("offnode_eps", Kokkos::RangePolicy<>(0, n), EpsKernel { T.sampler, pool, eps, g, weighted });
+    Kokkos::fence();
+    auto                h = mirror(eps);
+    std::vector<double> x(h.data(), h.data() + n);
+    std::sort(x.begin(), x.end());
+    KsResult    r;
+    const auto  dn = static_cast<double>(n);
+    double      sum = 0.0;
+    for (std::size_t i = 0; i < n; ++i) {
+      const double f = F.at(std::log(x[i]));
+      r.d            = std::max(r.d, std::max(static_cast<double>(i + 1) / dn - f, f - static_cast<double>(i) / dn));
+      sum += x[i];
+    }
+    double exact = 0.0;
+    for (std::size_t j = 0; j + 1 < F.cdf.size(); ++j) {
+      exact += (F.cdf[j + 1] - F.cdf[j]) * std::exp(F.lo + F.h * (static_cast<double>(j) + 0.5));
+    }
+    r.mean_rel       = sum / dn / exact - 1.0;
+    const double lam = (std::sqrt(dn) + 0.12 + 0.11 / std::sqrt(dn)) * r.d;
+    double       q   = 0.0;
+    for (int j = 1; j <= 100; ++j) {
+      q += ((j % 2 == 1) ? 2.0 : -2.0) * std::exp(-2.0 * j * j * lam * lam);
+    }
+    r.p = std::min(1.0, std::max(0.0, q));
+    return r;
+  }
+
+  /// the midpoint in y = log10(Gamma - Gamma_th) of the rate-table cell holding g
+  double cell_midpoint(const Tables& T, double g) {
+    const auto& G = T.host.gamma;
+    if (!(g >= G.front() && g < G.back())) {
+      throw std::invalid_argument("cell_midpoint: Gamma_p " + fmt("%.6g", g) + " is outside the rate table");
+    }
+    const std::size_t i  = static_cast<std::size_t>(std::upper_bound(G.begin(), G.end(), g) - G.begin()) - 1;
+    const double      th = T.host.gamma_th;
+    return th + std::pow(10.0, 0.5 * (std::log10(G[i] - th) + std::log10(G[i + 1] - th)));
+  }
+
+  void test_offnode() {
+    std::printf("---- the photon marginal off the nodes against host quadrature of the closed-form sigma~ "
+                "(pre-registered 2026-11-03): N = 1e7 per point and chain, pass iff KS p >= 1e-3 ----\n");
+    const std::size_t    N = 10000000;
+    const SigmaIntegrals I;
+    struct Point {
+      std::string name;
+      double      gamma;
+      bool        counted;
+    };
+    const Tables&     P    = powerlaw_tables();
+    const Tables&     B    = blackbody_tables();
+    const double      Ac   = 2.0 / P.bath->eps_min(); // 2/A = eps_min
+    const double      Gc   = 0.5 * (Ac + 1.0 / Ac);   // Gamma = (A + 1/A) / 2
+    const auto&       G    = P.host.gamma;
+    const std::size_t ic   = static_cast<std::size_t>(std::upper_bound(G.begin(), G.end(), Gc) - G.begin()) - 1;
+    diag("powerlaw: Gamma_c = " + fmt("%.10g", Gc) + ", rate-table cell [" + fmt("%.8f", G[ic]) + ", " + fmt("%.8f", G[ic + 1]) +
+         "], eps-table nodes " + std::to_string(P.eps_tables->gamma.size()) + " (rate table " + std::to_string(G.size()) + ")");
+    // the tables' structure: Gamma_c is a node of the powerlaw's eps tables, the other nodes are the rate table's
+    {
+      const auto& E      = P.eps_tables->gamma;
+      bool        has_c  = false;
+      std::size_t others = 0;
+      for (const double g : E) {
+        if (std::abs(g / Gc - 1.0) < 1.0e-12) {
+          has_c = true;
+        } else if (std::binary_search(G.begin(), G.end(), g)) {
+          ++others;
+        }
+      }
+      verdict(has_c && others == G.size() && E.size() == G.size() + 1 && P.sampler.n_gamma == static_cast<int>(E.size()),
+              "powerlaw eps tables: the rate-table nodes plus Gamma_c, mirrored to the device", static_cast<double>(E.size()),
+              static_cast<double>(G.size() + 1));
+      verdict(B.eps_tables->gamma == B.host.gamma, "blackbody eps tables (eps_min = 0): exactly the rate-table nodes",
+              static_cast<double>(B.eps_tables->gamma.size()), static_cast<double>(B.host.gamma.size()));
+      // Gamma_c is added only strictly between two listed nodes: not outside the list's range, not on a node
+      struct NodeList {
+        std::vector<double> gammas;
+        std::size_t         expected;
+      };
+      for (const auto& c : std::vector<NodeList> { { { 9.0, 11.0 }, 3 },
+                                                   { { 5.0, 6.0 }, 2 },
+                                                   { { 11.0, 12.0 }, 2 },
+                                                   { { Gc, 11.0 }, 2 },
+                                                   { { 9.0, Gc }, 2 } }) {
+        const auto n = rf::BathEpsTables::build_at(*P.bath, c.gammas, *P.cum, 64).gamma.size();
+        verdict(n == c.expected, "build_at on [" + fmt("%.6g", c.gammas.front()) + ", " + fmt("%.6g", c.gammas.back()) + "]: nodes",
+                static_cast<double>(n), static_cast<double>(c.expected));
+      }
+    }
+    struct Case {
+      const Tables*      T;
+      std::string        bath;
+      std::vector<Point> points;
+    };
+    const std::vector<Case> cases {
+      { &P, "powerlaw",
+        { { "kink cell, Gamma_p = 10", 10.0, true },
+          { "kink cell midpoint", cell_midpoint(P, Gc), true },
+          { "smooth cell midpoint (cell of 3)", cell_midpoint(P, 3.0), true },
+          { "smooth cell midpoint (cell of 30)", cell_midpoint(P, 30.0), true },
+          { "kink cell, Gamma_p = 10.1", 10.1, false },
+          { "lower node of the kink cell", G[ic], false },
+          { "upper node of the kink cell", G[ic + 1], false } } },
+      { &B, "blackbody",
+        { { "smooth cell midpoint (cell of 3)", cell_midpoint(B, 3.0), true },
+          { "smooth cell midpoint (cell of 20)", cell_midpoint(B, 20.0), true } } }
+    };
+    for (std::size_t c = 0; c < cases.size(); ++c) {
+      const auto& K = cases[c];
+      for (std::size_t j = 0; j < K.points.size(); ++j) {
+        const auto& pt = K.points[j];
+        MarginalCdf Fu, Fw;
+        photon_marginals(*K.T->bath, I, pt.gamma, Fu, Fw);
+        for (const bool weighted : { false, true }) {
+          const auto seed = 2026110300ULL + 100ULL * c + 10ULL * j + (weighted ? 1ULL : 0ULL);
+          const auto r    = ks_device(*K.T, pt.gamma, weighted, N, seed, weighted ? Fw : Fu);
+          const auto what = K.bath + " " + pt.name + " (Gamma_p = " + fmt("%.8f", pt.gamma) + "), " +
+                            (weighted ? "weighted" : "unweighted") + " chain: KS D = " + fmt("%.3e", r.d) +
+                            ", <eps>/exact - 1 = " + fmt("%+.2e", r.mean_rel) + ", p";
+          if (pt.counted) {
+            verdict(r.p >= 1.0e-3, what, r.p, 1.0e-3);
+          } else {
+            diag(what + " = " + fmt("%.3e", r.p));
+          }
+        }
+      }
+    }
+  }
+
   void test_spectrum(const Tables& Tmono) {
     std::printf("---- the spectrum of created pairs vs the reference's weighted-chain histograms (bhref 0.2.0, frozen), "
                 "mono05 and powerlaw, every reference Gamma_p inside the rate table; the calibrated weighted "
@@ -1206,6 +1499,9 @@ auto main(int argc, char* argv[]) -> int {
     if (want("spectrum")) {
       test_spectrum(T);
     }
+    if (want("offnode")) {
+      test_offnode();
+    }
     std::printf("bh_sampler summary: %d passed, %d failed\n", n_pass, n_fail);
     if (n_fail > 0) {
       rc = 1;
@@ -1215,6 +1511,7 @@ auto main(int argc, char* argv[]) -> int {
     rc = 2;
   }
   g_powerlaw.reset();
+  g_blackbody.reset();
   Kokkos::finalize();
   return rc;
 }

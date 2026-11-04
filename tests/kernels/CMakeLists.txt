@@ -122,14 +122,16 @@ add_executable(test-kernels-bh_sampler.xc bh_sampler.cpp)
 add_dependencies(test-kernels-bh_sampler.xc ntt_kernels ntt_metrics ntt_framework)
 target_link_libraries(test-kernels-bh_sampler.xc PRIVATE ntt_kernels ntt_metrics ntt_framework)
 target_compile_definitions(test-kernels-bh_sampler.xc PRIVATE BH_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data/hadronic")
-foreach(grp tables a11 identity a12 spectrum)
+# [fork:hadronic/P2 closing round, Claude 3's kink] offnode: the photon marginal between the nodes against host quadrature
+foreach(grp tables a11 identity a12 spectrum offnode)
   add_test(NAME "KERNELS::bh_sampler_${grp}_born" COMMAND test-kernels-bh_sampler.xc ${grp})
   set_tests_properties("KERNELS::bh_sampler_${grp}_born" PROPERTIES ENVIRONMENT "BH_QK_SOURCE=born")
 endforeach()
 set_tests_properties("KERNELS::bh_sampler_a12_born" PROPERTIES TIMEOUT 14400)
-foreach(grp tables a11 identity a12 spectrum)
+foreach(grp tables a11 identity a12 spectrum offnode)
   add_test(NAME "KERNELS::bh_sampler_${grp}" COMMAND test-kernels-bh_sampler.xc ${grp})
 endforeach()
+set_tests_properties("KERNELS::bh_sampler_offnode" "KERNELS::bh_sampler_offnode_born" PROPERTIES TIMEOUT 1800)
 set_tests_properties("KERNELS::bh_sampler_a12" PROPERTIES TIMEOUT 14400)
 # Bethe-Heitler ledger reduction timing harness (P2 step 4, stage 5; G3 open item):
 # the double-double reducer vs Kokkos::atomic_add on double, a diagnostic

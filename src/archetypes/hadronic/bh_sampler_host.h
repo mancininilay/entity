@@ -720,6 +720,18 @@ namespace arch::bh::rf {
    * blackbody's widest node with 2048 cells), so the cell count is
    * max(`n_eps`, ceil(widest node range / `h_max`)), h_max = 1e-3 by default:
    * the width, not the count, is held fixed when the Gamma range grows.
+   *
+   * The mixture in x assumes that the bracketing nodes' shapes are related by
+   * the rescaling of [eps_lo(Gamma), eps_max], which holds where eps_lo is
+   * smooth. eps_lo has a kink at Gamma_c, where 2/(Gamma (1 + beta)) = eps_min:
+   * below it the interval starts at the threshold, where the density vanishes,
+   * above it at the bath's edge. A cell straddling Gamma_c was wrong by a
+   * Kolmogorov distance of 1.7e-3 (Claude 3's review of 2026-11-03: powerlaw
+   * [0.1, 1.5], Gamma_c = 10.025), so `build_at` adds Gamma_c as a node for
+   * every broad bath with eps_min > 0 when it falls strictly between two
+   * listed nodes. These tables therefore have their own node list: `gamma`
+   * and `y` are the list given plus Gamma_c, and an index into them is not a
+   * rate-table index. The rate tables do not change.
    */
   struct BathEpsTables {
     bool                mono { true };
@@ -727,8 +739,8 @@ namespace arch::bh::rf {
     double              gamma_th { 0.0 };
     double              eps_min_bath { 0.0 }; // the bath's lower edge (0 if none)
     double              ln_eps_hi { 0.0 };    // ln eps_max
-    std::vector<double> y;      // log10(Gamma - Gamma_th) at the rate-table nodes
-    std::vector<double> gamma;  // the nodes
+    std::vector<double> y;      // log10(Gamma - Gamma_th) at the nodes
+    std::vector<double> gamma;  // the nodes: the list given to `build_at` plus Gamma_c (see above)
     int                 n_eps { 2048 };
     std::vector<double> cdf_u; // [n_gamma][n_eps + 1] unweighted chain, at x_j = j/n_eps
     std::vector<double> cdf_w; // [n_gamma][n_eps + 1] D_max-weighted chain
@@ -745,6 +757,15 @@ namespace arch::bh::rf {
 
     double ln_eps_lo(double g) const {
       return ln_eps_lo_of(g, eps_min_bath);
+    }
+
+    /// the Gamma of the kink of eps_lo: 2/A = eps_min with A = Gamma (1 + beta), Gamma = (A + 1/A)/2; 0 without a lower edge
+    static double gamma_kink(double eps_min_bath) {
+      if (!(eps_min_bath > 0.0)) {
+        return 0.0;
+      }
+      const double A = 2.0 / eps_min_bath;
+      return 0.5 * (A + 1.0 / A);
     }
 
     /// ln eps at the cell position pos in [0, n_eps] for the grid of Gamma
@@ -783,8 +804,8 @@ namespace arch::bh::rf {
       return std::exp(ln_eps_at(g, invert_mixture<2>(C, W, n_eps, u)));
     }
 
-    /// <eps^m> (m = 1, 2) of the density the table samples at node ig (exact:
-    /// uniform in ln eps inside each cell)
+    /// <eps^m> (m = 1, 2) of the density the table samples at node ig of `gamma`
+    /// (exact: uniform in ln eps inside each cell)
     double table_moment(std::size_t ig, bool weighted, int m) const {
       if (mono) {
         return std::pow(eps0, m);
@@ -806,21 +827,29 @@ namespace arch::bh::rf {
       return build_at(bath, H.gamma, cum, n_eps, gl_cell, n_threads, h_max);
     }
 
-    /// the same at an explicit, increasing list of Gamma nodes (> Gamma_th)
-    static BathEpsTables build_at(const PhotonBath& bath, const std::vector<double>& gammas,
+    /// the same at an explicit, increasing list of Gamma nodes (> Gamma_th), plus Gamma_c when it falls strictly
+    /// between two of them (a Gamma_c outside the list's range, or on a node, leaves no cell straddling the kink)
+    static BathEpsTables build_at(const PhotonBath& bath, const std::vector<double>& nodes,
                                   const SamplerCumulatives& cum, int n_eps = 2048, int gl_cell = 8,
                                   unsigned n_threads = 0, double h_max = 1.0e-3) {
       BathEpsTables B;
       B.gamma_th = bath.gamma_th();
-      B.gamma    = gammas;
+      B.gamma    = nodes;
       B.mono     = bath.is_mono();
       if (B.mono) {
         B.eps0 = bath.eps0();
         return B;
       }
-      if (gammas.size() < 2) {
+      if (nodes.size() < 2) {
         throw std::invalid_argument("BathEpsTables: at least two Gamma nodes are needed");
       }
+      const double g_c = gamma_kink(std::max(0.0, bath.eps_min()));
+      const auto   up  = std::upper_bound(B.gamma.begin(), B.gamma.end(), g_c);
+      if (g_c > 0.0 && up != B.gamma.begin() && up != B.gamma.end() && g_c > *(up - 1) * (1.0 + 1.0e-12) &&
+          g_c < *up * (1.0 - 1.0e-12)) {
+        B.gamma.insert(up, g_c);
+      }
+      const std::vector<double>& gammas = B.gamma;
       B.y.resize(gammas.size());
       for (std::size_t i = 0; i < gammas.size(); ++i) {
         if (!(gammas[i] > B.gamma_th) || (i > 0 && !(gammas[i] > gammas[i - 1]))) {
