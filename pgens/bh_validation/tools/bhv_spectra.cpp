@@ -120,6 +120,7 @@ int main(int argc, char* argv[]) {
     }
     unsigned long long n_pairs = 0, outside = 0;
     double             sum_D = 0.0, sum_D2 = 0.0;
+    double             sum_q[5] = { 0.0, 0.0, 0.0, 0.0, 0.0 }, sum_q2[5] = { 0.0, 0.0, 0.0, 0.0, 0.0 };
     for (std::uint64_t k = 0; k < el.n; ++k) {
       const double um2 = el.ux1[k] * el.ux1[k] + el.ux2[k] * el.ux2[k] + el.ux3[k] * el.ux3[k];
       const double up2 = po.ux1[k] * po.ux1[k] + po.ux2[k] * po.ux2[k] + po.ux3[k] * po.ux3[k];
@@ -136,6 +137,10 @@ int main(int argc, char* argv[]) {
       }
       sum_D  += v[4];
       sum_D2 += v[4] * v[4];
+      for (int q = 0; q < 5; ++q) {
+        sum_q[q]  += v[q];
+        sum_q2[q] += v[q] * v[q];
+      }
       ++n_pairs;
     }
     const double mD = sum_D / n_pairs;
@@ -143,6 +148,13 @@ int main(int argc, char* argv[]) {
                 "mean E- + E+ - eps0 = %.6f +- %.6f\n",
                 gs.c_str(), n_pairs, n_ref, outside, mD, std::sqrt((sum_D2 / n_pairs - mD * mD) / n_pairs));
     std::printf("%s Gamma_p %s: at least 1e6 events (%llu)\n", n_pairs >= 1000000ULL ? "PASS" : "FAIL", gs.c_str(), n_pairs);
+    // one line per case for the comparison of two runs: means and standard errors
+    std::printf("STAT %s %llu", gs.c_str(), n_pairs);
+    for (int q = 0; q < 5; ++q) {
+      const double m = sum_q[q] / n_pairs;
+      std::printf(" %.10g %.6g", m, std::sqrt((sum_q2[q] / n_pairs - m * m) / n_pairs));
+    }
+    std::printf("\n");
     for (int q = 0; q < 5; ++q) {
       const cal::Partition P = cal::merge_partition({ kn[q], rn[q] }, 100.0);
       const auto           a = cal::merge_sums(P, kn[q]);
