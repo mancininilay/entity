@@ -1,0 +1,3 @@
+ERROR : Bethe-Heitler parameters must be finite
+Error: Bethe-Heitler parameters must be finite <Entity Local Experiments>/worktrees/dev-bh-emission-validation/src/framework/parameters/extra.cpp:184 @ read
+exit status 1

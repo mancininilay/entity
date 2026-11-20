@@ -1,0 +1,13 @@
+e92d84d8441f780852206db4c5c0e1e21ccaf333
+build old rc=0 warnings=0
+build new rc=0 warnings=0
+no mask: hardware_concurrency 32 thread_limit 32
+taskset -c 0-3: hardware_concurrency 32 thread_limit 4
+taskset -c 0: hardware_concurrency 32 thread_limit 1
+real	2m6.239s
+user	2m6.118s
+real	2m5.998s
+user	2m5.877s
+tables IDENTICAL on Rusty (old headers against new)
+d2f9e1fd5dcfe4dc9fd64aca27d544ede29008e58bd97b912003a1c41cd94d8b  tables_66aa6fb6.txt
+d2f9e1fd5dcfe4dc9fd64aca27d544ede29008e58bd97b912003a1c41cd94d8b  tables_e92d84d8.txt
