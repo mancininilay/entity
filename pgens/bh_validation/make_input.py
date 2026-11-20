@@ -24,6 +24,12 @@ DEFAULTS = dict(
 )
 
 
+def flt(x):
+    """A TOML float: never an integer literal."""
+    t = f"{x:.12g}"
+    return t if ("." in t or "e" in t) else t + ".0"
+
+
 def main():
     out = sys.argv[1]
     cfg = dict(DEFAULTS)
@@ -104,7 +110,7 @@ def main():
 {decomposition}
 [grid]
   resolution = [{nx}, {ny}]
-  extent     = [[0.0, {nx * dx:.12g}], [0.0, {ny * dx:.12g}]]
+  extent     = [[0.0, {flt(nx * dx)}], [0.0, {flt(ny * dx)}]]
 
   [grid.metric]
     metric = "minkowski"

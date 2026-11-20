@@ -1,0 +1,4 @@
+PASS V10 leptons_first single: 11 diagnostic lines, particle dumps and BHVHASH rank 0 f9c0d4b41079c858 identical to upstream
+PASS V10 ions_first single: 11 diagnostic lines, particle dumps and BHVHASH rank 0 618013e3073e294b identical to upstream
+PASS V10 leptons_first double: 11 diagnostic lines, particle dumps and BHVHASH rank 0 0889101753d7e8e8 identical to upstream
+PASS V10 ions_first double: 11 diagnostic lines, particle dumps and BHVHASH rank 0 ada830d37d5a043d identical to upstream

@@ -1,0 +1,279 @@
+######## single
+---- V2 mean cooling, V3 straggling
+== V2/V3 Gamma_p0=6 single: N = 100000, K0 = 9180.75, dt = 0.0353553407, tau = 3.62657918, a = 1, p(Gamma_p0) = 0.05000, records = 1600, steps = 40000, <K>/K0 at the end = 0.49649, pairs = 65287581 (652.8758 per emitter)
+   counters at the end: above 0, probability exceeded 0, bounded 0, dropped 0
+   PASS V2 at <K>/K0 = 0.90 (t = 90.1561, <K> = 8261.024490): <K> - K_corr = +0.5745 = +2.113 s.e. (s.e. = 0.2719, limit 4); plain ODE +1.841 s.e.; Jensen term -0.068 of 4 s.e.; sigma_K/K = 0.01041
+   PASS V2 at <K>/K0 = 0.70 (t = 403.051, <K> = 6424.876751): <K> - K_corr = +0.003708 = +0.012 s.e. (s.e. = 0.3052, limit 4); plain ODE -1.915 s.e.; Jensen term -0.482 of 4 s.e.; sigma_K/K = 0.01502
+   PASS V2 at <K>/K0 = 0.50 (t = 1378.86, <K> = 4589.989241): <K> - K_corr = -0.06352 = -0.309 s.e. (s.e. = 0.2059, limit 4); plain ODE -5.978 s.e.; Jensen term -1.417 of 4 s.e.; sigma_K/K = 0.01418
+   PASS V3 at sigma_K/K = 0.005 (t = 16.7938, Delta K/K = 0.0210): Var_meas = 2045.53, Var_pred = 2040.18, |ratio - 1| = 0.002622 (limit 0.01789); curvature budget 0.006 %; with the Poisson source instead: |ratio - 1| = 0.03249
+   PASS V3 at sigma_K/K = 0.01 (t = 81.3173, Delta K/K = 0.0917): Var_meas = 6972.28, Var_pred = 7002.09, |ratio - 1| = 0.004257 (limit 0.01789); curvature budget 0.027 %; with the Poisson source instead: |ratio - 1| = 0.03655
+   PASS V3 at last record in the domain (sigma_K/K <= 0.02, curvature <= 0.6 %) (t = 1414.21, Delta K/K = 0.5035): Var_meas = 4143.26, Var_pred = 4113.44, |ratio - 1| = 0.00725 (limit 0.01789); curvature budget 0.191 %; with the Poisson source instead: |ratio - 1| = 0.002213
+   V2/V3 Gamma_p0=6 single: ALL PASS
+== V2/V3 Gamma_p0=3 single: N = 100000, K0 = 3672.3, dt = 0.0353553407, tau = 111.189927, a = 1, p(Gamma_p0) = 0.05000, records = 5280, steps = 132000, <K>/K0 at the end = 0.64901, pairs = 28054126 (280.5413 per emitter)
+   counters at the end: above 0, probability exceeded 0, bounded 0, dropped 0
+   PASS V2 at <K>/K0 = 0.90 (t = 77.7817, <K> = 3302.865478): <K> - K_corr = -0.0002344 = -0.002 s.e. (s.e. = 0.0944, limit 4); plain ODE -3.095 s.e.; Jensen term -0.773 of 4 s.e.; sigma_K/K = 0.009038
+   PASS V2 at <K>/K0 = 0.70 (t = 1345.27, <K> = 2570.534596): <K> - K_corr = +0.01335 = +0.221 s.e. (s.e. = 0.06031, limit 4); plain ODE -14.851 s.e.; Jensen term -3.768 of 4 s.e.; sigma_K/K = 0.007419
+   PASS V2 at <K>/K0 = 0.65 (t = 4526.37, <K> = 2386.984985): <K> - K_corr = +0.03826 = +0.835 s.e. (s.e. = 0.04583, limit 4); plain ODE -18.744 s.e.; Jensen term -4.895 of 4 s.e.; sigma_K/K = 0.006072
+   PASS V3 at sigma_K/K = 0.005 (t = 10.6066, Delta K/K = 0.0195): Var_meas = 334.104, Var_pred = 332.306, |ratio - 1| = 0.005412 (limit 0.01789); curvature budget 0.028 %; with the Poisson source instead: |ratio - 1| = 0.03763
+   V3 point (sigma_K/K = 0.01) not in the run
+   PASS V3 at last record in the domain (sigma_K/K <= 0.02, curvature <= 0.6 %) (t = 1142.86, Delta K/K = 0.2914): Var_meas = 393.689, Var_pred = 390.6, |ratio - 1| = 0.007908 (limit 0.01789); curvature budget 0.600 %; with the Poisson source instead: |ratio - 1| = 0.004776
+   (diag) V3 at deepest record with sigma_K/K <= 0.02 [outside the domain] (t = 4666.9, Delta K/K = 0.3510) outside the registered domain (curvature 0.978 %): |ratio - 1| = 0.01792, curvature-corrected 0.008064 (limit 0.01789); no verdict
+   V2/V3 Gamma_p0=3 single: 1 FAIL
+---- V4 pair spectra
+[ions_first] PASS V4 family of 10 comparisons, Holm at 0.01: smallest adjusted p = 0.50750 (history) rule of test E4: 10 of 10 comparisons with p >= 0.01 (>= 95 % required) 
+    Gamma_p 3: 1048903 pairs (reference 1000000 events), values outside the reference's edges 0, mean E- + E+ - eps0 = 5.138527 +- 0.001534
+    PASS Gamma_p 3: at least 1e6 events (1048903)
+      Gamma_p 3 E-: N_A 1048903 N_B 1000000 T_AD 8.4869e-07 p 0.80945 q99 7.4665e-06 merged bins 169
+      Gamma_p 3 E+: N_A 1048903 N_B 1000000 T_AD 4.8824e-06 p 0.05075 q99 7.5146e-06 merged bins 168
+      Gamma_p 3 cos-: N_A 1048903 N_B 1000000 T_AD 4.0166e-07 p 0.92815 q99 6.7843e-06 merged bins 18
+      Gamma_p 3 cos+: N_A 1048903 N_B 1000000 T_AD 1.1928e-06 p 0.51090 q99 6.7990e-06 merged bins 18
+      Gamma_p 3 D: N_A 1048903 N_B 1000000 T_AD 1.5657e-06 p 0.48215 q99 7.7166e-06 merged bins 150
+    Gamma_p 10: 1049686 pairs (reference 1000000 events), values outside the reference's edges 0, mean E- + E+ - eps0 = 11.192055 +- 0.009799
+    PASS Gamma_p 10: at least 1e6 events (1049686)
+      Gamma_p 10 E-: N_A 1049686 N_B 1000000 T_AD 1.4589e-06 p 0.51755 q99 7.3599e-06 merged bins 170
+      Gamma_p 10 E+: N_A 1049686 N_B 1000000 T_AD 1.8139e-06 p 0.39660 q99 7.6196e-06 merged bins 170
+      Gamma_p 10 cos-: N_A 1049686 N_B 1000000 T_AD 9.1359e-07 p 0.64435 q99 6.4692e-06 merged bins 48
+      Gamma_p 10 cos+: N_A 1049686 N_B 1000000 T_AD 1.5969e-06 p 0.35580 q99 6.6037e-06 merged bins 48
+      Gamma_p 10 D (log bins): N_A 1049686 N_B 1000000 T_AD 5.3334e-07 p 0.95520 q99 7.5470e-06 merged bins 160
+[leptons_first] PASS V4 family of 10 comparisons, Holm at 0.01: smallest adjusted p = 0.50750 (history) rule of test E4: 10 of 10 comparisons with p >= 0.01 (>= 95 % required) 
+    Gamma_p 3: 1048903 pairs (reference 1000000 events), values outside the reference's edges 0, mean E- + E+ - eps0 = 5.138527 +- 0.001534
+    PASS Gamma_p 3: at least 1e6 events (1048903)
+      Gamma_p 3 E-: N_A 1048903 N_B 1000000 T_AD 8.4869e-07 p 0.80945 q99 7.4665e-06 merged bins 169
+      Gamma_p 3 E+: N_A 1048903 N_B 1000000 T_AD 4.8824e-06 p 0.05075 q99 7.5146e-06 merged bins 168
+      Gamma_p 3 cos-: N_A 1048903 N_B 1000000 T_AD 4.0166e-07 p 0.92815 q99 6.7843e-06 merged bins 18
+      Gamma_p 3 cos+: N_A 1048903 N_B 1000000 T_AD 1.1928e-06 p 0.51090 q99 6.7990e-06 merged bins 18
+      Gamma_p 3 D: N_A 1048903 N_B 1000000 T_AD 1.5657e-06 p 0.48215 q99 7.7166e-06 merged bins 150
+    Gamma_p 10: 1049686 pairs (reference 1000000 events), values outside the reference's edges 0, mean E- + E+ - eps0 = 11.192055 +- 0.009799
+    PASS Gamma_p 10: at least 1e6 events (1049686)
+      Gamma_p 10 E-: N_A 1049686 N_B 1000000 T_AD 1.4589e-06 p 0.51755 q99 7.3599e-06 merged bins 170
+      Gamma_p 10 E+: N_A 1049686 N_B 1000000 T_AD 1.8139e-06 p 0.39660 q99 7.6196e-06 merged bins 170
+      Gamma_p 10 cos-: N_A 1049686 N_B 1000000 T_AD 9.1359e-07 p 0.64435 q99 6.4692e-06 merged bins 48
+      Gamma_p 10 cos+: N_A 1049686 N_B 1000000 T_AD 1.5969e-06 p 0.35580 q99 6.6037e-06 merged bins 48
+      Gamma_p 10 D (log bins): N_A 1049686 N_B 1000000 T_AD 5.3334e-07 p 0.95520 q99 7.5470e-06 merged bins 160
+---- V5 poster test
+Traceback (most recent call last):
+  File "/Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/dev-bh-emission-validation/pgens/bh_validation/scripts/analyze_poster.py", line 69, in <module>
+    sys.exit(main())
+             ~~~~^^
+  File "/Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/dev-bh-emission-validation/pgens/bh_validation/scripts/analyze_poster.py", line 25, in main
+    text = open(os.path.join(args.run_dir, "input.toml")).read()
+           ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/p2-bh-emission-claude1-20261119/runs/final/v5/g300_single/input.toml'
+---- V6 energy
+PASS V6 fields off Gamma_p0=6 single: step 39999, pairs 65287581, emitters' loss 4.6226307139e+08, pairs' energy minus absorbed 4.6226307280e+08, relative difference +3.061e-09 (limit 1e-05)
+PASS V6 fields off Gamma_p0=3 single: step 131999, pairs 28054126, emitters' loss 1.2889341019e+08, pairs' energy minus absorbed 1.2889341004e+08, relative difference -1.180e-09 (limit 1e-05)
+(diag) V6 magnetic field single: step 1999, pairs 9055800, emitters' loss 7.4026740042e+07, pairs' energy minus absorbed 7.4127675077e+07, relative difference +1.362e-03; theta = 0.05: theta^2/2 = 1.2500e-03, measured/predicted = 1.0893
+(diag) V6 magnetic field single: step 1999, pairs 8698706, emitters' loss 6.9044663294e+07, pairs' energy minus absorbed 7.0563512834e+07, relative difference +2.152e-02; theta = 0.2: theta^2/2 = 2.0000e-02, measured/predicted = 1.0762
+---- V7 time step
+== V7: V2 at the smallest step, single: N = 100000, K0 = 9180.75, dt = 0.00883883517, tau = 3.5994394, a = 1, p(Gamma_p0) = 0.01241, records = 2000, steps = 160000, <K>/K0 at the end = 0.49752, pairs = 65125361 (651.2536 per emitter)
+   counters at the end: above 0, probability exceeded 0, bounded 0, dropped 0
+   PASS V2 at <K>/K0 = 0.90 (t = 91.2168, <K> = 8257.142047): <K> - K_corr = -0.0005947 = -0.002 s.e. (s.e. = 0.2751, limit 4); plain ODE -0.208 s.e.; Jensen term -0.052 of 4 s.e.; sigma_K/K = 0.01053
+   PASS V2 at <K>/K0 = 0.70 (t = 405.879, <K> = 6425.784281): <K> - K_corr = +0.1033 = +0.336 s.e. (s.e. = 0.3073, limit 4); plain ODE -1.578 s.e.; Jensen term -0.479 of 4 s.e.; sigma_K/K = 0.01512
+   PASS V2 at <K>/K0 = 0.50 (t = 1389.46, <K> = 4589.850391): <K> - K_corr = +0.002733 = +0.013 s.e. (s.e. = 0.2062, limit 4); plain ODE -5.712 s.e.; Jensen term -1.431 of 4 s.e.; sigma_K/K = 0.01421
+   V7: V2 at the smallest step, single: ALL PASS
+Traceback (most recent call last):
+  File "/Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/dev-bh-emission-validation/pgens/bh_validation/scripts/analyze_timestep.py", line 64, in <module>
+    sys.exit(main())
+             ~~~~^^
+  File "/Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/dev-bh-emission-validation/pgens/bh_validation/scripts/analyze_timestep.py", line 28, in main
+    S = [Series(r) for r in args.runs]
+         ~~~~~~^^^
+  File "/Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/dev-bh-emission-validation/pgens/bh_validation/scripts/bhv.py", line 34, in __init__
+    self.K0 = rows[0].get("K_ref", inp["mu_r"] * (inp["gamma_p"] - 1.0))
+              ~~~~^^^
+IndexError: list index out of range
+---- V8 consistency with the event stage of dev/hadronic 72427ff6
+fork: N = 100000, 39000 launches, 64732754 pairs; policy: N = 100000, 40000 steps, records every 25 steps
+PASS V8 <K> after 2550 steps (fork target 0.90): policy 8261.0245, fork 8260.41, difference +1.58 combined s.e. (limit 4)
+PASS V8 <K> after 11400 steps (fork target 0.70): policy 6424.8768, fork 6424.42, difference +1.05 combined s.e. (limit 4)
+PASS V8 <K> after 39000 steps (fork target 0.50): policy 4589.9892, fork 4590.14, difference -0.52 combined s.e. (limit 4)
+PASS V8 Var K after 475 steps (sigma_K/K = 0.005): policy 2045.53 + one-draw term 74.034 = 2119.56, fork 2104.88, difference +1.12 combined s.e. (limit 4); without the term -4.52
+PASS V8 Var K after 2200 steps (sigma_K/K = 0.01): policy 6787.02 + one-draw term 229.61 = 7016.63, fork 7016.06, difference +0.01 combined s.e. (limit 4); without the term -5.25
+PASS V8 Var K after 39000 steps (last record in the domain (sigma_K/K <= 0.02, curvature <= 0.6 %)): policy 4237.5 + one-draw term 40.883 = 4278.39, fork 4244.25, difference +1.27 combined s.e. (limit 4); without the term -0.25
+PASS V8 pairs per emitter after 39000 steps: policy 647.3786, fork 647.3275, difference +0.45 combined s.e. (limit 4)
+---- V9 species order
+PASS V9 cooling (ions first vs leptons first) at <K>/K0 = 0.90 (t = 90.1561): <K> 8261.0245 vs 8261.0622 (-0.10 s.e.); Var K 7393.2 vs 7399.4 (-0.13 s.e.); pairs per emitter 112.8987 vs 112.8929 (+0.12 s.e.); limit 4
+PASS V9 cooling (ions first vs leptons first) at <K>/K0 = 0.70 (t = 403.051): <K> 6424.8768 vs 6424.8143 (+0.14 s.e.); Var K 9314.3 vs 9310 (+0.07 s.e.); pairs per emitter 359.6863 vs 359.6954 (-0.11 s.e.); limit 4
+PASS V9 cooling (ions first vs leptons first) at <K>/K0 = 0.50 (t = 1378.86): <K> 4589.9892 vs 4589.9831 (+0.02 s.e.); Var K 4237.5 vs 4200 (+1.41 s.e.); pairs per emitter 647.3786 vs 647.3821 (-0.03 s.e.); limit 4
+PASS V9 spectra at Gamma_p = 3: pairs 1048903 vs 1048903 (+0.00); <E-> 2.81952 vs 2.81952 (+0.00); <E+> 2.819 vs 2.819 (+0.00); <cos-> 0.959449 vs 0.959449 (+0.00); <cos+> 0.959398 vs 0.959398 (+0.00); <D> 5.13853 vs 5.13853 (+0.00) [differences in combined s.e., limit 4]
+PASS V9 spectra at Gamma_p = 10: pairs 1049686 vs 1049686 (+0.00); <E-> 5.84931 vs 5.84931 (+0.00); <E+> 5.84275 vs 5.84275 (+0.00); <cos-> 0.933788 vs 0.933788 (+0.00); <cos+> 0.933707 vs 0.933707 (+0.00); <D> 11.1921 vs 11.1921 (+0.00) [differences in combined s.e., limit 4]
+---- V12 MPI
+PASS V12 1 rank vs 2 ranks at <K>/K0 = 0.90 (t = 90.1561): <K> 8261.0730 vs 8260.6888 (+0.99 s.e.); Var K 7472.6 vs 7439.5 (+0.70 s.e.); pairs per emitter 112.8925 vs 112.9120 (-0.41 s.e.); limit 4
+PASS V12 1 rank vs 2 ranks at <K>/K0 = 0.70 (t = 403.051): <K> 6424.8499 vs 6425.1418 (-0.68 s.e.); Var K 9317.2 vs 9360.7 (-0.74 s.e.); pairs per emitter 359.6893 vs 359.6496 (+0.47 s.e.); limit 4
+PASS V12 1 rank vs 2 ranks at <K>/K0 = 0.50 (t = 1378.86): <K> 4590.0086 vs 4589.9308 (+0.27 s.e.); Var K 4190.2 vs 4208.3 (-0.68 s.e.); pairs per emitter 647.3793 vs 647.3764 (+0.03 s.e.); limit 4
+PASS V12 1 rank vs 4 ranks at <K>/K0 = 0.90 (t = 90.1561): <K> 8261.0730 vs 8260.3907 (+1.76 s.e.); Var K 7472.6 vs 7491.3 (-0.39 s.e.); pairs per emitter 112.8925 vs 112.9610 (-1.44 s.e.); limit 4
+PASS V12 1 rank vs 4 ranks at <K>/K0 = 0.70 (t = 403.051): <K> 6424.8499 vs 6424.8887 (-0.09 s.e.); Var K 9317.2 vs 9326.9 (-0.17 s.e.); pairs per emitter 359.6893 vs 359.7033 (-0.16 s.e.); limit 4
+PASS V12 1 rank vs 4 ranks at <K>/K0 = 0.50 (t = 1378.86): <K> 4590.0086 vs 4589.9011 (+0.37 s.e.); Var K 4190.2 vs 4203.3 (-0.49 s.e.); pairs per emitter 647.3793 vs 647.4088 (-0.26 s.e.); limit 4
+PASS V6 1 ranks single: step 39999, pairs 65287914, emitters' loss 4.6226198216e+08, pairs' energy minus absorbed 4.6226198320e+08, relative difference +2.251e-09 (limit 1e-05)
+== V12: V2 on 1 ranks, single: N = 100000, K0 = 9180.75, dt = 0.0353553407, tau = 3.62657918, a = 1, p(Gamma_p0) = 0.05000, records = 1600, steps = 40000, <K>/K0 at the end = 0.49649, pairs = 65287914 (652.8791 per emitter)
+   PASS V2 at <K>/K0 = 0.90 (t = 90.1561, <K> = 8261.072965): <K> - K_corr = +0.6232 = +2.280 s.e. (s.e. = 0.2734, limit 4); plain ODE +2.009 s.e.; Jensen term -0.068 of 4 s.e.; sigma_K/K = 0.01046
+   PASS V2 at <K>/K0 = 0.70 (t = 403.051, <K> = 6424.849949): <K> - K_corr = -0.02258 = -0.074 s.e. (s.e. = 0.3052, limit 4); plain ODE -2.003 s.e.; Jensen term -0.482 of 4 s.e.; sigma_K/K = 0.01502
+   PASS V2 at <K>/K0 = 0.50 (t = 1378.86, <K> = 4590.008577): <K> - K_corr = -0.04339 = -0.212 s.e. (s.e. = 0.2047, limit 4); plain ODE -5.917 s.e.; Jensen term -1.426 of 4 s.e.; sigma_K/K = 0.0141
+   V12: V2 on 1 ranks, single: ALL PASS
+PASS V6 2 ranks single: step 39999, pairs 65286244, emitters' loss 4.6226066499e+08, pairs' energy minus absorbed 4.6226066446e+08, relative difference -1.131e-09 (limit 1e-05)
+== V12: V2 on 2 ranks, single: N = 100000, K0 = 9180.75, dt = 0.0353553407, tau = 3.62657918, a = 1, p(Gamma_p0) = 0.05000, records = 1600, steps = 40000, <K>/K0 at the end = 0.49649, pairs = 65286244 (652.8624 per emitter)
+   PASS V2 at <K>/K0 = 0.90 (t = 90.1561, <K> = 8260.688775): <K> - K_corr = +0.239 = +0.876 s.e. (s.e. = 0.2728, limit 4); plain ODE +0.604 s.e.; Jensen term -0.068 of 4 s.e.; sigma_K/K = 0.01044
+   PASS V2 at <K>/K0 = 0.70 (t = 403.051, <K> = 6425.141775): <K> - K_corr = +0.2724 = +0.890 s.e. (s.e. = 0.306, limit 4); plain ODE -1.044 s.e.; Jensen term -0.484 of 4 s.e.; sigma_K/K = 0.01506
+   PASS V2 at <K>/K0 = 0.50 (t = 1378.86, <K> = 4589.930808): <K> - K_corr = -0.1182 = -0.576 s.e. (s.e. = 0.2051, limit 4); plain ODE -6.283 s.e.; Jensen term -1.427 of 4 s.e.; sigma_K/K = 0.01413
+   V12: V2 on 2 ranks, single: ALL PASS
+PASS V6 4 ranks single: step 39999, pairs 65289617, emitters' loss 4.6226549761e+08, pairs' energy minus absorbed 4.6226549754e+08, relative difference -1.499e-10 (limit 1e-05)
+== V12: V2 on 4 ranks, single: N = 100000, K0 = 9180.75, dt = 0.0353553407, tau = 3.62657918, a = 1, p(Gamma_p0) = 0.05000, records = 1600, steps = 40000, <K>/K0 at the end = 0.49648, pairs = 65289617 (652.8962 per emitter)
+   PASS V2 at <K>/K0 = 0.90 (t = 90.1561, <K> = 8260.390670): <K> - K_corr = -0.0588 = -0.215 s.e. (s.e. = 0.2737, limit 4); plain ODE -0.487 s.e.; Jensen term -0.068 of 4 s.e.; sigma_K/K = 0.01048
+   PASS V2 at <K>/K0 = 0.70 (t = 403.051, <K> = 6424.888718): <K> - K_corr = +0.01875 = +0.061 s.e. (s.e. = 0.3054, limit 4); plain ODE -1.875 s.e.; Jensen term -0.484 of 4 s.e.; sigma_K/K = 0.01503
+   PASS V2 at <K>/K0 = 0.50 (t = 1378.86, <K> = 4589.901073): <K> - K_corr = -0.149 = -0.727 s.e. (s.e. = 0.205, limit 4); plain ODE -6.432 s.e.; Jensen term -1.426 of 4 s.e.; sigma_K/K = 0.01413
+   V12: V2 on 4 ranks, single: ALL PASS
+---- V13 pair weight
+== V13 pair_weight=2 single: N = 100000, K0 = 9180.75, dt = 0.0353553407, tau = 7.25315835, a = 2, p(Gamma_p0) = 0.05000, records = 1600, steps = 40000, <K>/K0 at the end = 0.41606, pairs = 39323113 (393.2311 per emitter)
+   counters at the end: above 0, probability exceeded 0, bounded 0, dropped 0
+   PASS V2 at <K>/K0 = 0.90 (t = 45.0781, <K> = 8260.272394): <K> - K_corr = -0.1022 = -0.264 s.e. (s.e. = 0.3876, limit 4); plain ODE -0.649 s.e.; Jensen term -0.096 of 4 s.e.; sigma_K/K = 0.01484
+   PASS V2 at <K>/K0 = 0.70 (t = 201.525, <K> = 6424.873394): <K> - K_corr = +0.5983 = +1.385 s.e. (s.e. = 0.4319, limit 4); plain ODE -1.361 s.e.; Jensen term -0.687 of 4 s.e.; sigma_K/K = 0.02126
+   PASS V2 at <K>/K0 = 0.50 (t = 689.429, <K> = 4588.961922): <K> - K_corr = +0.08805 = +0.303 s.e. (s.e. = 0.2905, limit 4); plain ODE -7.772 s.e.; Jensen term -2.019 of 4 s.e.; sigma_K/K = 0.02002
+   PASS V3 at sigma_K/K = 0.005 (t = 4.41942, Delta K/K = 0.0112): Var_meas = 2268.98, Var_pred = 2245.77, |ratio - 1| = 0.01034 (limit 0.01789); curvature budget 0.007 %; with the Poisson source instead: |ratio - 1| = 0.02538
+   PASS V3 at sigma_K/K = 0.01 (t = 17.6777, Delta K/K = 0.0429): Var_meas = 7848.74, Var_pred = 7756.68, |ratio - 1| = 0.01187 (limit 0.01789); curvature budget 0.018 %; with the Poisson source instead: |ratio - 1| = 0.02278
+   PASS V3 at last record in the domain (sigma_K/K <= 0.02, curvature <= 0.6 %) (t = 1414.21, Delta K/K = 0.5840): Var_meas = 4518.89, Var_pred = 4527.34, |ratio - 1| = 0.001868 (limit 0.01789); curvature budget 0.490 %; with the Poisson source instead: |ratio - 1| = 0.006153
+   V13 pair_weight=2 single: ALL PASS
+== V13 pair_weight=4 single: N = 100000, K0 = 9180.75, dt = 0.0353553407, tau = 14.5063167, a = 4, p(Gamma_p0) = 0.05000, records = 1600, steps = 40000, <K>/K0 at the end = 0.36050, pairs = 22169244 (221.6924 per emitter)
+   counters at the end: above 0, probability exceeded 0, bounded 0, dropped 0
+   PASS V2 at <K>/K0 = 0.90 (t = 22.981, <K> = 8245.434854): <K> - K_corr = +0.7125 = +1.297 s.e. (s.e. = 0.5492, limit 4); plain ODE +0.738 s.e.; Jensen term -0.140 of 4 s.e.; sigma_K/K = 0.02106
+   PASS V2 at <K>/K0 = 0.70 (t = 100.763, <K> = 6423.708984): <K> - K_corr = +0.6238 = +1.016 s.e. (s.e. = 0.6142, limit 4); plain ODE -2.853 s.e.; Jensen term -0.967 of 4 s.e.; sigma_K/K = 0.03024
+   PASS V2 at <K>/K0 = 0.50 (t = 343.831, <K> = 4589.766271): <K> - K_corr = +0.01951 = +0.047 s.e. (s.e. = 0.4119, limit 4); plain ODE -11.404 s.e.; Jensen term -2.863 of 4 s.e.; sigma_K/K = 0.02838
+   PASS V3 at sigma_K/K = 0.005 (t = 1.76777, Delta K/K = 0.0090): Var_meas = 3618.77, Var_pred = 3629.4, |ratio - 1| = 0.002931 (limit 0.01789); curvature budget 0.012 %; with the Poisson source instead: |ratio - 1| = 0.03826
+   PASS V3 at sigma_K/K = 0.01 (t = 4.41942, Delta K/K = 0.0221): Var_meas = 8575.73, Var_pred = 8547.95, |ratio - 1| = 0.003249 (limit 0.01789); curvature budget 0.024 %; with the Poisson source instead: |ratio - 1| = 0.03184
+   PASS V3 at last record in the domain (sigma_K/K <= 0.02, curvature <= 0.6 %) (t = 19.4454, Delta K/K = 0.0882): Var_meas = 27434.7, Var_pred = 27278.2, |ratio - 1| = 0.005737 (limit 0.01789); curvature budget 0.105 %; with the Poisson source instead: |ratio - 1| = 0.02702
+   V13 pair_weight=4 single: ALL PASS
+######## double
+---- V2 mean cooling, V3 straggling
+== V2/V3 Gamma_p0=6 double: N = 100000, K0 = 9180.75, dt = 0.0353553391, tau = 3.62657918, a = 1, p(Gamma_p0) = 0.05000, records = 1600, steps = 40000, <K>/K0 at the end = 0.49649, pairs = 65287784 (652.8778 per emitter)
+   counters at the end: above 0, probability exceeded 0, bounded 0, dropped 0
+   PASS V2 at <K>/K0 = 0.90 (t = 90.1561, <K> = 8261.066711): <K> - K_corr = +0.6169 = +2.256 s.e. (s.e. = 0.2734, limit 4); plain ODE +1.985 s.e.; Jensen term -0.068 of 4 s.e.; sigma_K/K = 0.01047
+   PASS V2 at <K>/K0 = 0.70 (t = 403.051, <K> = 6424.876965): <K> - K_corr = +0.008104 = +0.026 s.e. (s.e. = 0.306, limit 4); plain ODE -1.910 s.e.; Jensen term -0.484 of 4 s.e.; sigma_K/K = 0.01506
+   PASS V2 at <K>/K0 = 0.50 (t = 1378.86, <K> = 4590.007607): <K> - K_corr = -0.04595 = -0.225 s.e. (s.e. = 0.2046, limit 4); plain ODE -5.925 s.e.; Jensen term -1.425 of 4 s.e.; sigma_K/K = 0.0141
+   PASS V3 at sigma_K/K = 0.005 (t = 16.7938, Delta K/K = 0.0210): Var_meas = 2031.16, Var_pred = 2040.18, |ratio - 1| = 0.004422 (limit 0.01789); curvature budget 0.006 %; with the Poisson source instead: |ratio - 1| = 0.03928
+   PASS V3 at sigma_K/K = 0.01 (t = 80.4334, Delta K/K = 0.0908): Var_meas = 6992.82, Var_pred = 6957.26, |ratio - 1| = 0.005112 (limit 0.01789); curvature budget 0.027 %; with the Poisson source instead: |ratio - 1| = 0.02752
+   PASS V3 at last record in the domain (sigma_K/K <= 0.02, curvature <= 0.6 %) (t = 1414.21, Delta K/K = 0.5035): Var_meas = 4100.39, Var_pred = 4113.43, |ratio - 1| = 0.00317 (limit 0.01789); curvature budget 0.190 %; with the Poisson source instead: |ratio - 1| = 0.01254
+   V2/V3 Gamma_p0=6 double: ALL PASS
+== V2/V3 Gamma_p0=3 double: N = 100000, K0 = 3672.3, dt = 0.0353553391, tau = 111.189927, a = 1, p(Gamma_p0) = 0.05000, records = 5280, steps = 132000, <K>/K0 at the end = 0.64901, pairs = 28054076 (280.5408 per emitter)
+   counters at the end: above 0, probability exceeded 0, bounded 0, dropped 0
+   PASS V2 at <K>/K0 = 0.90 (t = 77.7817, <K> = 3302.870479): <K> - K_corr = +0.006522 = +0.069 s.e. (s.e. = 0.09459, limit 4); plain ODE -3.036 s.e.; Jensen term -0.776 of 4 s.e.; sigma_K/K = 0.009057
+   PASS V2 at <K>/K0 = 0.70 (t = 1345.27, <K> = 2570.561942): <K> - K_corr = +0.04153 = +0.687 s.e. (s.e. = 0.06045, limit 4); plain ODE -14.365 s.e.; Jensen term -3.763 of 4 s.e.; sigma_K/K = 0.007436
+   PASS V2 at <K>/K0 = 0.65 (t = 4525.48, <K> = 2386.993285): <K> - K_corr = +0.02362 = +0.515 s.e. (s.e. = 0.04587, limit 4); plain ODE -19.056 s.e.; Jensen term -4.893 of 4 s.e.; sigma_K/K = 0.006076
+   PASS V3 at sigma_K/K = 0.005 (t = 10.6066, Delta K/K = 0.0195): Var_meas = 333.771, Var_pred = 332.306, |ratio - 1| = 0.004408 (limit 0.01789); curvature budget 0.028 %; with the Poisson source instead: |ratio - 1| = 0.03859
+   V3 point (sigma_K/K = 0.01) not in the run
+   PASS V3 at last record in the domain (sigma_K/K <= 0.02, curvature <= 0.6 %) (t = 1143.75, Delta K/K = 0.2915): Var_meas = 392.142, Var_pred = 390.457, |ratio - 1| = 0.004317 (limit 0.01789); curvature budget 0.600 %; with the Poisson source instead: |ratio - 1| = 0.001199
+   (diag) V3 at deepest record with sigma_K/K <= 0.02 [outside the domain] (t = 4666.9, Delta K/K = 0.3510) outside the registered domain (curvature 0.977 %): |ratio - 1| = 0.01519, curvature-corrected 0.005362 (limit 0.01789); no verdict
+   V2/V3 Gamma_p0=3 double: 1 FAIL
+---- V4 pair spectra
+[ions_first] PASS V4 family of 10 comparisons, Holm at 0.01: smallest adjusted p = 0.50750 (history) rule of test E4: 10 of 10 comparisons with p >= 0.01 (>= 95 % required) 
+    Gamma_p 3: 1048903 pairs (reference 1000000 events), values outside the reference's edges 0, mean E- + E+ - eps0 = 5.138525 +- 0.001534
+    PASS Gamma_p 3: at least 1e6 events (1048903)
+      Gamma_p 3 E-: N_A 1048903 N_B 1000000 T_AD 8.4919e-07 p 0.80935 q99 7.4666e-06 merged bins 169
+      Gamma_p 3 E+: N_A 1048903 N_B 1000000 T_AD 4.8816e-06 p 0.05075 q99 7.5147e-06 merged bins 168
+      Gamma_p 3 cos-: N_A 1048903 N_B 1000000 T_AD 4.0286e-07 p 0.92775 q99 6.7843e-06 merged bins 18
+      Gamma_p 3 cos+: N_A 1048903 N_B 1000000 T_AD 1.1926e-06 p 0.51095 q99 6.7990e-06 merged bins 18
+      Gamma_p 3 D: N_A 1048903 N_B 1000000 T_AD 1.5645e-06 p 0.48240 q99 7.7166e-06 merged bins 150
+    Gamma_p 10: 1049686 pairs (reference 1000000 events), values outside the reference's edges 0, mean E- + E+ - eps0 = 11.192055 +- 0.009799
+    PASS Gamma_p 10: at least 1e6 events (1049686)
+      Gamma_p 10 E-: N_A 1049686 N_B 1000000 T_AD 1.4589e-06 p 0.51755 q99 7.3599e-06 merged bins 170
+      Gamma_p 10 E+: N_A 1049686 N_B 1000000 T_AD 1.8139e-06 p 0.39660 q99 7.6196e-06 merged bins 170
+      Gamma_p 10 cos-: N_A 1049686 N_B 1000000 T_AD 9.1359e-07 p 0.64435 q99 6.4689e-06 merged bins 48
+      Gamma_p 10 cos+: N_A 1049686 N_B 1000000 T_AD 1.5969e-06 p 0.35580 q99 6.6037e-06 merged bins 48
+      Gamma_p 10 D (log bins): N_A 1049686 N_B 1000000 T_AD 5.3335e-07 p 0.95520 q99 7.5470e-06 merged bins 160
+[leptons_first] PASS V4 family of 10 comparisons, Holm at 0.01: smallest adjusted p = 0.50750 (history) rule of test E4: 10 of 10 comparisons with p >= 0.01 (>= 95 % required) 
+    Gamma_p 3: 1048903 pairs (reference 1000000 events), values outside the reference's edges 0, mean E- + E+ - eps0 = 5.138525 +- 0.001534
+    PASS Gamma_p 3: at least 1e6 events (1048903)
+      Gamma_p 3 E-: N_A 1048903 N_B 1000000 T_AD 8.4919e-07 p 0.80935 q99 7.4666e-06 merged bins 169
+      Gamma_p 3 E+: N_A 1048903 N_B 1000000 T_AD 4.8816e-06 p 0.05075 q99 7.5147e-06 merged bins 168
+      Gamma_p 3 cos-: N_A 1048903 N_B 1000000 T_AD 4.0286e-07 p 0.92775 q99 6.7843e-06 merged bins 18
+      Gamma_p 3 cos+: N_A 1048903 N_B 1000000 T_AD 1.1926e-06 p 0.51095 q99 6.7990e-06 merged bins 18
+      Gamma_p 3 D: N_A 1048903 N_B 1000000 T_AD 1.5645e-06 p 0.48240 q99 7.7166e-06 merged bins 150
+    Gamma_p 10: 1049686 pairs (reference 1000000 events), values outside the reference's edges 0, mean E- + E+ - eps0 = 11.192055 +- 0.009799
+    PASS Gamma_p 10: at least 1e6 events (1049686)
+      Gamma_p 10 E-: N_A 1049686 N_B 1000000 T_AD 1.4589e-06 p 0.51755 q99 7.3599e-06 merged bins 170
+      Gamma_p 10 E+: N_A 1049686 N_B 1000000 T_AD 1.8139e-06 p 0.39660 q99 7.6196e-06 merged bins 170
+      Gamma_p 10 cos-: N_A 1049686 N_B 1000000 T_AD 9.1359e-07 p 0.64435 q99 6.4689e-06 merged bins 48
+      Gamma_p 10 cos+: N_A 1049686 N_B 1000000 T_AD 1.5969e-06 p 0.35580 q99 6.6037e-06 merged bins 48
+      Gamma_p 10 D (log bins): N_A 1049686 N_B 1000000 T_AD 5.3335e-07 p 0.95520 q99 7.5470e-06 merged bins 160
+---- V5 poster test
+PASS V5 Gamma_p0=300 double: 1996 records to t/t_cool0 = 0.7899 (<K>/K0 = 0.49181, published 0.49155); maximum residual to the published-formula trajectory 0.0658 % at t/t_cool0 = 0.4436 (limit 0.1 %); to the Born-table trajectory of the same file 0.0393 %; pairs per emitter 1707.27; bounded 0, above 0, dropped 0
+---- V6 energy
+PASS V6 fields off Gamma_p0=6 double: step 39999, pairs 65287784, emitters' loss 4.6225942647e+08, pairs' energy minus absorbed 4.6225942647e+08, relative difference +7.865e-15 (limit 1e-10)
+PASS V6 fields off Gamma_p0=3 double: step 131999, pairs 28054076, emitters' loss 1.2889524214e+08, pairs' energy minus absorbed 1.2889524214e+08, relative difference -1.734e-14 (limit 1e-10)
+(diag) V6 magnetic field double: step 1999, pairs 9056159, emitters' loss 7.4029251916e+07, pairs' energy minus absorbed 7.4130114788e+07, relative difference +1.361e-03; theta = 0.05: theta^2/2 = 1.2500e-03, measured/predicted = 1.0885
+(diag) V6 magnetic field double: step 1999, pairs 8698871, emitters' loss 6.9046494131e+07, pairs' energy minus absorbed 7.0565431510e+07, relative difference +2.153e-02; theta = 0.2: theta^2/2 = 2.0000e-02, measured/predicted = 1.0763
+---- V7 time step
+== V7: V2 at the smallest step, double: N = 100000, K0 = 9180.75, dt = 0.00883883476, tau = 3.5994394, a = 1, p(Gamma_p0) = 0.01241, records = 2000, steps = 160000, <K>/K0 at the end = 0.49752, pairs = 65126265 (651.2627 per emitter)
+   counters at the end: above 0, probability exceeded 0, bounded 0, dropped 0
+   PASS V2 at <K>/K0 = 0.90 (t = 91.2168, <K> = 8257.144234): <K> - K_corr = +0.002638 = +0.010 s.e. (s.e. = 0.277, limit 4); plain ODE -0.199 s.e.; Jensen term -0.052 of 4 s.e.; sigma_K/K = 0.01061
+   PASS V2 at <K>/K0 = 0.70 (t = 405.879, <K> = 6425.769502): <K> - K_corr = +0.09402 = +0.305 s.e. (s.e. = 0.3082, limit 4); plain ODE -1.621 s.e.; Jensen term -0.482 of 4 s.e.; sigma_K/K = 0.01517
+   PASS V2 at <K>/K0 = 0.50 (t = 1389.46, <K> = 4589.885319): <K> - K_corr = +0.03942 = +0.192 s.e. (s.e. = 0.2057, limit 4); plain ODE -5.558 s.e.; Jensen term -1.437 of 4 s.e.; sigma_K/K = 0.01417
+   V7: V2 at the smallest step, double: ALL PASS
+Traceback (most recent call last):
+  File "/Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/dev-bh-emission-validation/pgens/bh_validation/scripts/analyze_timestep.py", line 64, in <module>
+    sys.exit(main())
+             ~~~~^^
+  File "/Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/dev-bh-emission-validation/pgens/bh_validation/scripts/analyze_timestep.py", line 28, in main
+    S = [Series(r) for r in args.runs]
+         ~~~~~~^^^
+  File "/Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/dev-bh-emission-validation/pgens/bh_validation/scripts/bhv.py", line 34, in __init__
+    self.K0 = rows[0].get("K_ref", inp["mu_r"] * (inp["gamma_p"] - 1.0))
+              ~~~~^^^
+IndexError: list index out of range
+---- V8 consistency with the event stage of dev/hadronic 72427ff6
+fork: N = 100000, 39000 launches, 64733043 pairs; policy: N = 100000, 40000 steps, records every 25 steps
+PASS V8 <K> after 2550 steps (fork target 0.90): policy 8261.0667, fork 8260.4, difference +1.72 combined s.e. (limit 4)
+PASS V8 <K> after 11400 steps (fork target 0.70): policy 6424.8770, fork 6424.49, difference +0.89 combined s.e. (limit 4)
+PASS V8 <K> after 39000 steps (fork target 0.50): policy 4590.0076, fork 4590.19, difference -0.63 combined s.e. (limit 4)
+PASS V8 Var K after 475 steps (sigma_K/K = 0.005): policy 2031.16 + one-draw term 74.034 = 2105.19, fork 2104.88, difference +0.02 combined s.e. (limit 4); without the term -5.64
+PASS V8 Var K after 2225 steps (sigma_K/K = 0.01): policy 6878.86 + one-draw term 230.93 = 7109.79, fork 7052.57, difference +1.30 combined s.e. (limit 4); without the term -3.94
+PASS V8 Var K after 39000 steps (last record in the domain (sigma_K/K <= 0.02, curvature <= 0.6 %)): policy 4186.02 + one-draw term 40.882 = 4226.9, fork 4225.75, difference +0.04 combined s.e. (limit 4); without the term -1.49
+PASS V8 pairs per emitter after 39000 steps: policy 647.3826, fork 647.3304, difference +0.46 combined s.e. (limit 4)
+---- V9 species order
+PASS V9 cooling (ions first vs leptons first) at <K>/K0 = 0.90 (t = 90.1561): <K> 8261.0667 vs 8261.0193 (+0.12 s.e.); Var K 7477.4 vs 7431 (+0.98 s.e.); pairs per emitter 112.8937 vs 112.8941 (-0.01 s.e.); limit 4
+PASS V9 cooling (ions first vs leptons first) at <K>/K0 = 0.70 (t = 403.051): <K> 6424.8770 vs 6424.8204 (+0.13 s.e.); Var K 9362.7 vs 9315.7 (+0.79 s.e.); pairs per emitter 359.6930 vs 359.6937 (-0.01 s.e.); limit 4
+PASS V9 cooling (ions first vs leptons first) at <K>/K0 = 0.50 (t = 1378.86): <K> 4590.0076 vs 4590.0111 (-0.01 s.e.); Var K 4186 vs 4212.6 (-1.00 s.e.); pairs per emitter 647.3826 vs 647.3791 (+0.03 s.e.); limit 4
+PASS V9 spectra at Gamma_p = 3: pairs 1048903 vs 1048903 (+0.00); <E-> 2.81952 vs 2.81952 (+0.00); <E+> 2.819 vs 2.819 (+0.00); <cos-> 0.959449 vs 0.959449 (+0.00); <cos+> 0.959398 vs 0.959398 (+0.00); <D> 5.13852 vs 5.13852 (+0.00) [differences in combined s.e., limit 4]
+PASS V9 spectra at Gamma_p = 10: pairs 1049686 vs 1049686 (+0.00); <E-> 5.84931 vs 5.84931 (+0.00); <E+> 5.84275 vs 5.84275 (+0.00); <cos-> 0.933788 vs 0.933788 (+0.00); <cos+> 0.933707 vs 0.933707 (+0.00); <D> 11.1921 vs 11.1921 (+0.00) [differences in combined s.e., limit 4]
+---- V12 MPI
+PASS V12 1 rank vs 2 ranks at <K>/K0 = 0.90 (t = 90.1561): <K> 8261.0392 vs 8260.6402 (+1.03 s.e.); Var K 7418.9 vs 7456.9 (-0.81 s.e.); pairs per emitter 112.8946 vs 112.9161 (-0.45 s.e.); limit 4
+PASS V12 1 rank vs 2 ranks at <K>/K0 = 0.70 (t = 403.051): <K> 6424.8318 vs 6425.0310 (-0.46 s.e.); Var K 9310.1 vs 9341 (-0.52 s.e.); pairs per emitter 359.6914 vs 359.6539 (+0.44 s.e.); limit 4
+PASS V12 1 rank vs 2 ranks at <K>/K0 = 0.50 (t = 1378.86): <K> 4589.9840 vs 4590.0089 (-0.09 s.e.); Var K 4206.9 vs 4212.6 (-0.22 s.e.); pairs per emitter 647.3755 vs 647.3599 (+0.14 s.e.); limit 4
+PASS V12 1 rank vs 4 ranks at <K>/K0 = 0.90 (t = 90.1561): <K> 8261.0392 vs 8260.4133 (+1.62 s.e.); Var K 7418.9 vs 7454.7 (-0.76 s.e.); pairs per emitter 112.8946 vs 112.9542 (-1.25 s.e.); limit 4
+PASS V12 1 rank vs 4 ranks at <K>/K0 = 0.70 (t = 403.051): <K> 6424.8318 vs 6424.9899 (-0.37 s.e.); Var K 9310.1 vs 9355.5 (-0.77 s.e.); pairs per emitter 359.6914 vs 359.6890 (+0.03 s.e.); limit 4
+PASS V12 1 rank vs 4 ranks at <K>/K0 = 0.50 (t = 1378.86): <K> 4589.9840 vs 4589.9396 (+0.15 s.e.); Var K 4206.9 vs 4194.6 (+0.46 s.e.); pairs per emitter 647.3755 vs 647.3975 (-0.19 s.e.); limit 4
+PASS V6 1 ranks double: step 39999, pairs 65287332, emitters' loss 4.6226443749e+08, pairs' energy minus absorbed 4.6226443749e+08, relative difference -8.381e-15 (limit 1e-10)
+== V12: V2 on 1 ranks, double: N = 100000, K0 = 9180.75, dt = 0.0353553391, tau = 3.62657918, a = 1, p(Gamma_p0) = 0.05000, records = 1600, steps = 40000, <K>/K0 at the end = 0.49649, pairs = 65287332 (652.8733 per emitter)
+   PASS V2 at <K>/K0 = 0.90 (t = 90.1561, <K> = 8261.039185): <K> - K_corr = +0.5896 = +2.165 s.e. (s.e. = 0.2724, limit 4); plain ODE +1.892 s.e.; Jensen term -0.068 of 4 s.e.; sigma_K/K = 0.01043
+   PASS V2 at <K>/K0 = 0.70 (t = 403.051, <K> = 6424.831785): <K> - K_corr = -0.03987 = -0.131 s.e. (s.e. = 0.3051, limit 4); plain ODE -2.063 s.e.; Jensen term -0.483 of 4 s.e.; sigma_K/K = 0.01502
+   PASS V2 at <K>/K0 = 0.50 (t = 1378.86, <K> = 4589.984029): <K> - K_corr = -0.0674 = -0.329 s.e. (s.e. = 0.2051, limit 4); plain ODE -6.025 s.e.; Jensen term -1.424 of 4 s.e.; sigma_K/K = 0.01413
+   V12: V2 on 1 ranks, double: ALL PASS
+PASS V6 2 ranks double: step 39999, pairs 65284673, emitters' loss 4.6225296474e+08, pairs' energy minus absorbed 4.6225296474e+08, relative difference +2.708e-15 (limit 1e-10)
+== V12: V2 on 2 ranks, double: N = 100000, K0 = 9180.75, dt = 0.0353553391, tau = 3.62657918, a = 1, p(Gamma_p0) = 0.05000, records = 1600, steps = 40000, <K>/K0 at the end = 0.49650, pairs = 65284673 (652.8467 per emitter)
+   PASS V2 at <K>/K0 = 0.90 (t = 90.1561, <K> = 8260.640208): <K> - K_corr = +0.1906 = +0.698 s.e. (s.e. = 0.2731, limit 4); plain ODE +0.426 s.e.; Jensen term -0.068 of 4 s.e.; sigma_K/K = 0.01045
+   PASS V2 at <K>/K0 = 0.70 (t = 403.051, <K> = 6425.030958): <K> - K_corr = +0.1594 = +0.521 s.e. (s.e. = 0.3056, limit 4); plain ODE -1.408 s.e.; Jensen term -0.482 of 4 s.e.; sigma_K/K = 0.01504
+   PASS V2 at <K>/K0 = 0.50 (t = 1378.86, <K> = 4590.008887): <K> - K_corr = -0.03882 = -0.189 s.e. (s.e. = 0.2052, limit 4); plain ODE -5.900 s.e.; Jensen term -1.428 of 4 s.e.; sigma_K/K = 0.01414
+   V12: V2 on 2 ranks, double: ALL PASS
+PASS V6 4 ranks double: step 39999, pairs 65287894, emitters' loss 4.6225793468e+08, pairs' energy minus absorbed 4.6225793468e+08, relative difference +3.481e-15 (limit 1e-10)
+== V12: V2 on 4 ranks, double: N = 100000, K0 = 9180.75, dt = 0.0353553391, tau = 3.62657918, a = 1, p(Gamma_p0) = 0.05000, records = 1600, steps = 40000, <K>/K0 at the end = 0.49649, pairs = 65287894 (652.8789 per emitter)
+   PASS V2 at <K>/K0 = 0.90 (t = 90.1561, <K> = 8260.413270): <K> - K_corr = -0.03636 = -0.133 s.e. (s.e. = 0.273, limit 4); plain ODE -0.405 s.e.; Jensen term -0.068 of 4 s.e.; sigma_K/K = 0.01045
+   PASS V2 at <K>/K0 = 0.70 (t = 403.051, <K> = 6424.989931): <K> - K_corr = +0.1199 = +0.392 s.e. (s.e. = 0.3059, limit 4); plain ODE -1.541 s.e.; Jensen term -0.483 of 4 s.e.; sigma_K/K = 0.01505
+   PASS V2 at <K>/K0 = 0.50 (t = 1378.86, <K> = 4589.939580): <K> - K_corr = -0.1091 = -0.533 s.e. (s.e. = 0.2048, limit 4); plain ODE -6.251 s.e.; Jensen term -1.430 of 4 s.e.; sigma_K/K = 0.01411
+   V12: V2 on 4 ranks, double: ALL PASS
+---- V13 pair weight
+== V13 pair_weight=2 double: N = 100000, K0 = 9180.75, dt = 0.0353553391, tau = 7.25315835, a = 2, p(Gamma_p0) = 0.05000, records = 1600, steps = 40000, <K>/K0 at the end = 0.41606, pairs = 39321504 (393.2150 per emitter)
+   counters at the end: above 0, probability exceeded 0, bounded 0, dropped 0
+   PASS V2 at <K>/K0 = 0.90 (t = 45.0781, <K> = 8260.199118): <K> - K_corr = -0.1769 = -0.460 s.e. (s.e. = 0.3844, limit 4); plain ODE -0.845 s.e.; Jensen term -0.096 of 4 s.e.; sigma_K/K = 0.01471
+   PASS V2 at <K>/K0 = 0.70 (t = 201.525, <K> = 6424.708888): <K> - K_corr = +0.4182 = +0.972 s.e. (s.e. = 0.4304, limit 4); plain ODE -1.748 s.e.; Jensen term -0.680 of 4 s.e.; sigma_K/K = 0.02119
+   PASS V2 at <K>/K0 = 0.50 (t = 689.429, <K> = 4588.970181): <K> - K_corr = +0.09149 = +0.315 s.e. (s.e. = 0.2904, limit 4); plain ODE -7.745 s.e.; Jensen term -2.015 of 4 s.e.; sigma_K/K = 0.02001
+   PASS V3 at sigma_K/K = 0.005 (t = 4.41942, Delta K/K = 0.0112): Var_meas = 2247.35, Var_pred = 2245.77, |ratio - 1| = 0.0007048 (limit 0.01789); curvature budget 0.007 %; with the Poisson source instead: |ratio - 1| = 0.03467
+   PASS V3 at sigma_K/K = 0.01 (t = 17.6777, Delta K/K = 0.0429): Var_meas = 7770.85, Var_pred = 7756.68, |ratio - 1| = 0.001827 (limit 0.01789); curvature budget 0.018 %; with the Poisson source instead: |ratio - 1| = 0.03247
+   PASS V3 at last record in the domain (sigma_K/K <= 0.02, curvature <= 0.6 %) (t = 1414.21, Delta K/K = 0.5840): Var_meas = 4513.39, Var_pred = 4527.36, |ratio - 1| = 0.003085 (limit 0.01789); curvature budget 0.489 %; with the Poisson source instead: |ratio - 1| = 0.007366
+   V13 pair_weight=2 double: ALL PASS
+== V13 pair_weight=4 double: N = 100000, K0 = 9180.75, dt = 0.0353553391, tau = 14.5063167, a = 4, p(Gamma_p0) = 0.05000, records = 1600, steps = 40000, <K>/K0 at the end = 0.36049, pairs = 22168264 (221.6826 per emitter)
+   counters at the end: above 0, probability exceeded 0, bounded 0, dropped 0
+   PASS V2 at <K>/K0 = 0.90 (t = 22.981, <K> = 8245.327501): <K> - K_corr = +0.6029 = +1.103 s.e. (s.e. = 0.5466, limit 4); plain ODE +0.545 s.e.; Jensen term -0.140 of 4 s.e.; sigma_K/K = 0.02096
+   PASS V2 at <K>/K0 = 0.70 (t = 100.763, <K> = 6423.679696): <K> - K_corr = +0.5729 = +0.939 s.e. (s.e. = 0.61, limit 4); plain ODE -2.921 s.e.; Jensen term -0.965 of 4 s.e.; sigma_K/K = 0.03003
+   PASS V2 at <K>/K0 = 0.50 (t = 343.831, <K> = 4589.822036): <K> - K_corr = +0.037 = +0.090 s.e. (s.e. = 0.4118, limit 4); plain ODE -11.273 s.e.; Jensen term -2.841 of 4 s.e.; sigma_K/K = 0.02837
+   PASS V3 at sigma_K/K = 0.005 (t = 1.76777, Delta K/K = 0.0090): Var_meas = 3618.77, Var_pred = 3629.4, |ratio - 1| = 0.00293 (limit 0.01789); curvature budget 0.012 %; with the Poisson source instead: |ratio - 1| = 0.03826
+   PASS V3 at sigma_K/K = 0.01 (t = 4.41942, Delta K/K = 0.0221): Var_meas = 8552.89, Var_pred = 8547.95, |ratio - 1| = 0.0005775 (limit 0.01789); curvature budget 0.024 %; with the Poisson source instead: |ratio - 1| = 0.03442
+   PASS V3 at last record in the domain (sigma_K/K <= 0.02, curvature <= 0.6 %) (t = 19.4454, Delta K/K = 0.0882): Var_meas = 27251.1, Var_pred = 27278.2, |ratio - 1| = 0.0009959 (limit 0.01789); curvature budget 0.104 %; with the Poisson source instead: |ratio - 1| = 0.03353
+   V13 pair_weight=4 double: ALL PASS

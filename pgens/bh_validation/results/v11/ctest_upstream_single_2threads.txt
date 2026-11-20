@@ -1,0 +1,123 @@
+Test project /Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/builds/bhem-upstream-single
+      Start  7: GLOBAL::param_container
+      Start 19: METRICS::sr-cart-sph
+ 1/55 Test  #7: GLOBAL::param_container ...........***Failed    0.02 sec
+      Start 43: ARCHETYPES::qed_compton
+ 2/55 Test #19: METRICS::sr-cart-sph ..............***Failed    0.02 sec
+      Start 24: KERNELS::deposit_pole
+ 3/55 Test #24: KERNELS::deposit_pole .............   Passed    0.57 sec
+      Start 32: KERNELS::pusher
+ 4/55 Test #32: KERNELS::pusher ...................   Passed    0.09 sec
+      Start 35: KERNELS::reduced_particle_stats
+ 5/55 Test #35: KERNELS::reduced_particle_stats ...   Passed    0.02 sec
+      Start 34: KERNELS::reduced_stats
+ 6/55 Test #34: KERNELS::reduced_stats ............   Passed    0.02 sec
+      Start 52: FRAMEWORK::spectra
+ 7/55 Test #52: FRAMEWORK::spectra ................   Passed    0.02 sec
+      Start 37: KERNELS::custom_prtl_update
+ 8/55 Test #37: KERNELS::custom_prtl_update .......   Passed    0.02 sec
+      Start 51: FRAMEWORK::checkpoint-data
+ 9/55 Test #51: FRAMEWORK::checkpoint-data ........   Passed    0.02 sec
+      Start 23: KERNELS::deposit
+10/55 Test #23: KERNELS::deposit ..................***Failed    0.02 sec
+      Start 50: FRAMEWORK::checkpoint-extents
+11/55 Test #50: FRAMEWORK::checkpoint-extents .....   Passed    0.02 sec
+      Start 33: KERNELS::ext_force
+12/55 Test #33: KERNELS::ext_force ................   Passed    0.02 sec
+      Start 46: FRAMEWORK::particles_sort
+13/55 Test #46: FRAMEWORK::particles_sort .........   Passed    0.02 sec
+      Start 44: FRAMEWORK::parameters
+14/55 Test #44: FRAMEWORK::parameters .............   Passed    0.03 sec
+      Start 38: ARCHETYPES::energy_dist
+15/55 Test #38: ARCHETYPES::energy_dist ...........   Passed    0.01 sec
+      Start 29: KERNELS::gca_pusher
+16/55 Test #43: ARCHETYPES::qed_compton ...........   Passed    0.96 sec
+      Start 25: KERNELS::digital_filter
+17/55 Test #25: KERNELS::digital_filter ...........   Passed    0.01 sec
+      Start 26: KERNELS::particle_moments
+18/55 Test #26: KERNELS::particle_moments .........   Passed    0.01 sec
+      Start 36: KERNELS::custom_emission
+19/55 Test #29: KERNELS::gca_pusher ...............   Passed    0.10 sec
+      Start 53: OUTPUT::stats
+20/55 Test #36: KERNELS::custom_emission ..........   Passed    0.02 sec
+      Start 22: KERNELS::ampere_mink
+21/55 Test #53: OUTPUT::stats .....................   Passed    0.01 sec
+      Start 21: KERNELS::faraday_mink
+22/55 Test #22: KERNELS::ampere_mink ..............   Passed    0.02 sec
+      Start 20: METRICS::ks-qks-4d
+23/55 Test #21: KERNELS::faraday_mink .............   Passed    0.02 sec
+      Start 31: KERNELS::flds_bc
+24/55 Test #31: KERNELS::flds_bc ..................   Passed    0.01 sec
+      Start 45: FRAMEWORK::particles
+25/55 Test #20: METRICS::ks-qks-4d ................   Passed    0.02 sec
+      Start 17: METRICS::sph-qsph
+26/55 Test #45: FRAMEWORK::particles ..............   Passed    0.01 sec
+      Start 18: METRICS::ks-qks
+27/55 Test #17: METRICS::sph-qsph .................   Passed    0.01 sec
+      Start 39: ARCHETYPES::spatial_dist
+28/55 Test #18: METRICS::ks-qks ...................   Passed    0.01 sec
+      Start 40: ARCHETYPES::field_setter
+29/55 Test #39: ARCHETYPES::spatial_dist ..........   Passed    0.01 sec
+      Start 27: KERNELS::fields_to_phys
+30/55 Test #40: ARCHETYPES::field_setter ..........   Passed    0.01 sec
+      Start 42: ARCHETYPES::pgen
+31/55 Test #27: KERNELS::fields_to_phys ...........   Passed    0.01 sec
+      Start 41: ARCHETYPES::powerlaw
+32/55 Test #42: ARCHETYPES::pgen ..................   Passed    0.01 sec
+      Start 55: OUTPUT::writer-nompi
+33/55 Test #41: ARCHETYPES::powerlaw ..............   Passed    0.01 sec
+      Start  4: GLOBAL::directions
+34/55 Test  #4: GLOBAL::directions ................   Passed    0.01 sec
+      Start 16: METRICS::coord_trans
+35/55 Test #55: OUTPUT::writer-nompi ..............   Passed    0.02 sec
+      Start 54: OUTPUT::fields
+36/55 Test #54: OUTPUT::fields ....................   Passed    0.01 sec
+      Start 15: METRICS::vec_trans
+37/55 Test #16: METRICS::coord_trans ..............   Passed    0.02 sec
+      Start 14: METRICS::minkowski
+38/55 Test #15: METRICS::vec_trans ................   Passed    0.01 sec
+      Start 30: KERNELS::prtl_bc
+39/55 Test #14: METRICS::minkowski ................   Passed    0.02 sec
+      Start  9: GLOBAL::tiling
+40/55 Test  #9: GLOBAL::tiling ....................   Passed    0.02 sec
+      Start 48: FRAMEWORK::grid_mesh
+41/55 Test #30: KERNELS::prtl_bc ..................   Passed    0.03 sec
+      Start  8: GLOBAL::sorting
+42/55 Test #48: FRAMEWORK::grid_mesh ..............   Passed    0.01 sec
+      Start 49: FRAMEWORK::comm-nompi
+43/55 Test  #8: GLOBAL::sorting ...................   Passed    0.01 sec
+      Start 47: FRAMEWORK::fields
+44/55 Test #49: FRAMEWORK::comm-nompi .............   Passed    0.01 sec
+      Start  5: GLOBAL::comparators
+45/55 Test #47: FRAMEWORK::fields .................   Passed    0.01 sec
+      Start 28: KERNELS::prtls_to_phys
+46/55 Test  #5: GLOBAL::comparators ...............   Passed    0.01 sec
+      Start 10: GLOBAL::traits_archetypes
+47/55 Test #28: KERNELS::prtls_to_phys ............   Passed    0.01 sec
+      Start 11: GLOBAL::traits_metric
+48/55 Test #10: GLOBAL::traits_archetypes .........   Passed    0.01 sec
+      Start  3: GLOBAL::kokkos_aliases
+49/55 Test #11: GLOBAL::traits_metric .............   Passed    0.01 sec
+      Start  6: GLOBAL::numeric
+50/55 Test  #3: GLOBAL::kokkos_aliases ............   Passed    0.01 sec
+      Start 12: GLOBAL::traits_pgen
+51/55 Test  #6: GLOBAL::numeric ...................   Passed    0.01 sec
+      Start 13: GLOBAL::traits_policies
+52/55 Test #12: GLOBAL::traits_pgen ...............   Passed    0.01 sec
+      Start  2: GLOBAL::enums
+53/55 Test #13: GLOBAL::traits_policies ...........   Passed    0.01 sec
+      Start  1: GLOBAL::global
+54/55 Test  #2: GLOBAL::enums .....................   Passed    0.01 sec
+55/55 Test  #1: GLOBAL::global ....................   Passed    0.01 sec
+
+95% tests passed, 3 tests failed out of 55
+
+Total Test time (real) =   1.28 sec
+
+The following tests FAILED:
+	  7 - GLOBAL::param_container (Failed)
+	 19 - METRICS::sr-cart-sph (Failed)
+	 23 - KERNELS::deposit (Failed)
+Errors while running CTest
+Output from these tests are in: /Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/builds/bhem-upstream-single/Testing/Temporary/LastTest.log
+Use "--rerun-failed --output-on-failure" to re-run the failed cases verbosely.

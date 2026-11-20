@@ -31,23 +31,30 @@ def main():
             t = line.split()
             rows.append(dict(zip(t[1::2], (float(x) for x in t[2::2]))))
     dt = (rows[1]["time"] - rows[0]["time"]) / (rows[1]["step"] - rows[0]["step"])
+    # reference rows by the number of steps (the file's time step is 0.5; the
+    # run's time step differs from it by the rounding of a single-precision
+    # CFL number only)
     ref = {}
     for r in csv.DictReader(open(args.reference)):
-        ref[round(float(r["time"]), 6)] = (float(r["t_over_tcool0"]), float(r["K_published_over_K0"]),
-                                           float(r["K_Born_table_over_K0"]))
+        ref[int(round(float(r["time"]) / 0.5))] = (float(r["t_over_tcool0"]), float(r["K_published_over_K0"]),
+                                                   float(r["K_Born_table_over_K0"]))
+    if abs(dt - 0.5) > 1.0e-6:
+        print(f"FAIL V5: the time step of the run ({dt}) is not the reference's 0.5")
+        return 1
     tag = args.tag or os.path.basename(os.path.normpath(args.run_dir))
     worst = worst_born = 0.0
     t_worst = 0.0
     n = 0
     last = None
     for r in rows:
-        t = round((r["step"] + 1.0) * dt, 6)
-        if t not in ref:
+        n_steps = int(round(r["step"] + 1.0))
+        if n_steps not in ref:
             continue
-        tc, k_pub, k_born = ref[t]
+        tc, k_pub, k_born = ref[n_steps]
         if tc > args.t_end + 1e-9:
             continue
-        k = (K0 + r["ion_dK"] / r["ion_w"]) / K0
+        K_ref = r.get("K_ref", K0)
+        k = (K_ref + r["ion_dK"] / r["ion_w"]) / K0
         res = abs(k / k_pub - 1.0)
         if res > worst:
             worst, t_worst = res, tc

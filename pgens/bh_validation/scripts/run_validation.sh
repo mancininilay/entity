@@ -55,10 +55,14 @@ for prec in single double; do
   fi
   if want v7; then
     # time step: the same optical depth, maximum probability 0.0125 to 0.1 over the
-    # band up to gamma_max = 6.02 (J(6.02) / J(6) = 1.00754)
-    for cfg in "0.0125:0.125:160000:80" "0.025:0.25:80000:40" "0.05:0.5:40000:20" "0.1:1.0:20000:10"; do
+    # band up to gamma_max = 6.02. The probability at the top of the band is
+    # 1.0014 times the nominal one (0.01252, 0.02503, 0.05007), so the largest
+    # step is taken 0.2 % shorter (CFL 0.998, maximum probability 0.0999): with
+    # CFL 1.0 the run is refused at startup (0.1001 > max_probability).
+    for cfg in "0.0125:0.125:160000:80" "0.025:0.25:80000:40" "0.05:0.5:40000:20" "0.1:0.998:20040:10"; do
       IFS=: read -r pm cfl steps diag <<< "$cfg"
-      pref=$(python3 -c "print(repr($pm / 1.00754))")
+      # p_ref proportional to the step: the optical depth is the same in the four runs
+      pref=$(python3 -c "print(repr(0.05 / 1.00754 * $cfl / 0.5))")
       run v7/p${pm}_$prec $prec name=v7 order=ions_first $COOL n_ions=100000 gamma_p=6.0 gamma_max=6.02 J_ref=$J6 p_ref=$pref cfl=$cfl steps=$steps diag_interval=$diag
     done
   fi

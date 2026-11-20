@@ -1,0 +1,38 @@
+prec   ranks case             pairs     max_t r max_t r_off      ratio  verdict
+single     1 A_on            163077   1.956e-06   1.068e-06       1.83  PASS
+single     1 B_on            163077   1.982e-06   1.138e-06       1.74  PASS
+single     1 A_on_stale      163077   2.010e-06   1.068e-06       1.88  PASS  [additional, not registered]
+single     1 B_on_stale      163077   1.961e-06   1.138e-06       1.72  PASS  [additional, not registered]
+single     1 A_neg           163088   1.107e-03   1.068e-06   1.04e+03  PASS (violates)
+single     1 A_neg_stale     163083   6.415e+03   1.068e-06   6.01e+09  PASS (violates)  [additional, not registered]
+single     2 A_on            163151   2.244e-06   1.122e-06          2  PASS
+single     2 B_on            163148   2.138e-06   1.295e-06       1.65  PASS
+single     2 A_on_stale      163141   2.166e-06   1.122e-06       1.93  PASS  [additional, not registered]
+single     2 B_on_stale      163145   2.370e-06   1.295e-06       1.83  PASS  [additional, not registered]
+single     2 A_neg           163152   7.777e-04   1.122e-06        693  FAIL (negative control too weak)
+single     2 A_neg_stale     163139   2.903e+03   1.122e-06   2.59e+09  PASS (violates)  [additional, not registered]
+single     4 A_on            163575   2.424e-06   1.048e-06       2.31  PASS
+single     4 B_on            163578   2.637e-06   1.156e-06       2.28  PASS
+single     4 A_on_stale      163564   2.759e-06   1.048e-06       2.63  PASS  [additional, not registered]
+single     4 B_on_stale      163572   2.760e-06   1.156e-06       2.39  PASS  [additional, not registered]
+single     4 A_neg           163551   5.460e-04   1.048e-06        521  FAIL (negative control too weak)
+single     4 A_neg_stale     163571   1.845e+03   1.048e-06   1.76e+09  PASS (violates)  [additional, not registered]
+double     1 A_on            163077   1.455e-07   4.943e-08       2.94  PASS
+double     1 B_on            163077   1.675e-07   4.943e-08       3.39  PASS
+double     1 A_on_stale      163077   1.455e-07   4.943e-08       2.94  PASS  [additional, not registered]
+double     1 B_on_stale      163077   1.675e-07   4.943e-08       3.39  PASS  [additional, not registered]
+double     1 A_neg           163088   1.409e-07   4.943e-08       2.85  FAIL (negative control too weak)
+double     1 A_neg_stale     163063   5.448e+03   4.943e-08    1.1e+11  PASS (violates)  [additional, not registered]
+double     2 A_on            163112   1.933e-07   4.943e-08       3.91  PASS
+double     2 B_on            163140   1.570e-07   4.943e-08       3.18  PASS
+double     2 A_on_stale      163112   1.537e-07   4.943e-08       3.11  PASS  [additional, not registered]
+double     2 B_on_stale      163148   1.704e-07   4.943e-08       3.45  PASS  [additional, not registered]
+double     2 A_neg           163145   1.581e-07   4.943e-08        3.2  FAIL (negative control too weak)
+double     2 A_neg_stale     163131   2.567e+03   4.943e-08   5.19e+10  PASS (violates)  [additional, not registered]
+double     4 A_on            163579   1.526e-07   4.943e-08       3.09  PASS
+double     4 B_on            163609   1.581e-07   4.943e-08        3.2  PASS
+double     4 A_on_stale      163560   1.362e-07   4.943e-08       2.76  PASS  [additional, not registered]
+double     4 B_on_stale      163587   1.603e-07   4.943e-08       3.24  PASS  [additional, not registered]
+double     4 A_neg           163578   1.735e-07   4.943e-08       3.51  FAIL (negative control too weak)
+double     4 A_neg_stale     163603   1.468e+03   4.943e-08   2.97e+10  PASS (violates)  [additional, not registered]
+SOME FAIL
