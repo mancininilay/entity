@@ -8,7 +8,8 @@
  * and for an interaction eight more for the outcome. The program walks the
  * first `n_trials` trials of every generator, for emitters of one Lorentz
  * factor moving along +x1 (the V4 runs), and
- *   - prints the statistics of the outcomes in windows of the trial index;
+ *   - prints the statistics of the outcomes in windows of the trial index,
+ *     and how many of them the loss bound of the policy would skip;
  *   - writes the outcomes (state, trial, lepton momenta along the emitter)
  *     to a binary file, to be matched against the pairs of a run.
  *
@@ -143,8 +144,13 @@ auto main(int argc, char* argv[]) -> int {
     const int n_windows = (n_trials + window - 1) / window;
     // per window: n, sum D, sum D^2, sum E-, sum E+, sum (E- - E+)^2, sum E-^2, sum E+^2
     std::vector<std::vector<double>> acc(n_windows, std::vector<double>(8, 0.0));
-    std::FILE*    out      = argc > 9 ? std::fopen(argv[9], "wb") : nullptr;
-    std::uint64_t n_events = 0;
+    std::FILE*    out        = argc > 9 ? std::fopen(argv[9], "wb") : nullptr;
+    std::uint64_t n_events   = 0;
+    // loss bound of the policy (pair_weight = 1): outcomes with
+    // D > max_loss_fraction * K are skipped in a run; here they are counted
+    const double  loss_bound = 0.04 * K;
+    std::uint64_t n_bounded  = 0;
+    double        D_bounded = 0.0, D_all = 0.0, D_largest = 0.0;
     if (out != nullptr) {
       std::fwrite(&n_events, sizeof(n_events), 1, out);
     }
@@ -171,6 +177,12 @@ auto main(int argc, char* argv[]) -> int {
         a[6]    += Em * Em;
         a[7]    += Ep * Ep;
         ++n_events;
+        D_all     += o.D;
+        D_largest  = o.D > D_largest ? o.D : D_largest;
+        if (o.D > loss_bound) {
+          ++n_bounded;
+          D_bounded += o.D;
+        }
         if (out != nullptr) {
           const std::uint32_t id[2]  = { static_cast<std::uint32_t>(i),
                                          static_cast<std::uint32_t>(t) };
@@ -220,6 +232,18 @@ auto main(int argc, char* argv[]) -> int {
       }
     }
     report("all", tot);
+    std::printf("loss bound (max_loss_fraction 0.04, pair_weight 1): 0.04 K = "
+                "%.6g; largest D sampled %.6g; outcomes above the bound %llu "
+                "of %llu (fraction %.4e); they carry %.4e of the summed loss; "
+                "mean D of the accepted outcomes relative to all %.9f\n",
+                loss_bound,
+                D_largest,
+                static_cast<unsigned long long>(n_bounded),
+                static_cast<unsigned long long>(n_events),
+                static_cast<double>(n_bounded) / static_cast<double>(n_events),
+                D_bounded / D_all,
+                ((D_all - D_bounded) / static_cast<double>(n_events - n_bounded)) /
+                  (D_all / static_cast<double>(n_events)));
   }
   GlobalFinalize();
   return rc;

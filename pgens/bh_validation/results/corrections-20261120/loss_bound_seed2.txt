@@ -1,0 +1,15 @@
+Gamma_p 6 probability 0.0027575156947088415 tabulated <D> 8.367526373 seed 0000000000000002 states 221184 trials 150000
+all:  91505873 pairs; D - <D> +0.000613 (+1.10 s.e.); E- +0.000344 (+0.88); E+ +0.000269 (+0.69); E- - E+ +0.000075 (+0.14)
+loss bound (max_loss_fraction 0.04, pair_weight 1): 0.04 K = 367.23; largest D sampled 66.8301; outcomes above the bound 0 of 91505873 (fraction 0.0000e+00); they carry 0.0000e+00 of the summed loss; mean D of the accepted outcomes relative to all 1.000000000
+Gamma_p 20 probability 0.017845120719273504 tabulated <D> 15.748862361 seed 0000000000000002 states 221184 trials 25000
+all:  98681615 pairs; D - <D> +0.010167 (+4.73 s.e.); E- +0.005258 (+3.46); E+ +0.004909 (+3.23); E- - E+ +0.000349 (+0.16)
+loss bound (max_loss_fraction 0.04, pair_weight 1): 0.04 K = 1395.47; largest D sampled 706.758; outcomes above the bound 0 of 98681615 (fraction 0.0000e+00); they carry 0.0000e+00 of the summed loss; mean D of the accepted outcomes relative to all 1.000000000
+Gamma_p 40 probability 0.03046609353910577 tabulated <D> 21.334725628 seed 0000000000000002 states 221184 trials 15000
+all: 101081798 pairs; D - <D> +0.022405 (+5.24 s.e.); E- +0.011755 (+3.88); E+ +0.010650 (+3.51); E- - E+ +0.001105 (+0.26)
+loss bound (max_loss_fraction 0.04, pair_weight 1): 0.04 K = 2864.39; largest D sampled 2778.7; outcomes above the bound 0 of 101081798 (fraction 0.0000e+00); they carry 0.0000e+00 of the summed loss; mean D of the accepted outcomes relative to all 1.000000000
+Gamma_p 80 probability 0.044473903753821056 tabulated <D> 28.140156911 seed 0000000000000002 states 221184 trials 10000
+all:  98370637 pairs; D - <D> +0.038100 (+4.44 s.e.); E- +0.016697 (+2.75); E+ +0.021402 (+3.52); E- - E+ -0.004705 (-0.55)
+loss bound (max_loss_fraction 0.04, pair_weight 1): 0.04 K = 5802.23; largest D sampled 10680; outcomes above the bound 476 of 98370637 (fraction 4.8388e-06); they carry 1.1655e-03 of the summed loss; mean D of the accepted outcomes relative to all 0.998839332
+Gamma_p 91.799999999999997 probability 0.047353413391735683 tabulated <D> 29.650314545 seed 0000000000000002 states 221184 trials 9500
+all:  99506908 pairs; D - <D> +0.041392 (+4.24 s.e.); E- +0.018190 (+2.63); E+ +0.023202 (+3.36); E- - E+ -0.005013 (-0.51)
+loss bound (max_loss_fraction 0.04, pair_weight 1): 0.04 K = 6668.9; largest D sampled 13998.8; outcomes above the bound 741 of 99506908 (fraction 7.4467e-06); they carry 2.0050e-03 of the summed loss; mean D of the accepted outcomes relative to all 0.998002439
