@@ -1,0 +1,9 @@
+charge: 146 pairs, continuity residuals 4.241e-07 (leptons not pushed) and 4.974e-07 (pushed)
+reused slots, same cell, policy: 135 pairs, in-plane currents 0.000e+00 (electrons) and 0.000e+00 (positrons), continuity residual 2.721e-05 (limit 1.352e-02)
+reused slots, same cell, control without the previous position: 135 pairs, in-plane currents 5.739e+01 (electrons) and 5.166e+01 (positrons), continuity residual 1.500e+02 (limit 1.352e-02)
+reused slots, neighbouring cells, policy: 135 pairs, in-plane currents 0.000e+00 (electrons) and 0.000e+00 (positrons), continuity residual 6.259e-06 (limit 1.335e-02)
+reused slots, neighbouring cells, control without the previous position: 135 pairs, in-plane currents 1.143e+02 (electrons) and 1.138e+02 (positrons), continuity residual 1.920e+02 (limit 1.335e-02)
+rate: 14321 pairs, expected 14000.0 +- 114.1; loss: mean 11.16340 +- 0.08452, tabulated 11.18911
+capacity: 64 pairs inserted, 70 dropped and counted
+refusals: raised as expected
+rc=0

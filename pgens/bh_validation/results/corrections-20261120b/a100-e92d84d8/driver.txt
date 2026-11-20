@@ -1,0 +1,59 @@
+workergpu062
+Fri Nov 20 08:35:55 PM UTC 2026
+
+Currently Loaded Modules:
+  1) modules/2.4-20250724 (S)   4) cuda/12.8.0          7) ninja/1.12.1
+  2) slurm                      5) openmpi/cuda-4.1.8
+  3) gcc/13.3.0                 6) cmake/3.31.6
+
+  Where:
+   S:  Module is Sticky, requires --force to unload or purge
+
+ 
+
+Fri Nov 20 15:35:55 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 615.71.10              KMD Version: 615.71.10     CUDA UMD Version: 13.4     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-SXM4-80GB          On  |   00000000:4B:00.0 Off |                    0 |
+| N/A   25C    P0             61W /  225W |       0MiB /  81920MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+name, memory.total [MiB], driver_version
+NVIDIA A100-SXM4-80GB, 81920 MiB, 615.71.10
+Cpus_allowed_list:	16-23
+OMP_NUM_THREADS=1
+executables: <home>/ceph/entity-builds/bh-emission-claude1-20261119/corrections-20261120/cuda-build-7512470
+pr-single/tests/archetypes/test-archetypes-bethe_heitler.xc: OK
+pr-double/tests/archetypes/test-archetypes-bethe_heitler.xc: OK
+RUN tierA/single rc=0 seconds=14 cap=240
+charge: 147 pairs, continuity residuals 6.945e-07 (leptons not pushed) and 7.142e-07 (pushed)
+reused slots, policy: 135 pairs, in-plane currents 0.000e+00 (electrons) and 0.000e+00 (positrons), continuity residual 2.313e-05 (limit 1.352e-02)
+reused slots, control without the previous position: 135 pairs, in-plane currents 5.492e+01 (electrons) and 5.557e+01 (positrons), continuity residual 1.500e+02 (limit 1.352e-02)
+rate: 14053 pairs, expected 14000.0 +- 114.1; loss: mean 11.30091 +- 0.08533, tabulated 11.18911
+capacity: 64 pairs inserted, 75 dropped and counted
+refusals: raised as expected
+RUN tierA/double rc=0 seconds=13 cap=240
+charge: 147 pairs, continuity residuals 1.040e-07 (leptons not pushed) and 1.154e-07 (pushed)
+reused slots, policy: 135 pairs, in-plane currents 0.000e+00 (electrons) and 0.000e+00 (positrons), continuity residual 2.514e-07 (limit 1.352e-02)
+reused slots, control without the previous position: 135 pairs, in-plane currents 5.492e+01 (electrons) and 5.557e+01 (positrons), continuity residual 1.500e+02 (limit 1.352e-02)
+rate: 14053 pairs, expected 14000.0 +- 114.1; loss: mean 11.30091 +- 0.08533, tabulated 11.18911
+capacity: 64 pairs inserted, 75 dropped and counted
+refusals: raised as expected
+name, memory.used [MiB], utilization.gpu [%]
+NVIDIA A100-SXM4-80GB, 0 MiB, 1 %
+Fri Nov 20 08:36:23 PM UTC 2026
+job finished after 28 s, status 0
+Exit status: 0

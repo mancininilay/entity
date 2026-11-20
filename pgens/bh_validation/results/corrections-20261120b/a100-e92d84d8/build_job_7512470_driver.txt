@@ -1,0 +1,47 @@
+workergpu046
+Fri Nov 20 07:50:50 PM UTC 2026
+
+Currently Loaded Modules:
+  1) modules/2.4-20250724 (S)   4) cuda/12.8.0          7) ninja/1.12.1
+  2) slurm                      5) openmpi/cuda-4.1.8
+  3) gcc/13.3.0                 6) cmake/3.31.6
+
+  Where:
+   S:  Module is Sticky, requires --force to unload or purge
+
+ 
+
+g++ (Spack GCC) 13.3.0
+Cuda compilation tools, release 12.8, V12.8.61
+Build cuda_12.8.r12.8/compiler.35404655_0
+cmake version 3.31.6
+Fri Nov 20 14:50:51 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 615.71.10              KMD Version: 615.71.10     CUDA UMD Version: 13.4     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-SXM4-80GB          On  |   00000000:CA:00.0 Off |                    0 |
+| N/A   24C    P0             63W /  225W |       0MiB /  81920MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+name, memory.total [MiB], driver_version
+NVIDIA A100-SXM4-80GB, 81920 MiB, 615.71.10
+source: <home>/ceph/entity-builds/bh-emission-claude1-20261119/corrections-20261120/src-pr-new at e92d84d8441f780852206db4c5c0e1e21ccaf333
+Kokkos: <home>/ceph/entity-builds/20261003-gcc13-cuda12.8/install/kokkos-cuda/lib/cmake/Kokkos
+CXX: <home>/work/entity-build-tools/20261003/deps-src/kokkos/bin/nvcc_wrapper
+processors of the allocation: 1
+==== builds (the two precisions side by side, 8 compile processes each)
+BUILD pr-single rc=0 seconds=525 cap=1200 error_lines=0 warning_lines=6
+BUILD pr-double rc=0 seconds=527 cap=1200 error_lines=0 warning_lines=6
+Exit status: 0

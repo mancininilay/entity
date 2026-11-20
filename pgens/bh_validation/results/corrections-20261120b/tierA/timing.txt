@@ -1,0 +1,7 @@
+Wall time of ARCHETYPES::bethe_heitler at 43d68f45 on the iMac (Apple clang 21, Kokkos 5.0.1 OpenMP), one run each, nothing else running; /usr/bin/time -p, seconds.
+double threads=8 real=6.91
+double threads=2 real=19.68
+double threads=1 real=38.75
+single threads=8 real=6.87
+single threads=2 real=19.69
+single threads=1 real=38.72
