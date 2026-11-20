@@ -34,3 +34,7 @@ gen_test(bethe_heitler)
 # reproduction of an upstream issue (expected to fail): built, not registered as a test
 add_executable(repro-emission-overflow.xc repro_emission_overflow.cpp)
 target_link_libraries(repro-emission-overflow.xc PRIVATE ntt_archetypes ntt_framework ntt_global ntt_metrics)
+
+# replay of the random streams of a pool through the policy (analysis tool): built, not registered
+add_executable(bhv-replay-pool.xc bhv_replay_pool.cpp)
+target_link_libraries(bhv-replay-pool.xc PRIVATE ntt_archetypes ntt_framework ntt_global ntt_metrics)

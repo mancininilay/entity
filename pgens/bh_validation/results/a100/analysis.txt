@@ -1,0 +1,73 @@
+---- V1 Gauss's law, one rank (A100)
+prec   ranks case             pairs     max_t r max_t r_off      ratio  verdict
+single     1 A_on            163577   2.989e-06   1.071e-06       2.79  PASS
+single     1 B_on            163577   3.186e-06   1.289e-06       2.47  PASS
+single     1 A_on_stale      163577   3.188e-06   1.071e-06       2.98  PASS  [additional, not registered]
+single     1 B_on_stale      163577   2.997e-06   1.289e-06       2.33  PASS  [additional, not registered]
+single     1 A_neg           163578   2.636e-03   1.071e-06   2.46e+03  PASS (violates)
+single     1 A_neg_stale     163571   5.281e+03   1.071e-06   4.93e+09  PASS (violates)  [additional, not registered]
+double     1 A_on            163577   1.633e-07   4.943e-08        3.3  PASS
+double     1 B_on            163577   1.459e-07   4.943e-08       2.95  PASS
+double     1 A_on_stale      163577   1.633e-07   4.943e-08        3.3  PASS  [additional, not registered]
+double     1 B_on_stale      163577   1.459e-07   4.943e-08       2.95  PASS  [additional, not registered]
+double     1 A_neg           163578   1.533e-07   4.943e-08        3.1  FAIL (negative control too weak)
+double     1 A_neg_stale     163585   5.768e+03   4.943e-08   1.17e+11  PASS (violates)  [additional, not registered]
+SOME FAIL
+######## single
+---- V2 mean cooling, V3 straggling
+== V2/V3 Gamma_p0=6 single A100: N = 100000, K0 = 9180.75, dt = 0.0353553407, tau = 3.62657918, a = 1, p(Gamma_p0) = 0.05000, records = 1600, steps = 40000, <K>/K0 at the end = 0.49651, pairs = 65280515 (652.8052 per emitter)
+   counters at the end: above 0, probability exceeded 0, bounded 0, dropped 0
+   PASS V2 at <K>/K0 = 0.90 (t = 90.1561, <K> = 8260.526863): <K> - K_corr = +0.07716 = +0.283 s.e. (s.e. = 0.2726, limit 4); plain ODE +0.011 s.e.; Jensen term -0.068 of 4 s.e.; sigma_K/K = 0.01044
+   PASS V2 at <K>/K0 = 0.70 (t = 403.051, <K> = 6424.937067): <K> - K_corr = +0.06769 = +0.221 s.e. (s.e. = 0.3058, limit 4); plain ODE -1.714 s.e.; Jensen term -0.484 of 4 s.e.; sigma_K/K = 0.01505
+   PASS V2 at <K>/K0 = 0.50 (t = 1378.86, <K> = 4590.083774): <K> - K_corr = +0.02966 = +0.145 s.e. (s.e. = 0.2046, limit 4); plain ODE -5.553 s.e.; Jensen term -1.425 of 4 s.e.; sigma_K/K = 0.01409
+   PASS V3 at sigma_K/K = 0.005 (t = 16.7938, Delta K/K = 0.0210): Var_meas = 2056.12, Var_pred = 2040.18, |ratio - 1| = 0.007813 (limit 0.01789); curvature budget 0.006 %; with the Poisson source instead: |ratio - 1| = 0.02748
+   PASS V3 at sigma_K/K = 0.01 (t = 80.4334, Delta K/K = 0.0908): Var_meas = 6976.41, Var_pred = 6957.26, |ratio - 1| = 0.002753 (limit 0.01789); curvature budget 0.027 %; with the Poisson source instead: |ratio - 1| = 0.0298
+   PASS V3 at last record in the domain (sigma_K/K <= 0.02, curvature <= 0.6 %) (t = 1414.21, Delta K/K = 0.5035): Var_meas = 4100.14, Var_pred = 4113.44, |ratio - 1| = 0.003231 (limit 0.01789); curvature budget 0.190 %; with the Poisson source instead: |ratio - 1| = 0.0126
+   V2/V3 Gamma_p0=6 single A100: ALL PASS
+---- energy ledger of the same run (analysis only)
+PASS V6 fields off Gamma_p0=6 single A100: step 39999, pairs 65280515, emitters' loss 4.6224451154e+08, pairs' energy minus absorbed 4.6224451084e+08, relative difference -1.526e-09 (limit 1e-05)
+---- V4 pair spectra
+[ions_first] PASS V4 family of 10 comparisons, Holm at 0.01: smallest adjusted p = 0.01750 (history) rule of test E4: 9 of 10 comparisons with p >= 0.01 (>= 95 % required) 
+    Gamma_p 3: 1048124 pairs (reference 1000000 events), values outside the reference's edges 0, mean E- + E+ - eps0 = 5.133964 +- 0.001533
+    PASS Gamma_p 3: at least 1e6 events (1048124)
+      Gamma_p 3 E-: N_A 1048124 N_B 1000000 T_AD 1.0424e-05 p 0.00175 q99 7.4509e-06 merged bins 169
+      Gamma_p 3 E+: N_A 1048124 N_B 1000000 T_AD 2.3508e-06 p 0.26350 q99 7.4876e-06 merged bins 169
+      Gamma_p 3 cos-: N_A 1048124 N_B 1000000 T_AD 2.7505e-06 p 0.14715 q99 6.7845e-06 merged bins 18
+      Gamma_p 3 cos+: N_A 1048124 N_B 1000000 T_AD 2.0658e-06 p 0.25060 q99 6.8087e-06 merged bins 18
+      Gamma_p 3 D: N_A 1048124 N_B 1000000 T_AD 2.3632e-06 p 0.26655 q99 7.7123e-06 merged bins 150
+    Gamma_p 10: 1048945 pairs (reference 1000000 events), values outside the reference's edges 0, mean E- + E+ - eps0 = 11.169543 +- 0.009788
+    PASS Gamma_p 10: at least 1e6 events (1048945)
+      Gamma_p 10 E-: N_A 1048945 N_B 1000000 T_AD 6.3099e-06 p 0.02115 q99 7.6133e-06 merged bins 169
+      Gamma_p 10 E+: N_A 1048945 N_B 1000000 T_AD 1.4999e-06 p 0.50550 q99 7.6182e-06 merged bins 170
+      Gamma_p 10 cos-: N_A 1048945 N_B 1000000 T_AD 1.2284e-06 p 0.48770 q99 6.4731e-06 merged bins 48
+      Gamma_p 10 cos+: N_A 1048945 N_B 1000000 T_AD 2.7007e-06 p 0.14700 q99 6.6006e-06 merged bins 48
+      Gamma_p 10 D (log bins): N_A 1048945 N_B 1000000 T_AD 6.1342e-06 p 0.02385 q99 7.5230e-06 merged bins 160
+######## double
+---- V2 mean cooling, V3 straggling
+== V2/V3 Gamma_p0=6 double A100: N = 100000, K0 = 9180.75, dt = 0.0353553391, tau = 3.62657918, a = 1, p(Gamma_p0) = 0.05000, records = 1600, steps = 40000, <K>/K0 at the end = 0.49650, pairs = 65282776 (652.8278 per emitter)
+   counters at the end: above 0, probability exceeded 0, bounded 0, dropped 0
+   PASS V2 at <K>/K0 = 0.90 (t = 90.1561, <K> = 8260.564113): <K> - K_corr = +0.1138 = +0.420 s.e. (s.e. = 0.2711, limit 4); plain ODE +0.149 s.e.; Jensen term -0.068 of 4 s.e.; sigma_K/K = 0.01038
+   PASS V2 at <K>/K0 = 0.70 (t = 403.051, <K> = 6424.868731): <K> - K_corr = -0.002529 = -0.008 s.e. (s.e. = 0.3052, limit 4); plain ODE -1.942 s.e.; Jensen term -0.483 of 4 s.e.; sigma_K/K = 0.01502
+   PASS V2 at <K>/K0 = 0.50 (t = 1378.86, <K> = 4590.019471): <K> - K_corr = -0.03198 = -0.156 s.e. (s.e. = 0.2047, limit 4); plain ODE -5.865 s.e.; Jensen term -1.427 of 4 s.e.; sigma_K/K = 0.0141
+   PASS V3 at sigma_K/K = 0.005 (t = 16.7938, Delta K/K = 0.0210): Var_meas = 2038.28, Var_pred = 2040.18, |ratio - 1| = 0.0009322 (limit 0.01789); curvature budget 0.006 %; with the Poisson source instead: |ratio - 1| = 0.03592
+   PASS V3 at sigma_K/K = 0.01 (t = 82.2012, Delta K/K = 0.0925): Var_meas = 6968.37, Var_pred = 7046.44, |ratio - 1| = 0.01108 (limit 0.01789); curvature budget 0.027 %; with the Poisson source instead: |ratio - 1| = 0.04312
+   PASS V3 at last record in the domain (sigma_K/K <= 0.02, curvature <= 0.6 %) (t = 1414.21, Delta K/K = 0.5035): Var_meas = 4098.13, Var_pred = 4113.43, |ratio - 1| = 0.00372 (limit 0.01789); curvature budget 0.191 %; with the Poisson source instead: |ratio - 1| = 0.01308
+   V2/V3 Gamma_p0=6 double A100: ALL PASS
+---- energy ledger of the same run (analysis only)
+PASS V6 fields off Gamma_p0=6 double A100: step 39999, pairs 65282776, emitters' loss 4.6225112949e+08, pairs' energy minus absorbed 4.6225112949e+08, relative difference +0.000e+00 (limit 1e-10)
+---- V4 pair spectra
+[ions_first] PASS V4 family of 10 comparisons, Holm at 0.01: smallest adjusted p = 0.01750 (history) rule of test E4: 9 of 10 comparisons with p >= 0.01 (>= 95 % required) 
+    Gamma_p 3: 1048124 pairs (reference 1000000 events), values outside the reference's edges 0, mean E- + E+ - eps0 = 5.133964 +- 0.001533
+    PASS Gamma_p 3: at least 1e6 events (1048124)
+      Gamma_p 3 E-: N_A 1048124 N_B 1000000 T_AD 1.0424e-05 p 0.00175 q99 7.4509e-06 merged bins 169
+      Gamma_p 3 E+: N_A 1048124 N_B 1000000 T_AD 2.3509e-06 p 0.26350 q99 7.4876e-06 merged bins 169
+      Gamma_p 3 cos-: N_A 1048124 N_B 1000000 T_AD 2.7505e-06 p 0.14715 q99 6.7845e-06 merged bins 18
+      Gamma_p 3 cos+: N_A 1048124 N_B 1000000 T_AD 2.0658e-06 p 0.25060 q99 6.8087e-06 merged bins 18
+      Gamma_p 3 D: N_A 1048124 N_B 1000000 T_AD 2.3631e-06 p 0.26655 q99 7.7122e-06 merged bins 150
+    Gamma_p 10: 1048945 pairs (reference 1000000 events), values outside the reference's edges 0, mean E- + E+ - eps0 = 11.169544 +- 0.009788
+    PASS Gamma_p 10: at least 1e6 events (1048945)
+      Gamma_p 10 E-: N_A 1048945 N_B 1000000 T_AD 6.3100e-06 p 0.02115 q99 7.6133e-06 merged bins 169
+      Gamma_p 10 E+: N_A 1048945 N_B 1000000 T_AD 1.4999e-06 p 0.50550 q99 7.6182e-06 merged bins 170
+      Gamma_p 10 cos-: N_A 1048945 N_B 1000000 T_AD 1.2284e-06 p 0.48770 q99 6.4731e-06 merged bins 48
+      Gamma_p 10 cos+: N_A 1048945 N_B 1000000 T_AD 2.7017e-06 p 0.14695 q99 6.6006e-06 merged bins 48
+      Gamma_p 10 D (log bins): N_A 1048945 N_B 1000000 T_AD 6.1342e-06 p 0.02385 q99 7.5230e-06 merged bins 160

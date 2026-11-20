@@ -1,0 +1,27 @@
+bh_event: real_t = float, Kokkos default execution space = OpenMP, tolerances: closure 1.0e-05, identity 1.0e-12, E_round 1.0e-05, E5 K 1.0e-05; loss tables qk_source = born-3D2000 (BH_QK_SOURCE)
+
+=== E10 E2 / E3 at Gamma_p0 = 6: N = 100000, a = 1, lambda = 0.05 at Gamma_p0 (dt = 0.5), restframe only, stop at <K>/K0 = 0.50 or 40000 launches; loss tables qk_source = born-3D2000 ===
+(diag) E[D^2] fixture: bhref-0.2.0/moments_mono05.txt, 466 nodes, data_sha256 69b87f32ad4c52d68224da7e23dc557008976f1c17fd33ef1f565cbd47858f1d
+bh_event: rest-frame sampler tables built (30.1 MB)
+(diag) E10 G6 restframe: N = 100000, K0 = 9180.75, dt = 0.5, coeff = 0.256429, a = 1, 39000 launches, final <K>/K0 = 0.49997, sigma_K/K = 0.01419; n_events 64732754, n_spawned 64732754, n_bounded 0, n_dropped 0, n_capped_events 0, n_sampler_overflow 0; 57.6 s
+PASS: E10 G6 restframe: E2 at <K>/K0 = 0.90 (t = 1275, <K> = 8260.41): |<K> - K_ODE,corrected| / s.e. (s.e. = 0.2764) : 2.279471e-01 (tolerance 4.000e+00)
+(diag) E10 G6 restframe: E2 at 0.90: plain ODE difference -0.1399 (-0.506 s.e.), Jensen correction K_corr - K_plain = -0.07689 (-0.070 of 4 s.e.), sigma_K/K = 0.01058
+(diag) E10 G6 restframe: E2 at 0.90 [diagnostic: ODE with the fixture's Born <D> in place of the table's I/J]: <K> - K_born = -0.4378 (-1.584 s.e.); K_born - K_corr = 0.3748 (4.072e-04 of the energy lost)
+PASS: E10 G6 restframe: E2 at <K>/K0 = 0.70 (t = 5700, <K> = 6424.42): |<K> - K_ODE,corrected| / s.e. (s.e. = 0.3088) : 1.594188e+00 (tolerance 4.000e+00)
+(diag) E10 G6 restframe: E2 at 0.70: plain ODE difference -1.097 (-3.551 s.e.), Jensen correction K_corr - K_plain = -0.6042 (-0.489 of 4 s.e.), sigma_K/K = 0.0152
+(diag) E10 G6 restframe: E2 at 0.70 [diagnostic: ODE with the fixture's Born <D> in place of the table's I/J]: <K> - K_born = -0.448 (-1.451 s.e.); K_born - K_corr = -0.04431 (-1.608e-05 of the energy lost)
+PASS: E10 G6 restframe: E2 at <K>/K0 = 0.50 (t = 19500, <K> = 4590.14): |<K> - K_ODE,corrected| / s.e. (s.e. = 0.206) : 2.865473e-01 (tolerance 4.000e+00)
+(diag) E10 G6 restframe: E2 at 0.50: plain ODE difference -1.125 (-5.459 s.e.), Jensen correction K_corr - K_plain = -1.184 (-1.436 of 4 s.e.), sigma_K/K = 0.01419
+(diag) E10 G6 restframe: E2 at 0.50 [diagnostic: ODE with the fixture's Born <D> in place of the table's I/J]: <K> - K_born = 0.0416 (0.202 s.e.); K_born - K_corr = 0.01743 (3.797e-06 of the energy lost)
+PASS: E10 G6 restframe: E3 [registered, revision 1.1.1: drift feedback] at sigma_K/K = 0.005 (t = 237.5, Delta K/K = 0.0210, Var_meas = 2104.88, Var_fb = 2114.12, curvature budget 0.006 %): |Var_meas/Var_fb - 1| : 4.372439e-03 (tolerance 1.789e-02)
+(diag) E10 G6 restframe: E3 history row [revision 1.0, no feedback] at sigma_K/K = 0.005: Var_pred = 2240.34, |Var_meas/Var_pred - 1| = 0.06046 (tolerance 0.01789, would fail; superseded, no verdict)
+(diag) E10 G6 restframe: E3 budgets at sigma_K/K = 0.005: curvature (1/2) B'' V source changes Var_fb by +6.397e-05 relative; Jensen share of the mean loss rate -3.447e-05; frozen E[D^2] sampling error not available in the fixture; higher moments not recorded
+PASS: E10 G6 restframe: E3 [registered, revision 1.1.1: drift feedback] at sigma_K/K = 0.01 (t = 1100, Delta K/K = 0.0882, Var_meas = 7016.06, Var_fb = 7049.23, curvature budget 0.028 %): |Var_meas/Var_fb - 1| : 4.705359e-03 (tolerance 1.789e-02)
+(diag) E10 G6 restframe: E3 history row [revision 1.0, no feedback] at sigma_K/K = 0.01: Var_pred = 9121.84, |Var_meas/Var_pred - 1| = 0.2309 (tolerance 0.01789, would fail; superseded, no verdict)
+(diag) E10 G6 restframe: E3 budgets at sigma_K/K = 0.01: curvature (1/2) B'' V source changes Var_fb by +0.0002782 relative; Jensen share of the mean loss rate -1.733e-04; frozen E[D^2] sampling error not available in the fixture; higher moments not recorded
+PASS: E10 G6 restframe: E3 [registered, revision 1.1.1: drift feedback] at last record in the domain (sigma_K/K <= 0.02, curvature <= 0.6 %) (t = 19500, Delta K/K = 0.5000, Var_meas = 4244.25, Var_fb = 4244.52, curvature budget 0.193 %): |Var_meas/Var_fb - 1| : 6.340821e-05 (tolerance 1.789e-02)
+(diag) E10 G6 restframe: E3 history row [revision 1.0, no feedback] at last record in the domain (sigma_K/K <= 0.02, curvature <= 0.6 %): Var_pred = 42184.2, |Var_meas/Var_pred - 1| = 0.8994 (tolerance 0.01789, would fail; superseded, no verdict)
+(diag) E10 G6 restframe: E3 budgets at last record in the domain (sigma_K/K <= 0.02, curvature <= 0.6 %): curvature (1/2) B'' V source changes Var_fb by +0.001929 relative; Jensen share of the mean loss rate -1.515e-03; frozen E[D^2] sampling error not available in the fixture; higher moments not recorded
+(diag) E10 G6 restframe: E3 max |Var_meas/Var - 1| over the window (Delta K/K >= 1%) = 0.009557 at t = 837.5 [feedback, registered], 0.8994 at t = 19500 [no feedback, history] (tolerance 0.01789)
+PASS: E10 G6 restframe: no bounded, dropped or capped event : 0.000000e+00 (tolerance 0.000e+00)
+bh_event summary: 7 passed, 0 failed, 0 under the development-only exception (delta spectrum, single build, revision 1.1; registered failures kept visible), 0 history rows (restframe E2 and E3 on the fitted tables, superseded 2026-10-27 (a) and 2026-11-01; the registered counterparts are E10 and e7_born on the Born tables)

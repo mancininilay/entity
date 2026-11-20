@@ -1,0 +1,3 @@
+Kokkos allocation "bh_absorbed_energy" is being deallocated after Kokkos::finalize was called
+
+Traceback functionality not available

@@ -1,0 +1,89 @@
+17:31:01 start
+name=v2g6 rc=0
+name=v2g3 rc=0
+name=v9g6 rc=0
+name=v4g3 rc=0
+name=v4g10 rc=0
+name=v4g3 rc=0
+name=v4g10 rc=0
+name=v5 rc=1
+name=v6b rc=0
+name=v6b rc=0
+name=v7 rc=0
+name=v7 rc=0
+name=v7 rc=0
+name=v7 rc=1
+name=v13 rc=0
+name=v13 rc=0
+name=v12 rc=0
+name=v12 rc=0
+name=v12 rc=0
+name=v2g6 rc=0
+name=v2g3 rc=0
+name=v9g6 rc=0
+name=v4g3 rc=0
+name=v4g10 rc=0
+name=v4g3 rc=0
+name=v4g10 rc=0
+name=v5 rc=0
+name=v6b rc=0
+name=v6b rc=0
+name=v7 rc=0
+name=v7 rc=0
+name=v7 rc=0
+name=v7 rc=1
+name=v13 rc=0
+name=v13 rc=0
+name=v12 rc=0
+name=v12 rc=0
+name=v12 rc=0
+18:38:55 engine groups done
+single r1 A_on rc=0
+single r1 A_off rc=0
+single r1 B_on rc=0
+single r1 B_off rc=0
+single r1 A_neg rc=0
+single r1 A_on_stale rc=0
+single r1 B_on_stale rc=0
+single r1 A_neg_stale rc=0
+single r2 A_on rc=0
+single r2 A_off rc=0
+single r2 B_on rc=0
+single r2 B_off rc=0
+single r2 A_neg rc=0
+single r2 A_on_stale rc=0
+single r2 B_on_stale rc=0
+single r2 A_neg_stale rc=0
+single r4 A_on rc=0
+single r4 A_off rc=0
+single r4 B_on rc=0
+single r4 B_off rc=0
+single r4 A_neg rc=0
+single r4 A_on_stale rc=0
+single r4 B_on_stale rc=0
+single r4 A_neg_stale rc=0
+double r1 A_on rc=0
+double r1 A_off rc=0
+double r1 B_on rc=0
+double r1 B_off rc=0
+double r1 A_neg rc=0
+double r1 A_on_stale rc=0
+double r1 B_on_stale rc=0
+double r1 A_neg_stale rc=0
+double r2 A_on rc=0
+double r2 A_off rc=0
+double r2 B_on rc=0
+double r2 B_off rc=0
+double r2 A_neg rc=0
+double r2 A_on_stale rc=0
+double r2 B_on_stale rc=0
+double r2 A_neg_stale rc=0
+double r4 A_on rc=0
+double r4 A_off rc=0
+double r4 B_on rc=0
+double r4 B_off rc=0
+double r4 A_neg rc=0
+double r4 A_on_stale rc=0
+double r4 B_on_stale rc=0
+double r4 A_neg_stale rc=0
+18:49:31 v1 done

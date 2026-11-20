@@ -25,3 +25,8 @@ plus the clang fix). Apple clang 21, Kokkos 5.0.1 (OpenMP, Serial), MPICH 4.3.2.
 - `upstream-issues/`: outputs of the reproductions and of upstream's own
   failing tests.
 - `run_final.log`, `rerun_gaps.sh`, `rerun_gaps.log`: what was run.
+- `a100/`: the runs on one A100 (tier A, V1, V2, V3, V4) and the replay of the
+  generator streams that explains its V4 sample; see `a100/README.md`.
+
+Absolute paths of the machine the runs were made on are written as
+`<Entity Local Experiments>` and `<home>` in these copies.

@@ -1,4 +1,4 @@
-Test project /Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/builds/bhem-upstream-double
+Test project <Entity Local Experiments>/worktrees/builds/bhem-upstream-double
       Start  7: GLOBAL::param_container
       Start 43: ARCHETYPES::qed_compton
  1/55 Test  #7: GLOBAL::param_container ...........***Failed    0.01 sec
@@ -117,5 +117,5 @@ Total Test time (real) =   1.51 sec
 The following tests FAILED:
 	  7 - GLOBAL::param_container (Failed)
 Errors while running CTest
-Output from these tests are in: /Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/builds/bhem-upstream-double/Testing/Temporary/LastTest.log
+Output from these tests are in: <Entity Local Experiments>/worktrees/builds/bhem-upstream-double/Testing/Temporary/LastTest.log
 Use "--rerun-failed --output-on-failure" to re-run the failed cases verbosely.

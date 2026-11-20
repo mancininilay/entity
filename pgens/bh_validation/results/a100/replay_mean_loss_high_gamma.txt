@@ -1,0 +1,7 @@
+== default upper edge of the tables (gamma_max = 0), optical depth 0.2, seed 2, 221184 states x 9500 trials
+Gamma_p 20 probability 0.017845120719273504 tabulated <D> 15.748862361 seed 0000000000000002 states 221184 trials 9500
+all:  37494113 pairs; D - <D> +0.011183 (+3.21 s.e.); E- +0.006019 (+2.44); E+ +0.005165 (+2.10); E- - E+ +0.000854 (+0.24)
+Gamma_p 40 probability 0.03046609353910577 tabulated <D> 21.334725628 seed 0000000000000002 states 221184 trials 9500
+all:  64014060 pairs; D - <D> +0.027072 (+5.03 s.e.); E- +0.012510 (+3.29); E+ +0.014562 (+3.82); E- - E+ -0.002052 (-0.38)
+Gamma_p 80 probability 0.044473903753821056 tabulated <D> 28.140156911 seed 0000000000000002 states 221184 trials 9500
+all:  93451486 pairs; D - <D> +0.038779 (+4.41 s.e.); E- +0.016009 (+2.57); E+ +0.022770 (+3.65); E- - E+ -0.006761 (-0.77)

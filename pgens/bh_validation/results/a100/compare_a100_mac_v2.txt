@@ -1,0 +1,9 @@
+PASS A100 against the Mac, Gamma_p0=6 single at <K>/K0 = 0.90 (t = 90.1561): <K> 8261.0245 vs 8260.5269 (+1.29 s.e.); Var K 7393.2 vs 7431.8 (-0.82 s.e.); pairs per emitter 112.8987 vs 112.9267 (-0.59 s.e.); limit 4
+PASS A100 against the Mac, Gamma_p0=6 single at <K>/K0 = 0.70 (t = 403.051): <K> 6424.8768 vs 6424.9371 (-0.14 s.e.); Var K 9314.3 vs 9353 (-0.66 s.e.); pairs per emitter 359.6863 vs 359.6648 (+0.25 s.e.); limit 4
+PASS A100 against the Mac, Gamma_p0=6 single at <K>/K0 = 0.50 (t = 1378.86): <K> 4589.9892 vs 4590.0838 (-0.33 s.e.); Var K 4237.5 vs 4184.2 (+2.00 s.e.); pairs per emitter 647.3786 vs 647.3226 (+0.49 s.e.); limit 4
+PASS A100 against the Mac, Gamma_p0=6 double at <K>/K0 = 0.90 (t = 90.1561): <K> 8261.0667 vs 8260.5641 (+1.31 s.e.); Var K 7477.4 vs 7351.6 (+2.68 s.e.); pairs per emitter 112.8937 vs 112.9240 (-0.64 s.e.); limit 4
+PASS A100 against the Mac, Gamma_p0=6 double at <K>/K0 = 0.70 (t = 403.051): <K> 6424.8770 vs 6424.8687 (+0.02 s.e.); Var K 9362.7 vs 9314.8 (+0.81 s.e.); pairs per emitter 359.6930 vs 359.6825 (+0.12 s.e.); limit 4
+PASS A100 against the Mac, Gamma_p0=6 double at <K>/K0 = 0.50 (t = 1378.86): <K> 4590.0076 vs 4590.0195 (-0.04 s.e.); Var K 4186 vs 4188.8 (-0.10 s.e.); pairs per emitter 647.3826 vs 647.3451 (+0.33 s.e.); limit 4
+PASS A100 single against A100 double at <K>/K0 = 0.90 (t = 90.1561): <K> 8260.5269 vs 8260.5641 (-0.10 s.e.); Var K 7431.8 vs 7351.6 (+1.71 s.e.); pairs per emitter 112.9267 vs 112.9240 (+0.06 s.e.); limit 4
+PASS A100 single against A100 double at <K>/K0 = 0.70 (t = 403.051): <K> 6424.9371 vs 6424.8687 (+0.16 s.e.); Var K 9353 vs 9314.8 (+0.65 s.e.); pairs per emitter 359.6648 vs 359.6825 (-0.21 s.e.); limit 4
+PASS A100 single against A100 double at <K>/K0 = 0.50 (t = 1378.86): <K> 4590.0838 vs 4590.0195 (+0.22 s.e.); Var K 4184.2 vs 4188.8 (-0.17 s.e.); pairs per emitter 647.3226 vs 647.3451 (-0.20 s.e.); limit 4

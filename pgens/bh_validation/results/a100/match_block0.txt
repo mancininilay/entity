@@ -1,0 +1,7 @@
+run: 209510 pairs of the first step; replay: 1049729 outcomes
+matched within 1e-6 (relative, both leptons): 209510 of 209510; not matched: 0; replayed outcome matched twice: 0
+largest relative difference among the matched: electron 1.168e-14, positron 2.983e-14
+relative difference of the matched: {'<= 1e-15': 208686, '<= 1e-13': 824}
+bit-identical in both momenta: 56912
+trial index of the matched outcomes (uses of a generator before this one): min 0, max 18; counts by index: 0:10849 1:11164 2:10937 3:11034 4:10985 5:11079 6:10983 7:11154 8:10970 9:10918 10:10858 11:10984 12:11122 13:10970 14:11129 15:10978 16:11023 17:11290 18:11083
+generators that produced the matched pairs: 137766 of 221184

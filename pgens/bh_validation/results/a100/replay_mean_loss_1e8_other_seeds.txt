@@ -1,0 +1,14 @@
+== independent seeds, 221184 states x 9500 trials (about 1.05e8 pairs each)
+Gamma_p 10 probability 0.049999843894510176 tabulated <D> 11.189112347 seed 0000000000000002 states 221184 trials 9500
+all: 105067288 pairs; D - <D> +0.003606 (+3.68 s.e.); E- +0.001537 (+2.22); E+ +0.002069 (+2.99); E- - E+ -0.000532 (-0.54)
+Gamma_p 6 probability 0.049999381955244372 tabulated <D> 8.367555870 seed 0000000000000002 states 221184 trials 9500
+all: 105066389 pairs; D - <D> +0.000685 (+1.32 s.e.); E- +0.000184 (+0.50); E+ +0.000502 (+1.37); E- - E+ -0.000318 (-0.62)
+Gamma_p 10 probability 0.049999843894510176 tabulated <D> 11.189112347 seed 0000000000000003 states 221184 trials 9500
+all: 105070196 pairs; D - <D> +0.002531 (+2.58 s.e.); E- +0.001033 (+1.49); E+ +0.001498 (+2.17); E- - E+ -0.000465 (-0.48)
+Gamma_p 6 probability 0.049999381955244372 tabulated <D> 8.367555870 seed 0000000000000003 states 221184 trials 9500
+all: 105069234 pairs; D - <D> +0.000273 (+0.53 s.e.); E- +0.000162 (+0.44); E+ +0.000111 (+0.30); E- - E+ +0.000052 (+0.10)
+== Gamma_p 4.5 and 8, seed 2
+Gamma_p 4.5 probability 0.019780231289881524 tabulated <D> 6.949997236 seed 0000000000000002 states 221184 trials 9500
+all:  41560500 pairs; D - <D> +0.001031 (+1.91 s.e.); E- +0.000450 (+1.19); E+ +0.000580 (+1.53); E- - E+ -0.000130 (-0.24)
+Gamma_p 8 probability 0.033995095791221917 tabulated <D> 9.905804869 seed 0000000000000002 states 221184 trials 9500
+all:  71433619 pairs; D - <D> +0.003536 (+3.88 s.e.); E- +0.001812 (+2.82); E+ +0.001724 (+2.68); E- - E+ +0.000088 (+0.10)

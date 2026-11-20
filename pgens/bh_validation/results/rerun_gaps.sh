@@ -3,7 +3,7 @@
 # (V5 single: input not parsed; V7 largest step: refused at startup), with the
 # lines of scripts/run_validation.sh as corrected.
 set -uo pipefail
-BUILDS="/Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/builds/bhemv"; ROOT="/Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/p2-bh-emission-claude1-20261119/runs/final"; MK="/Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/dev-bh-emission-validation/pgens/bh_validation/make_input.py"; J6=0.389958
+BUILDS="<Entity Local Experiments>/worktrees/builds/bhemv"; ROOT="<Entity Local Experiments>/p2-bh-emission-claude1-20261119/runs/final"; MK="<Entity Local Experiments>/worktrees/dev-bh-emission-validation/pgens/bh_validation/make_input.py"; J6=0.389958
 COOL="fields=false neutralizer=false gauss=false recycle=true nx=32 ny=32 maxnpart_leptons=400000"
 run() { local dir="$ROOT/$1" prec="$2"; shift 2; mkdir -p "$dir"; python3 "$MK" "$dir/input.toml" "$@" > "$dir/make_input.log"
   ( cd "$dir" && OMP_PROC_BIND=false OMP_NUM_THREADS=8 "$BUILDS/bhem-val-$prec/src/entity.xc" -input input.toml > run.log 2>&1 ); echo "$dir rc=$?"; }

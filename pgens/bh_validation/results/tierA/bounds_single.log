@@ -1,0 +1,4 @@
+charge: 132 pairs, continuity residuals 4.749e-07 (leptons not pushed) and 5.390e-07 (pushed)
+rate: 14067 pairs, expected 14000.0 +- 114.1; loss: mean 11.14656 +- 0.08508, tabulated 11.18911
+capacity: 64 pairs inserted, 101 dropped and counted
+refusals: raised as expected

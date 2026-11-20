@@ -15,6 +15,11 @@ to V13.
 - `tools/bhv_spectra.cpp`: the pair spectra against the frozen histograms
   with the calibrated two-sample test of the fork (headers copied verbatim
   from `dev/hadronic` 72427ff6 into `tools/fork-72427ff6/`) and the Holm rule.
+- `scripts/v4_blocks.py`, `scripts/extract_block0.py`, `scripts/match_block0.py`
+  with `tests/archetypes/bhv_replay_pool.cpp`: a V4 sample step by step, and
+  the pairs of a run on a GPU against the same generator streams replayed on
+  a CPU.
+- `rusty/`: the drivers of the CUDA builds and of the run on one A100.
 - `data/`: frozen reference files, verbatim, with `SHA256SUMS`:
   `bhref-0.2.0` and `bhref-0.2.0-suppl1` from `tests/data/hadronic/` at
   `dev/hadronic` 72427ff6; `poster/fig3_analytic_data.csv`, the

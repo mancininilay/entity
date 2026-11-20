@@ -52,13 +52,13 @@
       Gamma_p 10 D (log bins): N_A 1049686 N_B 1000000 T_AD 5.3334e-07 p 0.95520 q99 7.5470e-06 merged bins 160
 ---- V5 poster test
 Traceback (most recent call last):
-  File "/Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/dev-bh-emission-validation/pgens/bh_validation/scripts/analyze_poster.py", line 69, in <module>
+  File "<Entity Local Experiments>/worktrees/dev-bh-emission-validation/pgens/bh_validation/scripts/analyze_poster.py", line 69, in <module>
     sys.exit(main())
              ~~~~^^
-  File "/Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/dev-bh-emission-validation/pgens/bh_validation/scripts/analyze_poster.py", line 25, in main
+  File "<Entity Local Experiments>/worktrees/dev-bh-emission-validation/pgens/bh_validation/scripts/analyze_poster.py", line 25, in main
     text = open(os.path.join(args.run_dir, "input.toml")).read()
            ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-FileNotFoundError: [Errno 2] No such file or directory: '/Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/p2-bh-emission-claude1-20261119/runs/final/v5/g300_single/input.toml'
+FileNotFoundError: [Errno 2] No such file or directory: '<Entity Local Experiments>/p2-bh-emission-claude1-20261119/runs/final/v5/g300_single/input.toml'
 ---- V6 energy
 PASS V6 fields off Gamma_p0=6 single: step 39999, pairs 65287581, emitters' loss 4.6226307139e+08, pairs' energy minus absorbed 4.6226307280e+08, relative difference +3.061e-09 (limit 1e-05)
 PASS V6 fields off Gamma_p0=3 single: step 131999, pairs 28054126, emitters' loss 1.2889341019e+08, pairs' energy minus absorbed 1.2889341004e+08, relative difference -1.180e-09 (limit 1e-05)
@@ -72,13 +72,13 @@ PASS V6 fields off Gamma_p0=3 single: step 131999, pairs 28054126, emitters' los
    PASS V2 at <K>/K0 = 0.50 (t = 1389.46, <K> = 4589.850391): <K> - K_corr = +0.002733 = +0.013 s.e. (s.e. = 0.2062, limit 4); plain ODE -5.712 s.e.; Jensen term -1.431 of 4 s.e.; sigma_K/K = 0.01421
    V7: V2 at the smallest step, single: ALL PASS
 Traceback (most recent call last):
-  File "/Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/dev-bh-emission-validation/pgens/bh_validation/scripts/analyze_timestep.py", line 64, in <module>
+  File "<Entity Local Experiments>/worktrees/dev-bh-emission-validation/pgens/bh_validation/scripts/analyze_timestep.py", line 64, in <module>
     sys.exit(main())
              ~~~~^^
-  File "/Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/dev-bh-emission-validation/pgens/bh_validation/scripts/analyze_timestep.py", line 28, in main
+  File "<Entity Local Experiments>/worktrees/dev-bh-emission-validation/pgens/bh_validation/scripts/analyze_timestep.py", line 28, in main
     S = [Series(r) for r in args.runs]
          ~~~~~~^^^
-  File "/Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/dev-bh-emission-validation/pgens/bh_validation/scripts/bhv.py", line 34, in __init__
+  File "<Entity Local Experiments>/worktrees/dev-bh-emission-validation/pgens/bh_validation/scripts/bhv.py", line 34, in __init__
     self.K0 = rows[0].get("K_ref", inp["mu_r"] * (inp["gamma_p"] - 1.0))
               ~~~~^^^
 IndexError: list index out of range
@@ -208,13 +208,13 @@ PASS V6 fields off Gamma_p0=3 double: step 131999, pairs 28054076, emitters' los
    PASS V2 at <K>/K0 = 0.50 (t = 1389.46, <K> = 4589.885319): <K> - K_corr = +0.03942 = +0.192 s.e. (s.e. = 0.2057, limit 4); plain ODE -5.558 s.e.; Jensen term -1.437 of 4 s.e.; sigma_K/K = 0.01417
    V7: V2 at the smallest step, double: ALL PASS
 Traceback (most recent call last):
-  File "/Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/dev-bh-emission-validation/pgens/bh_validation/scripts/analyze_timestep.py", line 64, in <module>
+  File "<Entity Local Experiments>/worktrees/dev-bh-emission-validation/pgens/bh_validation/scripts/analyze_timestep.py", line 64, in <module>
     sys.exit(main())
              ~~~~^^
-  File "/Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/dev-bh-emission-validation/pgens/bh_validation/scripts/analyze_timestep.py", line 28, in main
+  File "<Entity Local Experiments>/worktrees/dev-bh-emission-validation/pgens/bh_validation/scripts/analyze_timestep.py", line 28, in main
     S = [Series(r) for r in args.runs]
          ~~~~~~^^^
-  File "/Users/mancininilay/Desktop/Life/PhD/Research/P1.3 & P2/Entity Local Experiments/worktrees/dev-bh-emission-validation/pgens/bh_validation/scripts/bhv.py", line 34, in __init__
+  File "<Entity Local Experiments>/worktrees/dev-bh-emission-validation/pgens/bh_validation/scripts/bhv.py", line 34, in __init__
     self.K0 = rows[0].get("K_ref", inp["mu_r"] * (inp["gamma_p"] - 1.0))
               ~~~~^^^
 IndexError: list index out of range

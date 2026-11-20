@@ -1,0 +1,9 @@
+frozen bhref 0.2.0 (independent implementation, 1e6 unweighted events per node) against the tabulated <D>, by band of Gamma_p
+  Gamma_p in [2.13, 2.5): 312 nodes; weighted mean of (bhref - table)/table = -1.813e-07 +- 2.3e-06 (-0.08 s.e.); chi2 = 277.1
+  Gamma_p in [2.5, 3.5):  37 nodes; weighted mean of (bhref - table)/table = +3.928e-05 +- 4.4e-05 (+0.89 s.e.); chi2 = 31.2
+  Gamma_p in [3.5, 5.0):  20 nodes; weighted mean of (bhref - table)/table = +4.859e-05 +- 1.0e-04 (+0.48 s.e.); chi2 = 25.2
+  Gamma_p in [5.0, 7.0):  15 nodes; weighted mean of (bhref - table)/table = -3.389e-05 +- 1.6e-04 (-0.21 s.e.); chi2 = 12.0
+  Gamma_p in [7.0, 12.0):  19 nodes; weighted mean of (bhref - table)/table = +2.814e-04 +- 1.9e-04 (+1.47 s.e.); chi2 = 17.4
+  Gamma_p in [12.0, 25.0):  24 nodes; weighted mean of (bhref - table)/table = -2.204e-05 +- 2.5e-04 (-0.09 s.e.); chi2 = 46.8
+  Gamma_p in [25.0, 50.0):  20 nodes; weighted mean of (bhref - table)/table = +8.236e-04 +- 4.1e-04 (+1.99 s.e.); chi2 = 25.4
+  Gamma_p in [50.0, 92.0):  19 nodes; weighted mean of (bhref - table)/table = +4.870e-05 +- 6.3e-04 (+0.08 s.e.); chi2 = 16.8
