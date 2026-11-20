@@ -45,6 +45,12 @@ namespace {
   const double GAMMA_P    = 10.0;
   const double GAMMA_MAX  = 12.0;
 
+  void check(bool condition, const std::string& msg) {
+    if (not condition) {
+      throw std::runtime_error(msg);
+    }
+  }
+
   auto make_params(real_t optical_depth,
                    real_t pair_weight     = ONE,
                    real_t max_probability = static_cast<real_t>(0.1),
@@ -93,13 +99,15 @@ namespace {
     return std::sqrt((gamma - 1.0) * (gamma + 1.0));
   }
 
-  // emitters at random positions (in one cell if `one_cell`) with isotropic
-  // momenta of the same magnitude
+  // emitters at random positions (in one cell if `one_cell`, and then at
+  // least `margin` away from its faces) with isotropic momenta of the same
+  // magnitude
   void fill_emitters(species_t&    emitters,
                      npart_t       n,
                      double        u,
                      std::uint64_t seed,
-                     bool          one_cell = false) {
+                     bool          one_cell = false,
+                     double        margin   = 0.0) {
     auto i1_h  = Kokkos::create_mirror_view(emitters.i1);
     auto i2_h  = Kokkos::create_mirror_view(emitters.i2);
     auto dx1_h = Kokkos::create_mirror_view(emitters.dx1);
@@ -120,12 +128,12 @@ namespace {
       return static_cast<double>(z >> 11) * 0x1.0p-53;
     };
     for (npart_t p = 0u; p < n; ++p) {
-      i1_h(p)            = one_cell ? static_cast<int>(NX1 / 2u)
-                                    : static_cast<int>(next() * NX1);
-      i2_h(p)            = one_cell ? static_cast<int>(NX2 / 2u)
-                                    : static_cast<int>(next() * NX2);
-      dx1_h(p)           = static_cast<prtldx_t>(next());
-      dx2_h(p)           = static_cast<prtldx_t>(next());
+      i1_h(p)  = one_cell ? static_cast<int>(NX1 / 2u)
+                          : static_cast<int>(next() * NX1);
+      i2_h(p)  = one_cell ? static_cast<int>(NX2 / 2u)
+                          : static_cast<int>(next() * NX2);
+      dx1_h(p) = static_cast<prtldx_t>(margin + (1.0 - 2.0 * margin) * next());
+      dx2_h(p) = static_cast<prtldx_t>(margin + (1.0 - 2.0 * margin) * next());
       const double cos_t = 2.0 * next() - 1.0;
       const double sin_t = std::sqrt(1.0 - cos_t * cos_t);
       const double phi   = 2.0 * constant::PI * next();
@@ -292,17 +300,23 @@ namespace {
                                 params,
                                 tables,
                                 random_pool };
-    if (write_previous) {
-      push_emitters(emitters, emission, metric, EB, dt);
-    } else {
-      push_emitters(emitters, WithoutPreviousPosition { emission }, metric, EB, dt);
-    }
-    const auto n_injected = emission.numbers_injected();
-    electrons.set_npart(electrons.npart() + n_injected[0]);
-    electrons.set_counter(electrons.counter() + n_injected[0]);
-    positrons.set_npart(positrons.npart() + n_injected[1]);
-    positrons.set_counter(positrons.counter() + n_injected[1]);
-    return n_injected[0];
+    // the push, then what the engine does with the answers of the policy:
+    // the species it names receive the numbers of particles it reports
+    const auto       push_and_count = [&](const auto& policy) -> npart_t {
+      push_emitters(emitters, policy, metric, EB, dt);
+      const auto species    = policy.emitted_species_indices();
+      const auto n_injected = policy.numbers_injected();
+      check(species.size() == 2u and n_injected.size() == 2u and
+              species[0] == electrons.index() and species[1] == positrons.index(),
+            "the policy does not name the electron and the positron species");
+      electrons.set_npart(electrons.npart() + n_injected[0]);
+      electrons.set_counter(electrons.counter() + n_injected[0]);
+      positrons.set_npart(positrons.npart() + n_injected[1]);
+      positrons.set_counter(positrons.counter() + n_injected[1]);
+      return n_injected[0];
+    };
+    return write_previous ? push_and_count(emission)
+                          : push_and_count(WithoutPreviousPosition { emission });
   }
 
   void push_plain(species_t&                    species,
@@ -458,12 +472,6 @@ namespace {
     }
   };
 
-  void check(bool condition, const std::string& msg) {
-    if (not condition) {
-      throw std::runtime_error(msg);
-    }
-  }
-
   /*
    * Charge conservation of the newly created pairs. One step of 2000
    * emitters in a periodic box:
@@ -592,13 +600,27 @@ namespace {
   /*
    * Charge conservation when the slots of the new leptons have been used
    * before. 2000 emitters in one cell; the previous positions of all the
-   * lepton slots are set to two points of that cell, one for the electrons
-   * and another for the positrons. With the leptons not yet pushed:
+   * lepton slots are set to one point for the electrons and to another for
+   * the positrons, in two arms:
+   *   - same cell: both points are in the cell of the emitters, so the
+   *     offsets within the cell differ from those of the new leptons and the
+   *     cell indices do not;
+   *   - neighbouring cells: the two points are in the two cells diagonally
+   *     opposite across the cell of the emitters, so the cell indices differ
+   *     too, in both directions. The emitters stay in the middle half of
+   *     their cell, which keeps every displacement that the deposit can be
+   *     given, with the previous position written in full, in part or not at
+   *     all, within one cell.
+   * In each arm, with the leptons not yet pushed:
    *   - each lepton species alone deposits no in-plane current, and the
    *     continuity equation holds for all the species together;
    *   - control: on the same state, the insertion of the built-in policies,
    *     which does not write the previous position, must violate both (the
    *     continuity equation by more than 1000 times the limit).
+   * A policy that wrote only the cell indices or only the offsets, only one
+   * direction or only one species fails one of the two arms. The test is
+   * two-dimensional: the previous position in the third direction is not
+   * exercised, and a policy that failed to write that one alone would pass.
    */
   void test_charge_reused_slots() {
     const metric_t metric {
@@ -621,84 +643,124 @@ namespace {
     const int         cell1      = static_cast<int>(NX1 / 2u),
               cell2              = static_cast<int>(NX2 / 2u);
 
-    for (const bool write_previous : { true, false }) {
-      random_number_pool_t random_pool { 2468 };
-      auto                 electrons = make_species(1, 1.0f, -1.0f, n_emitters);
-      auto                 positrons = make_species(2, 1.0f, 1.0f, n_emitters);
-      auto                 emitters  = make_species(3, 1.0f, 1.0f, n_emitters);
-      fill_emitters(emitters, n_emitters, momentum_at(GAMMA_P), 5u, true);
-      set_previous(electrons,
-                   cell1,
-                   cell2,
-                   static_cast<prtldx_t>(0.2),
-                   static_cast<prtldx_t>(0.7));
-      set_previous(positrons,
-                   cell1,
-                   cell2,
-                   static_cast<prtldx_t>(0.8),
-                   static_cast<prtldx_t>(0.3));
+    struct Arm {
+      std::string   name;
+      // previous position of the electron slots: cell and offsets
+      int           electron_i1, electron_i2;
+      double        electron_dx1, electron_dx2;
+      // previous position of the positron slots
+      int           positron_i1, positron_i2;
+      double        positron_dx1, positron_dx2;
+      // distance of the emitters from the faces of their cell, and their seed
+      double        margin;
+      std::uint64_t seed;
+    };
 
-      std::vector<double> rho_old(n_nodes, 0.0);
-      charge_density(emitters, rho_old);
-      // all the charge is on the four nodes of one cell: the round-off of the
-      // sums is measured against the largest term, not against one
-      double scale = 1.0;
-      for (const auto& rho : rho_old) {
-        scale = std::max(scale, std::abs(rho) / static_cast<double>(dt));
+    const std::vector<Arm> arms {
+      {          "same cell",cell1,cell2,0.2, 0.7,cell1,cell2,0.8, 0.3,0.0, 5u       },
+      { "neighbouring cells",
+       cell1 - 1,
+       cell2 + 1,
+       0.8, 0.2,
+       cell1 + 1,
+       cell2 - 1,
+       0.2, 0.8,
+       0.25, 6u }
+    };
+
+    for (const auto& arm : arms) {
+      for (const bool write_previous : { true, false }) {
+        random_number_pool_t random_pool { 2468 };
+        auto electrons = make_species(1, 1.0f, -1.0f, n_emitters);
+        auto positrons = make_species(2, 1.0f, 1.0f, n_emitters);
+        auto emitters  = make_species(3, 1.0f, 1.0f, n_emitters);
+        fill_emitters(emitters,
+                      n_emitters,
+                      momentum_at(GAMMA_P),
+                      arm.seed,
+                      true,
+                      arm.margin);
+        set_previous(electrons,
+                     arm.electron_i1,
+                     arm.electron_i2,
+                     static_cast<prtldx_t>(arm.electron_dx1),
+                     static_cast<prtldx_t>(arm.electron_dx2));
+        set_previous(positrons,
+                     arm.positron_i1,
+                     arm.positron_i2,
+                     static_cast<prtldx_t>(arm.positron_dx1),
+                     static_cast<prtldx_t>(arm.positron_dx2));
+
+        std::vector<double> rho_old(n_nodes, 0.0);
+        charge_density(emitters, rho_old);
+        // all the charge is on the four nodes of one cell: the round-off of
+        // the sums is measured against the largest term, not against one
+        double scale = 1.0;
+        for (const auto& rho : rho_old) {
+          scale = std::max(scale, std::abs(rho) / static_cast<double>(dt));
+        }
+        const double limit   = 100.0 * eps * scale;
+        const auto   n_pairs = push_with_emission(emitters,
+                                                electrons,
+                                                positrons,
+                                                metric,
+                                                EB,
+                                                params,
+                                                dt,
+                                                random_pool,
+                                                write_previous);
+
+        std::vector<std::vector<double>> J_all(3, std::vector<double>(n_nodes, 0.0));
+        const double j_electrons = max_inplane_current(electrons, metric, dt, J_all);
+        const double j_positrons = max_inplane_current(positrons, metric, dt, J_all);
+        deposit(emitters, metric, dt, J_all);
+        std::vector<double> rho_new(n_nodes, 0.0);
+        charge_density(emitters, rho_new);
+        charge_density(electrons, rho_new);
+        charge_density(positrons, rho_new);
+        const double residual = continuity_residual(rho_old, rho_new, J_all, dt);
+
+        // the numbers first, so that a run that fails shows them
+        const std::string label = "reused slots, " + arm.name + ", " +
+                                  (write_previous
+                                     ? "policy"
+                                     : "control without the previous position");
+        std::cout
+          << fmt::format(
+               "%s: %u pairs, in-plane currents %.3e (electrons) and "
+               "%.3e (positrons), continuity residual %.3e (limit %.3e)",
+               label.c_str(),
+               n_pairs,
+               j_electrons,
+               j_positrons,
+               residual,
+               limit)
+          << std::endl;
+
+        check(n_pairs > 100u, label + ": too few pairs created");
+        if (write_previous) {
+          check(j_electrons == 0.0 and j_positrons == 0.0,
+                fmt::format("%s: in-plane current of unpushed leptons %.3e "
+                            "(electrons), %.3e (positrons) != 0",
+                            label.c_str(),
+                            j_electrons,
+                            j_positrons));
+          check(residual < limit,
+                fmt::format("%s: continuity residual %.3e (limit %.3e)",
+                            label.c_str(),
+                            residual,
+                            limit));
+        } else {
+          check(j_electrons > 1.0 and j_positrons > 1.0 and residual > 1.0e3 * limit,
+                fmt::format("%s: charge is conserved without the previous "
+                            "position (currents %.3e, %.3e, continuity "
+                            "residual %.3e)",
+                            label.c_str(),
+                            j_electrons,
+                            j_positrons,
+                            residual));
+        }
       }
-      const double limit   = 100.0 * eps * scale;
-      const auto   n_pairs = push_with_emission(emitters,
-                                              electrons,
-                                              positrons,
-                                              metric,
-                                              EB,
-                                              params,
-                                              dt,
-                                              random_pool,
-                                              write_previous);
-      check(n_pairs > 100u, "reused slots: too few pairs created");
-
-      std::vector<std::vector<double>> J_all(3, std::vector<double>(n_nodes, 0.0));
-      const double j_electrons = max_inplane_current(electrons, metric, dt, J_all);
-      const double j_positrons = max_inplane_current(positrons, metric, dt, J_all);
-      deposit(emitters, metric, dt, J_all);
-      std::vector<double> rho_new(n_nodes, 0.0);
-      charge_density(emitters, rho_new);
-      charge_density(electrons, rho_new);
-      charge_density(positrons, rho_new);
-      const double residual = continuity_residual(rho_old, rho_new, J_all, dt);
-
-      if (write_previous) {
-        check(j_electrons == 0.0 and j_positrons == 0.0,
-              fmt::format("reused slots: in-plane current of unpushed leptons "
-                          "%.3e (electrons), %.3e (positrons) != 0",
-                          j_electrons,
-                          j_positrons));
-        check(residual < limit,
-              fmt::format("reused slots: continuity residual %.3e (limit %.3e)",
-                          residual,
-                          limit));
-      } else {
-        check(j_electrons > 1.0 and j_positrons > 1.0 and residual > 1.0e3 * limit,
-              fmt::format("reused slots: the control without the previous "
-                          "position conserves charge (currents %.3e, %.3e, "
-                          "continuity residual %.3e)",
-                          j_electrons,
-                          j_positrons,
-                          residual));
-      }
-      std::cout
-        << fmt::format(
-             "reused slots, %s: %u pairs, in-plane currents %.3e "
-             "(electrons) and %.3e (positrons), continuity residual %.3e "
-             "(limit %.3e)",
-             write_previous ? "policy" : "control without the previous position",
-             n_pairs,
-             j_electrons,
-             j_positrons,
-             residual,
-             limit)
-        << std::endl;
     }
   }
 
@@ -791,8 +853,10 @@ namespace {
    *   - a probability above `max_probability` raises, at startup from the
    *     tables and at runtime from the kernel;
    *   - `pair_weight != 1` without `particles.use_weights` raises;
-   *   - a NaN optical depth or probability bound raises;
-   *   - lepton species whose charges do not cancel exactly are refused.
+   *   - a NaN optical depth or probability bound raises, and so does a
+   *     timestep that is not finite;
+   *   - lepton species whose charges do not cancel exactly are refused, and
+   *     so is an emitting species of infinite mass.
    */
   void test_refusals_and_capacity() {
     const metric_t metric {
@@ -925,14 +989,24 @@ namespace {
               dt);
           }),
           "refusal: NaN max_probability accepted");
+    // ... and so is a timestep that is not finite: a NaN and minus infinity
+    // would pass the bound on the probability
+    const auto infinity = std::numeric_limits<real_t>::infinity();
+    for (const auto bad_dt : { not_a_number, infinity, -infinity }) {
+      check(raises([&]() {
+              arch::emission::bh::GetTables(params, bad_dt);
+            }),
+            fmt::format("refusal: timestep %g accepted",
+                        static_cast<double>(bad_dt)));
+    }
 
     // the charges of the two lepton species must cancel exactly: a positron
     // charge one unit in the last place above that is refused by the factory
-    const auto make_policy = [&](float positron_charge) {
+    const auto make_policy = [&](float positron_charge, float emitter_mass = 1.0f) {
       MockDomain domain;
       domain.add_species(1.0f, -1.0f);
       domain.add_species(1.0f, positron_charge);
-      domain.add_species(1.0f, 1.0f);
+      domain.add_species(emitter_mass, 1.0f);
       kernel::sr::MakePusherPolicyEmission<metric_t, MockDomain, EmissionType::BETHE_HEITLER>(
         domain,
         params,
@@ -946,6 +1020,11 @@ namespace {
             make_policy(std::nextafter(1.0f, 2.0f));
           }),
           "refusal: lepton charges that do not cancel exactly accepted");
+    // the mass of the emitting species must be finite
+    check(raises([&]() {
+            make_policy(1.0f, std::numeric_limits<float>::infinity());
+          }),
+          "refusal: emitting species of infinite mass accepted");
     std::cout << "refusals: raised as expected" << std::endl;
 #endif
   }
