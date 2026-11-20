@@ -46,7 +46,7 @@ CXX: <home>/work/entity-build-tools/20261003/deps-src/kokkos/bin/nvcc_wrapper
 BUILD pr-single rc=0 seconds=431 cap=1200 error_lines=0 warning_lines=3
 BUILD pr-double rc=0 seconds=435 cap=1200 error_lines=0 warning_lines=3
 builds finished after 438 s
--rwxr-xr-x 1 nmancini nmancini 2614464 Nov 20 16:25 <home>/ceph/entity-builds/bh-emission-claude1-20261119/corrections-20261120b/cuda-build-7512996/pr-single/tests/archetypes/test-archetypes-bethe_heitler.xc
+-rwxr-xr-x 1 <user> <group> 2614464 Nov 20 16:25 <home>/ceph/entity-builds/bh-emission-claude1-20261119/corrections-20261120b/cuda-build-7512996/pr-single/tests/archetypes/test-archetypes-bethe_heitler.xc
 3ed1e9ddfd91d5d537566a7e9083a23a403cd0c58da62fa9e1ed9fa8b768623c  <home>/ceph/entity-builds/bh-emission-claude1-20261119/corrections-20261120b/cuda-build-7512996/pr-single/tests/archetypes/test-archetypes-bethe_heitler.xc
 unresolved libraries: 0
 pr-single: -- Git hash: 43d68f45d2d92530317f5850b12d10b3b1cfffae
@@ -55,7 +55,7 @@ pr-single ctest: Total Tests: 1
 pr-single warning:       1 <home>/ceph/entity-builds/bh-emission-claude1-20261119/corrections-20261120b/src-pr/src/output/../output/render/axes.h(705): warning #550-D: variable "ok" was set but never used
 pr-single warning:       1 <home>/ceph/entity-builds/bh-emission-claude1-20261119/corrections-20261120b/src-pr/src/output/render/renderer.cpp(843): warning #177-D: variable "cull" was declared but never referenced
 pr-single warning:       1 Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
--rwxr-xr-x 1 nmancini nmancini 2630904 Nov 20 16:25 <home>/ceph/entity-builds/bh-emission-claude1-20261119/corrections-20261120b/cuda-build-7512996/pr-double/tests/archetypes/test-archetypes-bethe_heitler.xc
+-rwxr-xr-x 1 <user> <group> 2630904 Nov 20 16:25 <home>/ceph/entity-builds/bh-emission-claude1-20261119/corrections-20261120b/cuda-build-7512996/pr-double/tests/archetypes/test-archetypes-bethe_heitler.xc
 e49d78db182f5c63f3d7405d38245a56dbbdd3e04c22488bbc23d2809eb5d77c  <home>/ceph/entity-builds/bh-emission-claude1-20261119/corrections-20261120b/cuda-build-7512996/pr-double/tests/archetypes/test-archetypes-bethe_heitler.xc
 unresolved libraries: 0
 pr-double: -- Git hash: 43d68f45d2d92530317f5850b12d10b3b1cfffae

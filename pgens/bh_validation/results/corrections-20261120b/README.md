@@ -48,5 +48,5 @@ wrapper of the test using its two host functions.
 The standalone reproduction for the contract of `kernel::InjectParticle` is
 in `pgens/bh_validation/upstream-repro/`.
 
-Absolute paths of the machines are written as `<Entity Local Experiments>`,
+Absolute paths of the machines and the user name on the cluster are written as `<Entity Local Experiments>`, `<user>`,
 `<home>` and `<ceph>` in these copies.
