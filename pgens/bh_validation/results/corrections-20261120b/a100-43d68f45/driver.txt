@@ -1,0 +1,90 @@
+workergpu046
+Fri Nov 20 09:18:01 PM UTC 2026
+
+Currently Loaded Modules:
+  1) modules/2.4-20250724 (S)   4) cuda/12.8.0          7) ninja/1.12.1
+  2) slurm                      5) openmpi/cuda-4.1.8
+  3) gcc/13.3.0                 6) cmake/3.31.6
+
+  Where:
+   S:  Module is Sticky, requires --force to unload or purge
+
+ 
+
+g++ (Spack GCC) 13.3.0
+Cuda compilation tools, release 12.8, V12.8.61
+Build cuda_12.8.r12.8/compiler.35404655_0
+cmake version 3.31.6
+Fri Nov 20 16:18:01 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 615.71.10              KMD Version: 615.71.10     CUDA UMD Version: 13.4     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-SXM4-80GB          On  |   00000000:31:00.0 Off |                    0 |
+| N/A   26C    P0             62W /  225W |       0MiB /  81920MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+name, memory.total [MiB], driver_version
+NVIDIA A100-SXM4-80GB, 81920 MiB, 615.71.10
+Cpus_allowed_list:	0-3,20-31
+OMP_NUM_THREADS=1
+source: <home>/ceph/entity-builds/bh-emission-claude1-20261119/corrections-20261120b/src-pr at 43d68f45d2d92530317f5850b12d10b3b1cfffae
+Kokkos: <home>/ceph/entity-builds/20261003-gcc13-cuda12.8/install/kokkos-cuda/lib/cmake/Kokkos
+CXX: <home>/work/entity-build-tools/20261003/deps-src/kokkos/bin/nvcc_wrapper
+==== builds (the two precisions side by side, 8 compile processes each)
+BUILD pr-single rc=0 seconds=431 cap=1200 error_lines=0 warning_lines=3
+BUILD pr-double rc=0 seconds=435 cap=1200 error_lines=0 warning_lines=3
+builds finished after 438 s
+-rwxr-xr-x 1 nmancini nmancini 2614464 Nov 20 16:25 <home>/ceph/entity-builds/bh-emission-claude1-20261119/corrections-20261120b/cuda-build-7512996/pr-single/tests/archetypes/test-archetypes-bethe_heitler.xc
+3ed1e9ddfd91d5d537566a7e9083a23a403cd0c58da62fa9e1ed9fa8b768623c  <home>/ceph/entity-builds/bh-emission-claude1-20261119/corrections-20261120b/cuda-build-7512996/pr-single/tests/archetypes/test-archetypes-bethe_heitler.xc
+unresolved libraries: 0
+pr-single: -- Git hash: 43d68f45d2d92530317f5850b12d10b3b1cfffae
+pr-single ctest:   Test #44: ARCHETYPES::bethe_heitler
+pr-single ctest: Total Tests: 1
+pr-single warning:       1 <home>/ceph/entity-builds/bh-emission-claude1-20261119/corrections-20261120b/src-pr/src/output/../output/render/axes.h(705): warning #550-D: variable "ok" was set but never used
+pr-single warning:       1 <home>/ceph/entity-builds/bh-emission-claude1-20261119/corrections-20261120b/src-pr/src/output/render/renderer.cpp(843): warning #177-D: variable "cull" was declared but never referenced
+pr-single warning:       1 Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+-rwxr-xr-x 1 nmancini nmancini 2630904 Nov 20 16:25 <home>/ceph/entity-builds/bh-emission-claude1-20261119/corrections-20261120b/cuda-build-7512996/pr-double/tests/archetypes/test-archetypes-bethe_heitler.xc
+e49d78db182f5c63f3d7405d38245a56dbbdd3e04c22488bbc23d2809eb5d77c  <home>/ceph/entity-builds/bh-emission-claude1-20261119/corrections-20261120b/cuda-build-7512996/pr-double/tests/archetypes/test-archetypes-bethe_heitler.xc
+unresolved libraries: 0
+pr-double: -- Git hash: 43d68f45d2d92530317f5850b12d10b3b1cfffae
+pr-double ctest:   Test #44: ARCHETYPES::bethe_heitler
+pr-double ctest: Total Tests: 1
+pr-double warning:       1 <home>/ceph/entity-builds/bh-emission-claude1-20261119/corrections-20261120b/src-pr/src/output/../output/render/axes.h(705): warning #550-D: variable "ok" was set but never used
+pr-double warning:       1 <home>/ceph/entity-builds/bh-emission-claude1-20261119/corrections-20261120b/src-pr/src/output/render/renderer.cpp(843): warning #177-D: variable "cull" was declared but never referenced
+pr-double warning:       1 Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+==== tier A
+RUN tierA/single rc=0 seconds=7 cap=240
+charge: 147 pairs, continuity residuals 4.609e-07 (leptons not pushed) and 4.667e-07 (pushed)
+reused slots, same cell, policy: 135 pairs, in-plane currents 0.000e+00 (electrons) and 0.000e+00 (positrons), continuity residual 1.229e-05 (limit 1.352e-02)
+reused slots, same cell, control without the previous position: 135 pairs, in-plane currents 5.492e+01 (electrons) and 5.557e+01 (positrons), continuity residual 1.500e+02 (limit 1.352e-02)
+reused slots, neighbouring cells, policy: 135 pairs, in-plane currents 0.000e+00 (electrons) and 0.000e+00 (positrons), continuity residual 9.921e-06 (limit 1.335e-02)
+reused slots, neighbouring cells, control without the previous position: 135 pairs, in-plane currents 1.117e+02 (electrons) and 1.155e+02 (positrons), continuity residual 1.920e+02 (limit 1.335e-02)
+rate: 14053 pairs, expected 14000.0 +- 114.1; loss: mean 11.30091 +- 0.08533, tabulated 11.18911
+capacity: 64 pairs inserted, 75 dropped and counted
+refusals: raised as expected
+RUN tierA/double rc=0 seconds=7 cap=240
+charge: 147 pairs, continuity residuals 1.040e-07 (leptons not pushed) and 1.154e-07 (pushed)
+reused slots, same cell, policy: 135 pairs, in-plane currents 0.000e+00 (electrons) and 0.000e+00 (positrons), continuity residual 2.514e-07 (limit 1.352e-02)
+reused slots, same cell, control without the previous position: 135 pairs, in-plane currents 5.492e+01 (electrons) and 5.557e+01 (positrons), continuity residual 1.500e+02 (limit 1.352e-02)
+reused slots, neighbouring cells, policy: 135 pairs, in-plane currents 0.000e+00 (electrons) and 0.000e+00 (positrons), continuity residual 3.113e-07 (limit 1.335e-02)
+reused slots, neighbouring cells, control without the previous position: 135 pairs, in-plane currents 1.117e+02 (electrons) and 1.155e+02 (positrons), continuity residual 1.920e+02 (limit 1.335e-02)
+rate: 14053 pairs, expected 14000.0 +- 114.1; loss: mean 11.30091 +- 0.08533, tabulated 11.18911
+capacity: 64 pairs inserted, 75 dropped and counted
+refusals: raised as expected
+name, memory.used [MiB], utilization.gpu [%]
+NVIDIA A100-SXM4-80GB, 0 MiB, 0 %
+Fri Nov 20 09:25:35 PM UTC 2026
+job finished after 454 s, status 0
+Exit status: 0

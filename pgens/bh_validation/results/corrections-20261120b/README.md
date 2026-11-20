@@ -29,6 +29,14 @@ wrapper of the test using its two host functions.
   `results/oracle/` unchanged) and with every threaded builder given 1 and 3
   threads (`*_capped.cpp`): nine outputs, byte-identical to those of
   66aa6fb6 (`oracle_sha256.txt`, `run_oracle.txt`).
+- `a100-43d68f45/`: the result of record on a GPU. `dev/bh-emission` at
+  43d68f45 built with CUDA 12.8 and Kokkos 5.2.1 (Serial + CUDA) and tier A
+  run on one A100, in single and double precision: the build has no warning
+  from the new code and the test passes. Reused-slot case in single
+  precision: both in-plane currents exactly zero in both arms, continuity
+  residuals 1.229e-05 (same cell) and 9.921e-06 (neighbouring cells) against
+  limits of 1.352e-02 and 1.335e-02; the controls give 150 and 192.
+  `driver.txt` is the log of the job.
 - `a100-e92d84d8/`: tier A of the previous head, e92d84d8, on one A100
   (CUDA 12.8, Kokkos 5.2.1), single and double precision: it passes. This
   is the test before the neighbouring-cell arm was added, kept as an early
