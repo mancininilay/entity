@@ -1,6 +1,6 @@
-# Reproductions of two failures of upstream 1.6.0rc (861b19a7)
+# Reproductions on upstream 1.6.0rc (861b19a7)
 
-Neither needs the Bethe-Heitler code. Both were run on a clean detached
+None needs the Bethe-Heitler code. All were run on a clean detached
 checkout of 861b19a7 (Apple clang 21, Kokkos 5.0.1 OpenMP, `output=OFF`,
 double precision); the programs are compiled against the libraries of that
 tree with its own flags (`build_repro.py <build tree> <source> <output>`).
@@ -22,6 +22,16 @@ Bounds checking is `-DKOKKOS_ENABLE_DEBUG_BOUNDS_CHECK` in `CMAKE_CXX_FLAGS`.
 - `emission_overflow_*.txt`: `tests/archetypes/repro_emission_overflow.cpp`
   on the same pristine tree (the unguarded insertion of the synchrotron
   policy), with and without bounds checking.
+- `repro_inject_previous.cpp`: the contract of `kernel::InjectParticle` for
+  charged particles. Two species of charge -1 and +1 in 2D; slot 0 of each
+  holds the previous position of an earlier particle (two different points
+  of one cell); one particle of each is inserted at the middle of the cell
+  and the currents are deposited without a push. The neutral pair has not
+  moved, yet the largest in-plane current is 0.6 and the largest |div J| is
+  1.0; with the previous position set to the position both are exactly zero
+  (`inject_previous_up-o0-double.txt`, `inject_previous_up-o0-bounds-double.txt`).
+  Nothing upstream inserts charged particles this way today: this is the
+  behaviour a policy that creates them has to know about.
 
 Build trees: `up-o0-double` (default), `up-o1-double` (`deposit=esirkepov`,
 `shape_order=1`), `up-o0-bounds-double` (bounds checking),

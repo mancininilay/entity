@@ -1,0 +1,4 @@
+precision double, SHAPE_ORDER 0, dt 0.50
+after kernel::InjectParticle:                largest in-plane current 6.000000e-01, largest |div J| 1.000000e+00
+previous position set to the position:       largest in-plane current 0.000000e+00, largest |div J| 0.000000e+00
+rc=0
