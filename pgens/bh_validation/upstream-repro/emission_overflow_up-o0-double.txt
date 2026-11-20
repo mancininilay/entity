@@ -1,0 +1,2 @@
+photons inserted by the kernel: 5, capacity of the photon species: 8
+exit status 0

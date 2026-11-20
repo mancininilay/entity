@@ -1,0 +1,3 @@
+Kokkos::View ERROR: out of bounds access label=("ph_i1") with indices [8] but extents [8]
+Traceback functionality not available
+exit status 134

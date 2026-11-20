@@ -1,0 +1,12 @@
+SHAPE_ORDER 1, real_t 8 bytes, prtldx_t 4 bytes
+-- within one cell: start (3.2, 3.3, 3.4), velocity (0.6, 0.5, 0.4)
+dt 0.200: displacement (0.1200, 0.1000, 0.0800), residual 1.25544027847e-17, a b c / 16 = 6.00000000000e-05
+dt 0.100: displacement (0.0600, 0.0500, 0.0400), residual 5.24802456920e-18, a b c / 16 = 7.50000000000e-06
+dt 0.050: displacement (0.0300, 0.0250, 0.0200), residual 2.30623864904e-17, a b c / 16 = 9.37500000000e-07
+dt 0.025: displacement (0.0150, 0.0125, 0.0100), residual 1.10553987026e-18, a b c / 16 = 1.17187500000e-07
+-- within one cell, in a plane: velocity (0.6, 0.5, 0)
+dt 0.200: residual 1.48936419435e-17
+dt 0.100: residual 1.12465600061e-17
+-- across a face in x1: start (3.95, 3.3, 3.4), velocity (0.6, 0.5, 0.4)
+dt 0.200: residual 2.69473335971e-17, (a1 + a2) b c / 16 = 6.00000000000e-05
+dt 0.100: residual 4.41513489641e-17, (a1 + a2) b c / 16 = 7.50000000000e-06

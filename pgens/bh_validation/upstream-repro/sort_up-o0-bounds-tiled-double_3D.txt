@@ -1,0 +1,3 @@
+extents: i1 4, i2 4, i3 4
+SortSpatially completed
+exit status 0

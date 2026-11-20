@@ -1,0 +1,4 @@
+extents: i1 4, i2 4, i3 0
+Kokkos::View ERROR: out of bounds access label=("**UNMANAGED**") with indices [0] but extents [0]
+Traceback functionality not available
+exit status 134
