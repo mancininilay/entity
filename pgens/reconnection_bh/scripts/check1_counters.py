@@ -3,6 +3,7 @@
 
     check1_counters.py <bp2raw> <cache> <run with the policy> [<run without>]
 """
+import re
 import sys
 
 from bhio import Run, verdict
@@ -33,8 +34,25 @@ def main():
     mass_ratio = low.param("mass_ratio")
     gamma_max = low.param("gamma_max")
     k_top = c["Kmax_2"].max()
+    # the upper edge the policy built: `gamma_max = 0` in the input means automatic, so the
+    # edge is read from the line the policy prints at start (driver.log or run.log)
+    edge = None
+    for name in ("driver.log", "run.log"):
+        path = low.dir / name
+        if path.exists():
+            m = re.search(r"Bethe-Heitler emission: tables on [-0-9.eE+]+ <= Gamma_p <= ([-0-9.eE+]+)",
+                          path.read_text(errors="replace"))
+            if m:
+                edge = float(m.group(1))
+                break
+    if edge is not None:
+        edge_text = f"{edge:g} (as built, from the run log)"
+    elif gamma_max > 0:
+        edge_text = f"{gamma_max:g} (gamma_max of the input)"
+    else:
+        edge_text = "set automatically (gamma_max = 0 in the input; no log line found)"
     print(f"  largest ion K over the run {k_top:.6g}: Gamma_p {1 + k_top / mass_ratio:.4f} "
-          f"against the upper edge of the tables {gamma_max:g}")
+          f"against the upper edge of the tables {edge_text}")
     ok = (above == 0) and (dropped == 0)
     if len(sys.argv) > 4:
         off = Run(sys.argv[4], bp2raw, cache)
