@@ -4,7 +4,8 @@
     make_input.py <out.toml> key=value ...
 
 Keys (defaults in DEFAULTS): order = "leptons_first" | "ions_first"; policy =
-"on" | "off" | "negative"; fields = true | false; the rest are numbers.
+"on" | "off" | "negative"; fields = true | false; hot_box and cold_box =
+"x0, x1, y0, y1" (fractions of the domain); the rest are numbers.
 The optical depth is given through `p_ref`, the probability per step at the
 Lorentz factor whose tabulated rate is `J_ref`, or directly as `tau`.
 """
@@ -21,6 +22,8 @@ DEFAULTS = dict(
     maxnpart_ions=0, maxnpart_leptons=2.0e6, diag_interval=5, dump_step=-1,
     gauss="true", seed=1, bx=0.0, by=0.0, bz=0.0, sort_interval=-1,
     filters=0, stale_prev="false", recycle="false", tau=0.0,
+    rank_lines="false", hot_fraction=0.0, hot_box="0.0, 1.0, 0.0, 1.0",
+    cold_box="0.0, 1.0, 0.0, 1.0",
 )
 
 
@@ -154,6 +157,10 @@ def main():
   negative_control    = {'true' if cfg['policy'] == 'negative' else 'false'}
   stale_prev          = {cfg['stale_prev']}
   recycle             = {cfg['recycle']}
+  rank_lines          = {cfg['rank_lines']}
+  hot_fraction        = {float(cfg['hot_fraction'])}
+  hot_box             = [{cfg['hot_box']}]
+  cold_box            = [{cfg['cold_box']}]
   diag_interval       = {int(cfg['diag_interval'])}
   dump_step           = {int(cfg['dump_step'])}
   bx                  = {float(cfg['bx'])}

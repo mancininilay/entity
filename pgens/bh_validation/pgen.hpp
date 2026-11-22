@@ -23,6 +23,15 @@
  * state that dead particles leave behind. `setup.recycle = true` counts and
  * removes the leptons after every step (long cooling runs).
  *
+ * `setup.rank_lines = true` adds, at every diagnostic output, one line
+ * starting with "BHVR" per rank (printed by the root rank): the particles of
+ * the emitters and of the leptons on that rank, the fill and the capacity of
+ * the lepton arrays, and the policy counters of that rank. `setup.hot_fraction`
+ * places that fraction of the emitters (the first ones of the global list)
+ * uniformly in the box `setup.hot_box = [x0, x1, y0, y1]` (fractions of the
+ * domain) instead of the whole domain; `setup.cold_box` does the same for the
+ * others. With the defaults the positions are those of the earlier versions.
+ *
  * The file compiles against a tree without the policy (the hash and the sums
  * are then the only diagnostics).
  */
@@ -101,6 +110,27 @@ namespace user {
       v = out;
 #else
       (void)v;
+#endif
+    }
+
+    // values of every rank, rank after rank, on the root rank
+    inline auto gather(const std::vector<double>& v) -> std::vector<double> {
+#if defined(MPI_ENABLED)
+      int size, rank;
+      MPI_Comm_size(MPI_COMM_WORLD, &size);
+      MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+      std::vector<double> out(rank == 0 ? v.size() * size : 0, 0.0);
+      MPI_Gather(v.data(),
+                 static_cast<int>(v.size()),
+                 MPI_DOUBLE,
+                 out.data(),
+                 static_cast<int>(v.size()),
+                 MPI_DOUBLE,
+                 0,
+                 MPI_COMM_WORLD);
+      return out;
+#else
+      return v;
 #endif
     }
 
@@ -242,6 +272,9 @@ namespace user {
     const int    electron_species, positron_species;
     const int    n_ions, seed, diag_interval, dump_step;
     const bool   isotropic, gauss, negative_control, stale_prev, recycle;
+    const bool   rank_lines;
+    const double hot_fraction;
+    const std::vector<real_t> hot_box, cold_box;
     // leptons removed so far by `setup.recycle`: n, sum w, sum w gamma of
     // the electrons and of the positrons (this rank)
     double       recycled[6] { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
@@ -265,6 +298,15 @@ namespace user {
       , negative_control { p.template get<bool>("setup.negative_control", false) }
       , stale_prev { p.template get<bool>("setup.stale_prev", false) }
       , recycle { p.template get<bool>("setup.recycle", false) }
+      , rank_lines { p.template get<bool>("setup.rank_lines", false) }
+      , hot_fraction { static_cast<double>(
+          p.template get<real_t>("setup.hot_fraction", ZERO)) }
+      , hot_box { p.template get<std::vector<real_t>>(
+          "setup.hot_box",
+          std::vector<real_t> { ZERO, ONE, ZERO, ONE }) }
+      , cold_box { p.template get<std::vector<real_t>>(
+          "setup.cold_box",
+          std::vector<real_t> { ZERO, ONE, ZERO, ONE }) }
       , gamma_p { static_cast<double>(p.template get<real_t>("setup.gamma_p")) }
       , mass_ratio { static_cast<double>(
           p.template get<real_t>("setup.mass_ratio",
@@ -277,6 +319,10 @@ namespace user {
                     p.template get<real_t>("setup.bz", ZERO) } {}
 
     void InitPrtls(Domain<S, M>& domain) {
+      raise::ErrorIf(hot_box.size() != 4 or cold_box.size() != 4,
+                     "bh_validation: setup.hot_box and setup.cold_box are "
+                     "[x0, x1, y0, y1]",
+                     HERE);
       auto& ions = domain.species[ion_species - 1];
       const auto mu_d = static_cast<double>(ions.mass());
       // kinetic energy [m_e c^2] of a proton of Lorentz factor gamma_p
@@ -303,8 +349,18 @@ namespace user {
       npart_t n  = 0u;
       for (int g = 0; g < n_ions; ++g) {
         const auto   gid = static_cast<std::uint64_t>(g);
-        const double xg  = NX * bhv::uniform(seed, gid, 0);
-        const double yg  = NY * bhv::uniform(seed, gid, 1);
+        // the first `hot_fraction` of the emitters in the hot box, the
+        // others in the cold box (both the whole domain by default)
+        const auto&  box = (static_cast<double>(g) <
+                            hot_fraction * static_cast<double>(n_ions))
+                             ? hot_box
+                             : cold_box;
+        const double bx0 = static_cast<double>(box[0]);
+        const double bx1 = static_cast<double>(box[1]);
+        const double by0 = static_cast<double>(box[2]);
+        const double by1 = static_cast<double>(box[3]);
+        const double xg  = NX * (bx0 + (bx1 - bx0) * bhv::uniform(seed, gid, 0));
+        const double yg  = NY * (by0 + (by1 - by0) * bhv::uniform(seed, gid, 1));
         const int    ig = static_cast<int>(xg), jg = static_cast<int>(yg);
         if (ig < off1 or ig >= off1 + n1 or jg < off2 or jg >= off2 + n2) {
           continue;
@@ -650,6 +706,46 @@ namespace user {
           all[29]      = c.absorbed_energy;
         }
 #endif
+        if (rank_lines) {
+          // this rank: [ion_n | el_n | po_n | el_fill | po_fill | el_cap |
+          // po_cap | counters(6) | ion_K | el_E | po_E]
+          std::vector<double> mine(16, 0.0);
+          mine[0] = all[0];
+          mine[1] = all[6] - recycled[0];
+          mine[2] = all[12] - recycled[3];
+          if (electron_species > 0) {
+            const auto& sp = domain.species[electron_species - 1];
+            mine[3]        = static_cast<double>(sp.npart());
+            mine[5]        = static_cast<double>(sp.maxnpart());
+          }
+          if (positron_species > 0) {
+            const auto& sp = domain.species[positron_species - 1];
+            mine[4]        = static_cast<double>(sp.npart());
+            mine[6]        = static_cast<double>(sp.maxnpart());
+          }
+          for (int k = 0; k < 6; ++k) {
+            mine[7 + k] = all[24 + k];
+          }
+          mine[13] = all[5];
+          mine[14] = all[10];
+          mine[15] = all[16];
+          const auto every = bhv::gather(mine);
+          if (bhv::is_root()) {
+            const std::size_t nr = every.size() / mine.size();
+            for (std::size_t r = 0; r < nr; ++r) {
+              const double* v = every.data() + r * mine.size();
+              std::printf("BHVR step %d rank %zu ion_n %.0f el_n %.0f po_n %.0f "
+                          "el_fill %.0f po_fill %.0f el_cap %.0f po_cap %.0f "
+                          "pairs %.0f above %.0f pexc %.0f bounded %.0f "
+                          "dropped %.0f absorbed %.17g ion_K %.17g el_E %.17g "
+                          "po_E %.17g\n",
+                          istep, r, v[0], v[1], v[2], v[3], v[4], v[5], v[6],
+                          v[7], v[8], v[9], v[10], v[11], v[12], v[13], v[14],
+                          v[15]);
+            }
+            std::fflush(stdout);
+          }
+        }
         bhv::reduce_sum(all);
         double residual = 0.0, rho_max = 0.0, e_max = 0.0;
         if (gauss) {
