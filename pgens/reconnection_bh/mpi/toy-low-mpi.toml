@@ -1,0 +1,107 @@
+[simulation]
+  name    = "toy-low-mpi"
+  engine  = "srpic"
+  runtime = 500.0
+
+  [simulation.domain]
+    decomposition = [2, 2]
+
+[grid]
+  resolution = [1024, 512]
+  extent     = [[-125.0, 125.0], [-62.5, 62.5]]
+
+  [grid.metric]
+    metric = "minkowski"
+
+  [grid.boundaries]
+    fields    = [["PERIODIC"], ["MATCH", "MATCH"]]
+    particles = [["PERIODIC"], ["ABSORB", "ABSORB"]]
+
+    [grid.boundaries.match]
+      ds = [[4.0], [8.0]]
+
+[scales]
+  larmor0    = 0.1
+  skindepth0 = 1.0
+
+[algorithms]
+  current_filters = 8
+
+  [algorithms.timestep]
+    CFL = 0.5
+
+[particles]
+  ppc0 = 8.0
+
+  [[particles.species]]
+    label    = "e-"
+    mass     = 1.0
+    charge   = -1.0
+    maxnpart = 6e6
+
+  [[particles.species]]
+    label    = "ion"
+    mass     = 1.0
+    charge   = 1.0
+    maxnpart = 6e6
+    emission = "bethe_heitler"
+
+  [[particles.species]]
+    label    = "e-_bh"
+    mass     = 1.0
+    charge   = -1.0
+    maxnpart = 6e6
+
+  [[particles.species]]
+    label    = "e+_bh"
+    mass     = 1.0
+    charge   = 1.0
+    maxnpart = 6e6
+
+[radiation]
+  [radiation.emission]
+    [radiation.emission.bethe_heitler]
+      electron_species = 3
+      positron_species = 4
+      optical_depth    = 0.5
+      mass_ratio       = 1836.15
+      pair_weight      = 1.0
+      gamma_max        = 3.0
+      photon_spectrum  = "mono"
+      photon_energy    = 1.8
+
+[setup]
+  bg_B           = 1.0
+  bg_Bguide      = 0.0
+  bg_temperature = 1e-4
+  inj_ypad       = 12.0
+  cs_width       = 4.0
+  cs_overdensity = 3.0
+  diag_interval  = 10
+  gauss_interval = 0
+  rank_interval  = 10
+  gauss_xpad     = 8.0
+  gauss_ypad     = 16.0
+
+[output]
+  format        = "bpfile"
+  interval_time = 25.0
+
+  [output.fields]
+    quantities = ["N_1", "N_2", "N_3", "N_4", "E", "B", "J"]
+
+  [output.particles]
+    species       = [2, 3, 4]
+    stride        = 10
+    interval_time = 5.0
+
+  [output.spectra]
+    enable           = true
+    e_min            = 1e-3
+    e_max            = 1e4
+    num_energy_bins  = 280
+    num_spatial_bins = [2, 1]
+    interval_time    = 5.0
+
+[checkpoint]
+  keep = 0

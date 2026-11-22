@@ -28,6 +28,13 @@
  *     boundaries, where particles are absorbed or injected and the fields
  *     are matched. 2D, one domain, zig-zag deposit only.
  *
+ *   - `bh_ranks.txt`, every `setup.rank_interval` steps (0 = never; and
+ *     after the first and the last step): one line per rank with the fill of
+ *     the particle arrays of every species on that rank (`npart()`, which
+ *     the capacity `maxnpart` limits rank by rank) and the counters of the
+ *     policy of that rank. With MPI the counters of the policy are those of
+ *     the calling rank; `bh_counters.txt` holds their sums over the ranks.
+ *
  * Columns are given in the first line of each file. The time is that of the
  * state written: the time at the end of the step.
  *
@@ -81,6 +88,27 @@ namespace user {
       return rank == 0;
 #else
       return true;
+#endif
+    }
+
+    // values of every rank, rank after rank, on the root rank
+    inline auto gather(const std::vector<double>& v) -> std::vector<double> {
+#if defined(MPI_ENABLED)
+      int size, rank;
+      MPI_Comm_size(MPI_COMM_WORLD, &size);
+      MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+      std::vector<double> out(rank == 0 ? v.size() * size : 0, 0.0);
+      MPI_Gather(v.data(),
+                 static_cast<int>(v.size()),
+                 MPI_DOUBLE,
+                 out.data(),
+                 static_cast<int>(v.size()),
+                 MPI_DOUBLE,
+                 0,
+                 MPI_COMM_WORLD);
+      return out;
+#else
+      return v;
 #endif
     }
 
@@ -244,9 +272,10 @@ namespace user {
     InitFields<D> init_flds;
 
     // diagnostics (see the note at the top of the file)
-    const int         diag_interval, gauss_interval;
+    const int         diag_interval, gauss_interval, rank_interval;
     const real_t      gauss_xpad, gauss_ypad;
     bool              counters_started { false }, gauss_started { false };
+    bool              ranks_started { false };
     array_t<double**> gauss_rho, gauss_tmp;
 
     PGen(const SimulationParams& p, Metadomain<S, M>& m)
@@ -271,6 +300,7 @@ namespace user {
       , init_flds { bg_B, bg_Bguide, cs_width, cs_y }
       , diag_interval { params.template get<int>("setup.diag_interval", 0) }
       , gauss_interval { params.template get<int>("setup.gauss_interval", 0) }
+      , rank_interval { params.template get<int>("setup.rank_interval", 0) }
       , gauss_xpad { params.template get<real_t>("setup.gauss_xpad", (real_t)20.0) }
       , gauss_ypad { params.template get<real_t>(
           "setup.gauss_ypad",
@@ -382,7 +412,7 @@ namespace user {
     // state is that after `step + 1` steps, at the time `time + dt`.
     // ---------------------------------------------------------------------- //
     void Diagnostics(timestep_t step, simtime_t time, Domain<S, M>& domain) {
-      if (diag_interval <= 0 and gauss_interval <= 0) {
+      if (diag_interval <= 0 and gauss_interval <= 0 and rank_interval <= 0) {
         return;
       }
       const auto dt = params.template get<real_t>("algorithms.timestep.dt");
@@ -399,6 +429,49 @@ namespace user {
       if (gauss_interval > 0 and (edge or steps_done % gauss_interval == 0)) {
         WriteGauss(steps_done, time_now, domain);
       }
+      if (rank_interval > 0 and (edge or steps_done % rank_interval == 0)) {
+        WriteRanks(steps_done, time_now, domain);
+      }
+    }
+
+    void WriteRanks(long long steps_done, double time_now, Domain<S, M>& domain) {
+      const auto          nspec = domain.species.size();
+      // fill and capacity of every species, then pairs and capacity_dropped
+      std::vector<double> mine(2 * nspec + 2, 0.0);
+      for (std::size_t s = 0; s < nspec; ++s) {
+        mine[2 * s + 0] = static_cast<double>(domain.species[s].npart());
+        mine[2 * s + 1] = static_cast<double>(domain.species[s].maxnpart());
+      }
+#if defined(BHR_HAS_POLICY)
+      {
+        const auto c        = ::arch::emission::bh::GetCounters();
+        mine[2 * nspec + 0] = static_cast<double>(c.pairs);
+        mine[2 * nspec + 1] = static_cast<double>(c.capacity_dropped);
+      }
+#endif
+      const auto every = bhr::gather(mine);
+      if (not bhr::is_root()) {
+        return;
+      }
+      std::FILE* f = std::fopen("bh_ranks.txt", ranks_started ? "a" : "w");
+      raise::ErrorIf(f == nullptr, "reconnection_bh: cannot open bh_ranks.txt", HERE);
+      if (not ranks_started) {
+        std::fprintf(f, "# steps time rank");
+        for (std::size_t s = 0; s < nspec; ++s) {
+          std::fprintf(f, " npart_%zu maxnpart_%zu", s + 1, s + 1);
+        }
+        std::fprintf(f, " pairs capacity_dropped\n");
+        ranks_started = true;
+      }
+      const std::size_t nr = every.size() / mine.size();
+      for (std::size_t r = 0; r < nr; ++r) {
+        std::fprintf(f, "%lld %.17g %zu", steps_done, time_now, r);
+        for (std::size_t k = 0; k < mine.size(); ++k) {
+          std::fprintf(f, " %.0f", every[r * mine.size() + k]);
+        }
+        std::fprintf(f, "\n");
+      }
+      std::fclose(f);
     }
 
     void WriteCounters(long long steps_done, double time_now, Domain<S, M>& domain) {
