@@ -604,7 +604,7 @@ namespace user {
           static_cast<double>(params.template get<real_t>("scales.q0")) /
           (static_cast<double>(params.template get<real_t>("scales.B0")) *
            static_cast<double>(params.template get<real_t>("scales.V0")));
-        const auto em   = domain.fields.em;
+        const auto EM   = domain.fields.em;
         const int  ng   = static_cast<int>(N_GHOSTS);
         double     s_r2 = 0.0, s_q2 = 0.0, s_d2 = 0.0;
         double     m_r = 0.0, m_q = 0.0, m_d = 0.0;
@@ -623,10 +623,10 @@ namespace user {
                  double&   l_d) {
             const int    i = static_cast<int>(ii), j = static_cast<int>(jj);
             const double div =
-              (static_cast<double>(em(i + ng, j + ng, em::ex1)) -
-               static_cast<double>(em(i - 1 + ng, j + ng, em::ex1))) +
-              (static_cast<double>(em(i + ng, j + ng, em::ex2)) -
-               static_cast<double>(em(i + ng, j - 1 + ng, em::ex2)));
+              (static_cast<double>(EM(i + ng, j + ng, em::ex1)) -
+               static_cast<double>(EM(i - 1 + ng, j + ng, em::ex1))) +
+              (static_cast<double>(EM(i + ng, j + ng, em::ex2)) -
+               static_cast<double>(EM(i + ng, j - 1 + ng, em::ex2)));
             const double q  = kappa * rho(i, j);
             const double r  = div - q;
             l_r2           += r * r;

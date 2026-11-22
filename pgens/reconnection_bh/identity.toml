@@ -92,7 +92,8 @@
     stride        = 1
 
   [output.spectra]
-    enable          = true
-    e_min           = 1e-3
-    e_max           = 1e4
-    num_energy_bins = 280
+    enable           = true
+    e_min            = 1e-3
+    e_max            = 1e4
+    num_energy_bins  = 280
+    num_spatial_bins = [2, 1]

@@ -46,8 +46,8 @@ TOY = [
     ('gauss_interval = 500', 'gauss_interval = 100\n  gauss_xpad     = 8.0\n  gauss_ypad     = 16.0'),
     ('  interval_time = 100.0\n\n  [output.fields]', '  interval_time = 25.0\n\n  [output.fields]'),
     ('    interval_time = 20.0\n\n  [output.spectra]', '    interval_time = 5.0\n\n  [output.spectra]'),
-    ('    num_energy_bins = 280\n    interval_time   = 20.0',
-     '    num_energy_bins = 280\n    interval_time   = 5.0'),
+    ('    num_spatial_bins = [2, 1]\n    interval_time    = 20.0',
+     '    num_spatial_bins = [2, 1]\n    interval_time    = 5.0'),
 ]
 
 IDENTITY = [
@@ -56,7 +56,7 @@ IDENTITY = [
     ('  interval_time = 25.0\n\n  [output.fields]', '  interval      = 199\n\n  [output.fields]'),
     ('    species       = [2, 3, 4]\n    stride        = 10\n    interval_time = 5.0',
      '    stride        = 1'),
-    ('    num_energy_bins = 280\n    interval_time   = 5.0', '    num_energy_bins = 280'),
+    ('    num_spatial_bins = [2, 1]\n    interval_time    = 5.0', '    num_spatial_bins = [2, 1]'),
 ]
 
 
