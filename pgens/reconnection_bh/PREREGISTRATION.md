@@ -41,7 +41,7 @@ Also reported: the largest K of each species over the run and at the end, the ab
 - statistics: sqrt(N_pred) (the pairs are independent draws; about 0.1 to 0.3 percent for 1e5 to 1e6 pairs);
 - stride: sum over the outputs of (trapezoid weight) x sqrt(f (f - 1) sum over the written ions of J^2), f = ions / ions written. This takes the sampling errors of all outputs as fully correlated, an upper bound: the output writes fixed positions of the particle arrays, which are reshuffled only when dead particles are removed, so the same ions can be written at successive outputs. The value for independent outputs is printed next to it;
 - cadence: |I(all outputs) - I(every other output)| / 3, the Richardson estimate for the trapezoid rule;
-- not in the budget because small: interpolation of the reference table (2e-6); the policy's lookup between its nodes, which gives J lower than `bhref` by 3e-5 to 4e-5 in this range (measured in stage A); interpolation of the counter (below 1e-4); single-precision momenta (1e-7).
+- not in the budget because small: interpolation of the reference table (2e-6); the policy's lookup between its nodes, which gives J lower than `bhref` by 1e-5 to 6e-5 for Gamma_p of 1.05 to 1.5 on the tables of these runs (measured in stage A); interpolation of the counter (below 1e-4); single-precision momenta (1e-7).
 
 **Criterion.** |N_obs - N_pred| <= 4 sqrt(statistics^2 + stride^2 + cadence^2). **If this tolerance exceeds 5 percent of N_pred the check gives no verdict** (it would not be sharp); it is then reported with its numbers. A priori estimate of the tolerance: 1 to 3 percent. The difference is also printed in units of the total with the stride error of independent outputs, for information.
 
