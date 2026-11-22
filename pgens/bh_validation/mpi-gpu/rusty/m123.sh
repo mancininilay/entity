@@ -4,7 +4,12 @@
 # CPU cores of the job. Every run is attempted once under a time cap; nothing is
 # retried and no parameter is changed. M3 comes last: it is expected to stop in
 # the engine (PREREGISTRATION.md).
-# BHM_ROOT, BHM_BUDGET, BHM_GROUPS and M1_N_IONS exist only for the dry run.
+# First, the part of M0 that build job 7523472 could not do: the unit test in the
+# tree with bounds-checked views, on one rank (that tree and val-single-bounds were
+# stopped by the build driver's own time cap two objects short and finished on a
+# login node). A bounds-checked tree that does not exist is reported and skipped.
+# BHM_BUDGET is the time for the runs in seconds (default 2400); BHM_ROOT,
+# BHM_GROUPS and M1_N_IONS exist only for the dry run.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/env.sh" || exit 1
@@ -27,11 +32,19 @@ grep Cpus_allowed_list /proc/self/status
 want=$(cat "$R/COMMIT-val") || exit 1
 [[ $(git -C "$R/src-val" rev-parse HEAD) == "$want" && -z $(git -C "$R/src-val" status --porcelain) ]] || { echo "src-val is not a clean $want"; exit 1; }
 echo "source: $R/src-val at $want"; echo "build: $bld"
-for t in val-single val-double val-single-bounds; do
-  x="$bld/$t/src/entity.xc"
-  [[ -f "$bld/$t/BUILD_OK" && -x "$x" && $(sha256sum "$x" | cut -d' ' -f1) == $(cat "$bld/$t/BUILD_OK") ]] || { echo "$t is not the executable marked usable"; exit 1; }
+usable() { # tree executable
+  [[ -f "$bld/$1/BUILD_OK" && -x "$bld/$1/$2" && $(sha256sum "$bld/$1/$2" | cut -d' ' -f1) == $(cat "$bld/$1/BUILD_OK") ]]
+}
+for t in val-single val-double; do
+  usable "$t" src/entity.xc || { echo "$t is not the executable marked usable"; exit 1; }
   echo "$t sha256 $(cat "$bld/$t/BUILD_OK")"
 done
+bounds=0
+if usable val-single-bounds src/entity.xc; then
+  bounds=1; echo "val-single-bounds sha256 $(cat "$bld/val-single-bounds/BUILD_OK")"
+else
+  echo "NOT BUILT val-single-bounds: the bounds-checked runs of M3 are skipped"
+fi
 IFS=, read -ra devs <<< "${CUDA_VISIBLE_DEVICES:-}"
 ngpu=${#devs[@]}
 status=0
@@ -58,11 +71,25 @@ run() { # group name precision ranks decomposition key=value...
   echo "RUN $grp/$prec/r$ranks/$name rc=$rc seconds=$((SECONDS - t)) cap=$cap gpus=$(cat "$dir"/gpu.* 2>/dev/null | awk '{print $9}' | sort -u | wc -l)"
   [[ $rc == 0 || "$grp" == m3* ]] || status=1
 }
+echo "==== M0: the unit test ARCHETYPES::bethe_heitler with bounds-checked views, one rank"
+T="tests/archetypes/test-archetypes-bethe_heitler.xc"
+if usable tests-single-bounds "$T"; then
+  echo "tests-single-bounds sha256 $(cat "$bld/tests-single-bounds/BUILD_OK")"
+  d="$ROOT/m0/tests-single-bounds"; mkdir -p "$d"
+  t=$SECONDS; rc=0
+  ( cd "$d" && BHM_GPU_LOG="$d/gpu" timeout --kill-after=20 900 mpirun --bind-to none -n 1 "$HERE/rank-gpu.sh" "$bld/tests-single-bounds/$T" > run.log 2>&1 ) || rc=$?
+  echo "$rc" > "$d/rc"
+  echo "RUN m0/tests-single-bounds rc=$rc seconds=$((SECONDS - t)) cap=900 ranks=1"
+  grep -v -E 'oob_tcp|safely ignore|^-+$|UCX  WARN' "$d/run.log" | tail -12
+  [[ $rc == 0 ]] || status=1
+else
+  echo "NOT BUILT tests-single-bounds: unit test not run"
+fi
 source "$V/mpi-gpu/cases.sh"
 for g in ${BHM_GROUPS:-m1 m2 m3}; do
   echo "==== $g"
   for prec in single double; do "${g}_cases" "$prec"; done
-  if [[ $g == m3 ]]; then m3_cases single -bounds; fi
+  if [[ $g == m3 && $bounds == 1 ]]; then m3_cases single -bounds; fi
 done
 echo "runs finished after $((SECONDS - T0)) s, status $status"
 nvidia-smi --query-gpu=index,name,memory.used,utilization.gpu --format=csv || true
