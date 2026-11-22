@@ -22,7 +22,7 @@ From the last line of `bh_counters.txt` (written after the last step).
 | particle-steps above the probability bound | reported (the run stops by itself if not 0) |
 | every counter of R-off, and its species 3 and 4 | **0** (the policy is never called) |
 
-**Expectation for the refused candidates (fact from the bound of the policy, D_max of `bh_event_host.h`):** at pair weight 1 on this bath no outcome can exceed 0.04 K for Gamma_p below 9.18 (K below 15,019); the smallest admissible pair weight over that range is 1.83, at the lower edge of the tables. So the counter is expected to be exactly zero unless an ion exceeds K = 15,019. A non-zero value with all ions below that energy would contradict the bound and is reported as a defect, although the brief does not make it a criterion. (The brief expected some refusals just above threshold; there D is at most 0.21 against a bound of 0.41.)
+**Expectation for the refused candidates (fact from the bound of the policy, D_max of `bh_event_host.h`):** at pair weight 1 on this bath no outcome can exceed 0.04 K for Gamma_p below 9.18 (K below 15,019): the largest pair weight for which nothing is refused is 1.83 at the lower edge of the tables, 3.7 near Gamma_p = 1.3, and falls to 1 at Gamma_p = 9.18. So the counter is expected to be exactly zero unless an ion exceeds K = 15,019. A non-zero value with all ions below that energy would contradict the bound and is reported as a defect, although the brief does not make it a criterion. (The brief expected some refusals just above threshold; there D is at most 0.21 against a bound of 0.41.)
 
 Also reported: the largest K of each species over the run and at the end, the absorbed photon energy per pair (1.8).
 
@@ -34,7 +34,7 @@ Also reported: the largest K of each species over the run and at the end, the ab
 
 **Observed.** The counter `pairs` of `bh_counters.txt` (every 10 steps, 0.86 time units), interpolated linearly to the times of the first and of the last output; their difference.
 
-**Why this stride and cadence.** S is carried by the ions near the top of the spectrum (J rises by a factor 100 between K = 18 and K = 50 and by another 100 up to K = 370). With N_eff = (sum J)^2 / sum J^2 ions carrying the sum, a stride s gives a relative sampling error sqrt((s - 1) / N_eff) per output. The toy run (2.7e6 ions) had N_eff between 1.6e5 early and 1e4 late; the production box has 16 times the ions. Stride 5 keeps the sampling error per output near 0.2 to 0.6 percent if N_eff is 1e5 to 1e6. The cadence error of the toy at the equivalent cadence was 8e-4. A stride of 5 and 150 outputs cost about 36 GB per run.
+**Why this stride and cadence.** S is carried by the ions near the top of the spectrum (J rises by a factor 100 between K = 18 and K = 50 and by another 100 up to K = 370). With N_eff = (sum J)^2 / sum J^2 ions carrying the sum, a stride s gives a relative sampling error sqrt((s - 1) / N_eff) per output. The toy run (2.7e6 ions) had N_eff between 1.6e5 early and 1e4 late; the production box has 16 times the ions. Stride 5 keeps the sampling error per output near 0.2 to 0.6 percent if N_eff is 1e5 to 1e6. The cadence error of the toy at the equivalent cadence was 8e-4. A stride of 5 and 150 outputs cost about 40 GB per run.
 
 **Error budget (one standard deviation each, computed by the script from the saved output with these formulas):**
 
@@ -49,7 +49,7 @@ Also reported: the largest K of each species over the run and at the end, the ab
 
 ## 3. R-low against R-off
 
-Pairs at about one percent of the leptons and born nearly at rest should not change the layer. With one run of each and a fixed seed there is no ensemble, and the two runs are different realisations from the first step (the policy draws from the same random pool as the injector). **The scatter taken as reference is the scatter between sub-samples of each run:** the four quadrants of the upstream region for the rate, the left and the right half of the box for the spectra (the spectra output has two spatial bins along the sheet).
+The brief expects pairs at about one percent of the leptons, born nearly at rest, which should not change the layer. (Stage A suggests the ions go higher than the brief assumed and the pairs may be several percent; this comparison is then also the first look at their effect.) With one run of each and a fixed seed there is no ensemble, and the two runs are different realisations from the first step (the policy draws from the same random pool as the injector). **The scatter taken as reference is the scatter between sub-samples of each run:** the four quadrants of the upstream region for the rate, the left and the right half of the box for the spectra (the spectra output has two spatial bins along the sheet).
 
 - **Reconnection rate.** From the field output (every 100 time units): inflow speed towards the sheet, -sign(y) (E x B)_y / B^2, averaged over 0.4 <= |y| / (L_y / 2) <= 0.6 and |x| <= 0.8 L_x / 2, in each of the four quadrants; the rate of an output is their mean. Window: outputs with t >= runtime / 3 (about 20).
 - **Spectra of the electrons and of the ions** (species 1 and 2; every 20 time units). Window: t >= 2 runtime / 3 (about 50 outputs). Scalars of a spectrum: mean K; the 99 and the 99.9 percent quantiles of K; the logarithmic slope of dN / d ln K between sigma / 2 and 2 sigma (K from 50 to 200); for the ions the fraction above threshold (K > 10.2).
@@ -62,11 +62,11 @@ For each of the ten scalars Q (the rate, four for the electrons, five for the io
 
 ## 4. Charge: the residual of Gauss's law
 
-**What the engine can write.** `divE` on the nodes and `Charge` at the cell centres with a shape of order 0: not the same points, and not the shape of the deposit; their difference is of the order of the charge density itself. No stock output supports the residual. **Diagnostic added to the generator copy (no change to the engine):** every 500 steps, the charge of all species on the nodes with the first-order shape of the zig-zag deposit, the binomial filter of the currents applied `current_filters` = 8 times, kappa = q0 / (B0 V0), and r = div E - kappa F[rho] on the nodes of a window that leaves out 20 d_e in x and 60 d_e in y at the boundaries (where particles are absorbed and injected and the fields are matched). It writes the largest |r| and the root mean square of r, and the same for the charge term. In the toy runs the residual is at single-precision round-off (2.5e-6 against a charge term of 0.15 after 5800 steps) with and without the policy.
+**What the engine can write.** `divE` on the nodes and `Charge` at the cell centres with a shape of order 0: not the same points, and not the shape of the deposit; their difference is of the order of the charge density itself. No stock output supports the residual. **Diagnostic added to the generator copy (no change to the engine):** every 500 steps, the charge of all species on the nodes with the first-order shape of the zig-zag deposit, the binomial filter of the currents applied `current_filters` = 8 times, kappa = q0 / (B0 V0), and r = div E - kappa F[rho] on the nodes of a window that leaves out 20 d_e in x and 60 d_e in y at the boundaries (where particles are absorbed and injected and the fields are matched). It writes the largest |r| and the root mean square of r, and the same for the charge term. In the toy runs the residual is at single-precision round-off after 5800 steps, with the policy (2.5e-6 against a charge term of 0.15) and without (3.6e-6 against 0.29).
 
 **Criterion (R-low at the level of R-off).** With the level of a run defined as the largest value over its samples: level(R-low) <= 3 level(R-off), for the largest |r| and for the root mean square. Factor 3 because the round-off of two different realisations differs by a factor of order one, while a single lepton born with a wrong previous position leaves a charge of the order of one unit.
 
-**Reported: the sensitivity.** One particle of unit charge leaves on a node at most U = kappa (C(16, 8) / 4^8)^2 = 0.0386 kappa after the filter. The levels are given in units of U; the check resolves a single lost or created charge in the window when the level of R-off is well below 1 U. (Toy: 5e-3 U.)
+**Reported: the sensitivity.** One particle of unit charge leaves on a node at most U = kappa (C(16, 8) / 4^8)^2 = 0.0386 kappa after the filter. The levels are given in units of U; the check resolves a single lost or created charge in the window when the level of R-off is well below 1 U. (Toy: 6e-3 U with the policy, 7.5e-3 U without.)
 
 ## 5. Where the pairs are, and their spectrum
 
@@ -80,6 +80,6 @@ The figures are drawn from the files the script writes (`check5_maps.npz`, `chec
 
 ## 6. What is reported besides the five verdicts
 
-Job identifiers and GPU-hours; the ion spectrum reached (cutoff, range of Gamma_p) against the expectation; the number of pairs per primary lepton; the largest number of particles per species against the capacities; anything that broke; what should change for a third run with about a hundred times the optical depth.
+Job identifiers and GPU-hours; the ion spectrum reached (cutoff, range of Gamma_p) against the expectation; the pairs created and the leptons of the pairs present, per primary lepton; the largest number of particles per species against the capacities; anything that broke; what should change for a third run with about a hundred times the optical depth.
 
 Signed **Claude 1**.
