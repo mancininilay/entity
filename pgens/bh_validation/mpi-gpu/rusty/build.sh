@@ -42,9 +42,25 @@ build() { # tree source precision target cmake-args...
   local name="$1" src="$2" prec="$3" target="$4"; shift 4
   local dir="$bld/$name" rc=0 t0=$SECONDS
   if [[ -n "${BHM_STUB:-}" ]]; then
+    # stub of an executable for the dry run: writes what the drivers look at
     mkdir -p "$(dirname "$dir/$target")"
-    printf '#!/bin/bash\necho "stub %s $*"\nexit 0\n' "$name" > "$dir/$target"; chmod +x "$dir/$target"
-    echo "stub" > "$bld/build-$name.log"
+    cat > "$dir/$target" <<'STUB'
+#!/bin/bash
+echo "stub $0 $*"
+if [[ "${1:-}" == -input ]] && grep -q rank_interval "$2"; then
+  name=$(grep -m1 'name ' "$2" | cut -d'"' -f2)
+  mkdir -p "$name/fields" "$name/particles" "$name/spectra"
+  touch "$name/fields/fields.00000001.bp" "$name/particles/particles.00000001.bp" "$name/spectra/spectra.00000001.bp"
+  printf '# steps time pairs\n1 0.1 0\n58 5.0 7\n' > bh_counters.txt
+  printf '# steps time rank\n58 5.0 0\n' > bh_ranks.txt
+elif [[ "${1:-}" == -input && "${OMPI_COMM_WORLD_RANK:-0}" == 0 ]]; then
+  echo "BHV step 0 time 0 pairs 1 gauss_r 1e-6"
+  echo "BHVR step 0 rank 0 pairs 1"
+fi
+exit 0
+STUB
+    chmod +x "$dir/$target"
+    echo "stub" > "$bld/build-$name.log"; echo "stub" > "$bld/configure-$name.log"
   else
     cmake -S "$src" -B "$dir" -G Ninja -DCMAKE_CXX_COMPILER="$CXX" -DCMAKE_C_COMPILER="$CC" \
       -DKokkos_DIR="$Kokkos_DIR" -Dadios2_DIR="$adios2_DIR" "${MPIOPT[@]}" -Doutput=ON -Dprecision="$prec" "$@" \
