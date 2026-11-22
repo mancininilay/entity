@@ -24,6 +24,9 @@ identical except for the policy.
   bit.
 - `tools/bp2raw.cpp`: variables of a BP file as raw arrays
   (`c++ -std=c++17 -O2 bp2raw.cpp $(adios2-config --cxx-flags --cxx-libs) -o bp2raw`).
+- `rusty/`: the drivers of the runs on one A100 (`prepare.sh`, `build.sbatch`
+  and `build.sh` with a smoke run, `r-off.sbatch`, `r-low.sbatch` and `run.sh`)
+  and their dry run with stub executables (`dryrun.sh`).
 - `data/j_table_mono18.txt`: the interaction rate J(Gamma_p) for this photon
   field from the independent reference package `bhref` 0.3.0, written by
   `data/make_j_table.py`; the reference of check 2.
