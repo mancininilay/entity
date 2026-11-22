@@ -12,8 +12,10 @@ scaled by the stride), as two maps; the correlation coefficient of the two on
 the coarse grid; the share of the pairs in coarse cells that hold at least
 one written ion above threshold. Then the spectra of the two lepton species
 at the same times, with those of the electrons and of the ions at the end.
-Numbers go to `check5.txt`, figures to `check5_maps_<k>.png` and
-`check5_spectra.png` (matplotlib; without it only the numbers are written).
+Numbers go to `check5.txt`, the coarse maps to `check5_maps.npz`, the spectra
+to `check5_spectra.txt`; the figures `check5_maps_<k>.png` and
+`check5_spectra.png` are drawn from these files by plot_check5.py, here if
+matplotlib is available, else wherever the three files are copied.
 """
 import sys
 from pathlib import Path
@@ -38,13 +40,6 @@ def main():
     run = Run(sys.argv[3], sys.argv[1], sys.argv[2])
     out = Path(sys.argv[4])
     out.mkdir(parents=True, exist_ok=True)
-    try:
-        import matplotlib
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-        from matplotlib.colors import LogNorm
-    except ImportError:
-        plt = None
     runtime = run.param("runtime")
     mass_ratio = run.param("mass_ratio")
     _, k_th = threshold(run.param("photon_energy"), mass_ratio)
@@ -57,8 +52,9 @@ def main():
             chosen.append(s)
     lines = [f"check 5: {run.name}; threshold K_th = {k_th:.4f}; coarse grid {COARSE} cells"]
     spec_rows = []
+    saved = {}
     for k, (bp, step, time) in enumerate(chosen):
-        v = run.read(bp, ["fN_3", "fN_4"])
+        v = run.fields(bp, ["fN_3", "fN_4"])
         pairs = v["fN_3"].astype(np.float64) + v["fN_4"].astype(np.float64)
         nx, ny = pairs.shape
         pbp, pstep, ptime = nearest(particles, time)
@@ -90,44 +86,11 @@ def main():
             lines.append(f"    leptons of the pairs at t = {stime:.6g}: {lep.sum():.0f}; mean K "
                          f"{(lep * centre).sum() / lep.sum():.4g}; K at 50, 90, 99 percent "
                          f"{q[0]:.4g}, {q[1]:.4g}, {q[2]:.4g}")
-        if plt is not None:
-            fig, ax = plt.subplots(2, 1, figsize=(9, 8), sharex=True)
-            ext = [x0, x1, y0, y1]
-            for a, data, title in ((ax[0], coarse, "Bethe-Heitler leptons (N_3 + N_4)"),
-                                   (ax[1], hist, "ions above threshold (written particles per coarse cell)")):
-                pos = data[data > 0]
-                if pos.size:
-                    im = a.imshow(data.T, origin="lower", extent=ext, aspect="equal", cmap="viridis",
-                                  norm=LogNorm(vmin=max(pos.min(), pos.max() * 1e-4), vmax=pos.max()))
-                    fig.colorbar(im, ax=a, shrink=0.8)
-                a.set_title(f"{title}, t = {time:.5g}")
-                a.set_ylabel("y [d_e]")
-            ax[1].set_xlabel("x [d_e]")
-            fig.tight_layout()
-            fig.savefig(out / f"check5_maps_{k}.png", dpi=130)
-            plt.close(fig)
-    if plt is not None:
-        fig, a = plt.subplots(figsize=(7.5, 5.5))
-        for i, (stime, edges, counts) in enumerate(spec_rows):
-            centre = np.sqrt(edges[1:] * edges[:-1])
-            dln = np.log(edges[1:] / edges[:-1])
-            lep = (counts[3] + counts[4]) / dln
-            a.loglog(centre[1:-1], lep[1:-1], color=plt.cm.plasma(i / max(len(spec_rows) - 1, 1)),
-                     label=f"pairs, t = {stime:.5g}")
-        stime, edges, counts = spec_rows[-1]
-        centre = np.sqrt(edges[1:] * edges[:-1])
-        dln = np.log(edges[1:] / edges[:-1])
-        a.loglog(centre[1:-1], (counts[1] / dln)[1:-1], "k--", lw=1, label="electrons, end")
-        a.loglog(centre[1:-1], (counts[2] / dln)[1:-1], "k:", lw=1, label="ions, end")
-        a.axvline(k_th, color="grey", lw=0.8)
-        a.set_xlabel("K = gamma - 1 [m_e c^2]")
-        a.set_ylabel("dN / d ln K")
-        a.legend(fontsize=8)
-        fig.tight_layout()
-        fig.savefig(out / "check5_spectra.png", dpi=130)
-        plt.close(fig)
-    else:
-        lines.append("  NO FIGURES: matplotlib is not available")
+        saved[f"pairs_{k}"] = coarse
+        saved[f"ions_{k}"] = hist
+        saved[f"time_{k}"] = np.array(time)
+    np.savez_compressed(out / "check5_maps.npz", extent=np.array([x0, x1, y0, y1]),
+                        k_th=np.array(k_th), n=np.array(len(chosen)), **saved)
     with open(out / "check5_spectra.txt", "w") as f:
         f.write("# K_lo K_hi then, for each time, the counts of species 1 2 3 4\n")
         f.write("# times: " + " ".join(f"{s[0]:.9g}" for s in spec_rows) + "\n")
@@ -140,6 +103,12 @@ def main():
     text = "\n".join(lines) + "\n"
     (out / "check5.txt").write_text(text)
     print(text, end="")
+    try:
+        import plot_check5
+        plot_check5.plot(out)
+        print("  figures written")
+    except ImportError:
+        print("  NO FIGURES here (no matplotlib): run plot_check5.py on the files of", out)
     return 0
 
 

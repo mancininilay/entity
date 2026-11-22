@@ -20,6 +20,8 @@ reference scatter s_ref from the sub-samples of the same run: the standard
 deviation of the mean of the sub-samples (four quadrants, or two halves),
 root-mean-square over the window. Two runs agree when
 |Q_bar(with) - Q_bar(without)| <= 2 sqrt(s_ref(with)^2 + s_ref(without)^2).
+A comparison whose tolerance exceeds 25 percent of the value without the
+policy gives no verdict (it would not be sharp).
 The sub-samples of one run are not independent realisations: the scatter
 between two runs with different random streams can be larger.
 """
@@ -38,7 +40,7 @@ def rates(run):
     for bp, step, time in run.stamps("fields"):
         if time < runtime / 3.0:
             continue
-        v = run.read(bp, ["X1", "X2", "fE1", "fE3", "fB1", "fB2", "fB3"])
+        v = run.fields(bp, ["fE1", "fE3", "fB1", "fB2", "fB3"])
         x, y = v["X1"] - cx, v["X2"] - cy
         e1, e3 = v["fE1"].astype(np.float64), v["fE3"].astype(np.float64)
         b1, b2, b3 = (v[k].astype(np.float64) for k in ("fB1", "fB2", "fB3"))
@@ -96,20 +98,29 @@ def spectra(run, species, k_th):
     return np.array(rows)          # (outputs, [whole, left, right], scalars)
 
 
+SHARP = 0.25
+
+
 def compare(label, q_off, s_off, q_low, s_low, n_off, n_low):
+    """0 pass, 1 fail, 2 no verdict (tolerance above SHARP of the value without the policy)."""
     tol = 2.0 * np.sqrt(s_off ** 2 + s_low ** 2)
-    ok = abs(q_low - q_off) <= tol
+    if tol > SHARP * abs(q_off):
+        code, word = 2, "NO VERDICT (not sharp)"
+    else:
+        code = 0 if abs(q_low - q_off) <= tol else 1
+        word = verdict(code == 0)
     print(f"  {label}: without {q_off:.6g} (scatter {s_off:.3g}, {n_off} outputs); with {q_low:.6g} "
           f"(scatter {s_low:.3g}, {n_low} outputs); difference {q_low - q_off:+.4g} "
-          f"({(q_low - q_off) / q_off:+.3%}), tolerance {tol:.4g}  {verdict(ok)}")
-    return ok
+          f"({(q_low - q_off) / abs(q_off):+.3%}), tolerance {tol:.4g} "
+          f"({tol / abs(q_off):.1%})  {word}")
+    return code
 
 
 def main():
     bp2raw, cache = sys.argv[1], sys.argv[2]
     off, low = Run(sys.argv[3], bp2raw, cache), Run(sys.argv[4], bp2raw, cache)
     _, k_th = threshold(low.param("photon_energy"), low.param("mass_ratio"))
-    n_fail = 0
+    codes = []
     print(f"check 3: {low.name} against {off.name}")
     r = {}
     for run in (off, low):
@@ -121,7 +132,7 @@ def main():
         r[run.name] = (per_output.mean(), s_ref, a.shape[0], per_output.std(ddof=1))
         print(f"  {run.name}: rate per output " + " ".join(f"{x:.4f}" for x in per_output))
     (qo, so, no, to), (ql, sl, nl, tl) = r[off.name], r[low.name]
-    n_fail += not compare("reconnection rate", qo, so, ql, sl, no, nl)
+    codes.append(compare("reconnection rate", qo, so, ql, sl, no, nl))
     print(f"    reported: standard deviation over the outputs, without {to:.3g}, with {tl:.3g}")
     for species, label in ((1, "electrons"), (2, "ions")):
         so_, sl_ = spectra(off, species, k_th), spectra(low, species, k_th)
@@ -133,10 +144,13 @@ def main():
             ref = []
             for a in (so_, sl_):
                 ref.append(np.sqrt(np.mean((a[:, 1, j] - a[:, 2, j]) ** 2)) / 2.0)
-            n_fail += not compare(f"{label}, {name}", so_[:, 0, j].mean(), ref[0],
-                                  sl_[:, 0, j].mean(), ref[1], so_.shape[0], sl_.shape[0])
-    print(f"check 3 verdict: {verdict(n_fail == 0)} ({n_fail} of 10 comparisons outside the tolerance)")
-    return 0 if n_fail == 0 else 1
+            codes.append(compare(f"{label}, {name}", so_[:, 0, j].mean(), ref[0],
+                                 sl_[:, 0, j].mean(), ref[1], so_.shape[0], sl_.shape[0]))
+    n_pass, n_fail, n_none = codes.count(0), codes.count(1), codes.count(2)
+    word = "FAIL" if n_fail else ("PASS" if n_none == 0 else "NO VERDICT for some comparisons")
+    print(f"check 3 verdict: {word} ({n_pass} within the tolerance, {n_fail} outside, "
+          f"{n_none} not sharp, of {len(codes)})")
+    return 1 if n_fail else (2 if n_none else 0)
 
 
 if __name__ == "__main__":

@@ -37,25 +37,25 @@
     label    = "e-"
     mass     = 1.0
     charge   = -1.0
-    maxnpart = 1e8
+    maxnpart = 1.2e8
 
   [[particles.species]]
     label    = "ion"
     mass     = 1.0
     charge   = 1.0
-    maxnpart = 1e8
+    maxnpart = 1.2e8
 
   [[particles.species]]
     label    = "e-_bh"
     mass     = 1.0
     charge   = -1.0
-    maxnpart = 2e7
+    maxnpart = 4e7
 
   [[particles.species]]
     label    = "e+_bh"
     mass     = 1.0
     charge   = 1.0
-    maxnpart = 2e7
+    maxnpart = 4e7
 
 [radiation]
   [radiation.emission]
@@ -65,7 +65,7 @@
       optical_depth    = 0.014333
       mass_ratio       = 1836.15
       pair_weight      = 1.0
-      gamma_max        = 3.0
+      gamma_max        = 0.0
       photon_spectrum  = "mono"
       photon_energy    = 1.8
 
@@ -88,7 +88,7 @@
 
   [output.particles]
     species       = [2, 3, 4]
-    stride        = 10
+    stride        = 5
     interval_time = 20.0
 
   [output.spectra]

@@ -87,6 +87,22 @@ class Run:
             out[n] = a.reshape(dims) if len(dims) > 1 else (a if dims else a[0])
         return out
 
+    def fields(self, bp, names):
+        """Field arrays of one output with the shape (cells in x1, cells in x2), and
+        the cell centres X1, X2. A build whose arrays are column-major (CUDA) writes
+        the fields with their dimensions reversed (writer.cpp, attribute LayoutRight
+        = 0): such arrays are transposed here."""
+        v = self.read(bp, ["X1", "X2"] + list(names))
+        nx, ny = v["X1"].size, v["X2"].size
+        if nx == ny:
+            raise SystemExit("square grid: the layout of the field output cannot be told from its shape")
+        for n in names:
+            if v[n].shape == (ny, nx):
+                v[n] = v[n].T
+            elif v[n].shape != (nx, ny):
+                raise SystemExit(f"{bp}: {n} has the shape {v[n].shape}, grid {nx} x {ny}")
+        return v
+
     def stamps(self, kind):
         """(file, step, time) of every output of one kind."""
         out = []
