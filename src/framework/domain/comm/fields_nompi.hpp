@@ -22,6 +22,36 @@ namespace comm {
   using namespace ntt;
 
   /**
+   * @brief Adds to `fld_buff` the values of `fld` shifted by the given
+   *        offsets (the kernel of the additive communication to self)
+   * @note A named functor, not a lambda: with nvcc the lambda that stood
+   *       here could not be copied when this function template was used with
+   *       six components (a null call inside the wrapper of the lambda, on
+   *       the first output of a particle moment from a CUDA build without MPI)
+   */
+  template <Dimension D, int N>
+  struct AddShifted_kernel {
+    ndfield_t<D, N> fld_buff;
+    ndfield_t<D, N> fld;
+    long int        offset_x1, offset_x2, offset_x3;
+
+    Inline void operator()(cellidx_t i1, cellidx_t ci) const {
+      fld_buff(i1, ci) += fld(i1 - offset_x1, ci);
+    }
+
+    Inline void operator()(cellidx_t i1, cellidx_t i2, cellidx_t ci) const {
+      fld_buff(i1, i2, ci) += fld(i1 - offset_x1, i2 - offset_x2, ci);
+    }
+
+    Inline void operator()(cellidx_t i1, cellidx_t i2, cellidx_t i3, cellidx_t ci) const {
+      fld_buff(i1, i2, i3, ci) += fld(i1 - offset_x1,
+                                      i2 - offset_x2,
+                                      i3 - offset_x3,
+                                      ci);
+    }
+  };
+
+  /**
    * @note: Send `fld`, recv to `fld_buff`
    * @note: `fld` and `fld_buff` may be the same
    */
@@ -71,9 +101,7 @@ namespace comm {
             Kokkos::MDRangePolicy<Kokkos::Rank<2>, Kokkos::DefaultExecutionSpace>(
               { recv_slice[0].first, comps.first },
               { recv_slice[0].second, comps.second }),
-            Lambda(cellidx_t i1, cellidx_t ci) {
-              fld_buff(i1, ci) += fld(i1 - offset_x1, ci);
-            });
+            AddShifted_kernel<D, N> { fld_buff, fld, offset_x1, 0L, 0L });
         } else if constexpr (D == Dim::_2D) {
           const auto offset_x1 = (long int)(recv_slice[0].first) -
                                  (long int)(send_slice[0].first);
@@ -84,9 +112,7 @@ namespace comm {
             Kokkos::MDRangePolicy<Kokkos::Rank<3>, Kokkos::DefaultExecutionSpace>(
               { recv_slice[0].first, recv_slice[1].first, comps.first },
               { recv_slice[0].second, recv_slice[1].second, comps.second }),
-            Lambda(cellidx_t i1, cellidx_t i2, cellidx_t ci) {
-              fld_buff(i1, i2, ci) += fld(i1 - offset_x1, i2 - offset_x2, ci);
-            });
+            AddShifted_kernel<D, N> { fld_buff, fld, offset_x1, offset_x2, 0L });
         } else if constexpr (D == Dim::_3D) {
           const auto offset_x1 = (long int)(recv_slice[0].first) -
                                  (long int)(send_slice[0].first);
@@ -105,12 +131,7 @@ namespace comm {
                 recv_slice[1].second,
                 recv_slice[2].second,
                 comps.second }),
-            Lambda(cellidx_t i1, cellidx_t i2, cellidx_t i3, cellidx_t ci) {
-              fld_buff(i1, i2, i3, ci) += fld(i1 - offset_x1,
-                                              i2 - offset_x2,
-                                              i3 - offset_x3,
-                                              ci);
-            });
+            AddShifted_kernel<D, N> { fld_buff, fld, offset_x1, offset_x2, offset_x3 });
         }
       }
     } else {
