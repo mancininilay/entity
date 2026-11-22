@@ -8,8 +8,12 @@
 # tree with bounds-checked views, on one rank (that tree and val-single-bounds were
 # stopped by the build driver's own time cap two objects short and finished on a
 # login node). A bounds-checked tree that does not exist is reported and skipped.
-# BHM_BUDGET is the time for the runs in seconds (default 2400); BHM_ROOT,
-# BHM_GROUPS and M1_N_IONS exist only for the dry run.
+# BHM_BUDGET is the time for the runs in seconds (default 2400). BHM_RANKS
+# (default 1:2:4) restricts the job to the runs with these numbers of ranks, so
+# that the runs on one and two ranks need not wait for a node with four free
+# cards; a run left out is not attempted and not counted, and the verdicts are
+# formed on the union of the jobs. BHM_ROOT, BHM_GROUPS and M1_N_IONS exist only
+# for the dry run.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/env.sh" || exit 1
@@ -31,7 +35,7 @@ echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-}"
 grep Cpus_allowed_list /proc/self/status
 want=$(cat "$R/COMMIT-val") || exit 1
 [[ $(git -C "$R/src-val" rev-parse HEAD) == "$want" && -z $(git -C "$R/src-val" status --porcelain) ]] || { echo "src-val is not a clean $want"; exit 1; }
-echo "source: $R/src-val at $want"; echo "build: $bld"
+echo "source: $R/src-val at $want"; echo "build: $bld"; echo "ranks of this job: ${BHM_RANKS:-1:2:4}"
 usable() { # tree executable
   [[ -f "$bld/$1/BUILD_OK" && -x "$bld/$1/$2" && $(sha256sum "$bld/$1/$2" | cut -d' ' -f1) == $(cat "$bld/$1/BUILD_OK") ]]
 }
@@ -51,6 +55,7 @@ status=0
 run() { # group name precision ranks decomposition key=value...
   local grp="$1" name="$2" prec="$3" ranks="$4" dec="$5"; shift 5
   local dir="$ROOT/$grp/$prec/r$ranks/$name" tree="val-$prec" cap=300
+  [[ ":${BHM_RANKS:-1:2:4}:" == *":$ranks:"* ]] || return 0
   [[ "$grp" == *-bounds ]] && tree="val-$prec-bounds"
   local rem=$(( BUDGET - (SECONDS - T0) ))
   if (( rem < 60 )); then
