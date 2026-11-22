@@ -55,7 +55,7 @@ run() { # group name precision ranks decomposition key=value...
   ( cd "$dir" && BHM_GPU_LOG="$dir/gpu" timeout --kill-after=20 "$cap" mpirun --bind-to none --map-by "ppr:$ranks:node" -n "$ranks" \
       "$HERE/rank-gpu.sh" "$bld/$tree/src/entity.xc" -input input.toml > run.log 2>&1 ) || rc=$?
   echo "$rc" > "$dir/rc"
-  echo "RUN $grp/$prec/r$ranks/$name rc=$rc seconds=$((SECONDS - t)) cap=$cap gpus=$(cat "$dir"/gpu.* 2>/dev/null | awk '{print $7}' | sort -u | wc -l)"
+  echo "RUN $grp/$prec/r$ranks/$name rc=$rc seconds=$((SECONDS - t)) cap=$cap gpus=$(cat "$dir"/gpu.* 2>/dev/null | awk '{print $9}' | sort -u | wc -l)"
   [[ $rc == 0 || "$grp" == m3* ]] || status=1
 }
 source "$V/mpi-gpu/cases.sh"
