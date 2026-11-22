@@ -6,8 +6,12 @@ Runs: <root>/m2/<precision>/r<ranks>/<name>/run.log, ranks 2 and 4. r(t) is the
 largest |div E - kappa rho| over the nodes (V1); the control is the same run with
 the policy off.
 """
+import re
 import sys
 from pathlib import Path
+
+
+ANSI = re.compile(r"^(?:\x1b\[[0-9;]*[A-Za-z])+")
 
 
 def lines(path, key):
@@ -15,6 +19,8 @@ def lines(path, key):
     if not path.exists():
         return out
     for line in open(path, errors="replace"):
+        # the engine's terminal control codes can precede the first line a run prints
+        line = ANSI.sub("", line)
         if line.startswith(key + " step"):
             t = line.split()
             out.append({t[i]: float(t[i + 1]) for i in range(1, len(t) - 1, 2)})

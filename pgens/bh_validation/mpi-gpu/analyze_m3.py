@@ -10,9 +10,14 @@ import sys
 from pathlib import Path
 
 
+ANSI = re.compile(r"^(?:\x1b\[[0-9;]*[A-Za-z])+")
+
+
 def lines(path, key):
     out = []
     for line in open(path, errors="replace"):
+        # the engine's terminal control codes can precede the first line a run prints
+        line = ANSI.sub("", line)
         if line.startswith(key + " step"):
             t = line.split()
             out.append({t[i]: float(t[i + 1]) for i in range(1, len(t) - 1, 2)})

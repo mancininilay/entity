@@ -15,11 +15,16 @@ RANKS = (1, 2, 4)
 CASES = ("H", "L")
 
 
+ANSI = re.compile(r"^(?:\x1b\[[0-9;]*[A-Za-z])+")
+
+
 def lines(path, key):
     out = []
     if not path.exists():
         return out
     for line in open(path, errors="replace"):
+        # the engine's terminal control codes can precede the first line a run prints
+        line = ANSI.sub("", line)
         if line.startswith(key + " step"):
             t = line.split()
             out.append({t[i]: float(t[i + 1]) for i in range(1, len(t) - 1, 2)})
@@ -29,6 +34,8 @@ def lines(path, key):
 def one(root, prec, ranks, case, ref):
     d = root / "m1" / prec / f"r{ranks}"
     on, off = lines(d / f"{case}_on" / "run.log", "BHV"), lines(d / f"{case}_off" / "run.log", "BHV")
+    if not (d / f"{case}_on" / "input.toml").exists():
+        return None
     text = open(d / f"{case}_on" / "input.toml").read()
     tau = float(re.search(r"optical_depth\s*=\s*([0-9.eE+-]+)", text).group(1))
     eps0 = float(re.search(r"photon_energy\s*=\s*([0-9.eE+-]+)", text).group(1))
