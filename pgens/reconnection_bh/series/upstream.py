@@ -13,12 +13,22 @@ At every output:
   stream    the rows 3 to 8 skin depths inside the inner edge of the replenished regions
             (inj_ypad + 10 cells from each boundary in x2): density, B^2, density over field
             strength.
-Then the ranges over t >= 1000 and over t >= 2000. A reported quantity of every run (pre-
-registration of the pair); no criterion here.
+Then the ranges over t >= 1000 and over t >= 2000. Density, B^2 and the proxy are reported
+quantities of every run (Nilay's decision: the upstream field weakens and that is accepted).
+
+    upstream.py <run directory> --c5
+
+adds check 5 of the pre-registration of the pair (frozen 2026-11-23 before the first run, after
+Codex 2's B5; not calibrated on a production run): at every output with t >= 300 the density over
+field strength <N> / sqrt(<B^2>) (n0 / B0) lies in [0.85, 1.10] in the band and in the stream.
+A value that is not finite fails. Exit 0 pass, 1 fail, 2 no verdict (no output at t >= 300).
 """
+import math
 import re
 import sys
 from pathlib import Path
+
+C5_FROM, C5_LO, C5_HI = 300.0, 0.85, 1.10
 
 
 def param(text, key):
@@ -72,7 +82,23 @@ def main():
         print(f"# t >= {t0:g} ({len(sel)} outputs): band N {rng(1)[0]:.3f} to {rng(1)[1]:.3f}, B2 {rng(2)[0]:.3f} to "
               f"{rng(2)[1]:.3f}, proxy {rng(3)[0]:.1f} to {rng(3)[1]:.1f}, N/B {rng(4)[0]:.3f} to {rng(4)[1]:.3f}; "
               f"stream N {rng(5)[0]:.3f} to {rng(5)[1]:.3f}, N/B {rng(7)[0]:.3f} to {rng(7)[1]:.3f}")
+    if "--c5" not in sys.argv[2:]:
+        return 0
+    sel = [v for v in rows_out if v[0] >= C5_FROM]
+    if not sel:
+        print(f"check 5: no output at t >= {C5_FROM:g}  NO VERDICT")
+        return 2
+    bad = [(v[0], where, x) for v in sel for where, x in (("band", v[4]), ("stream", v[7]))
+           if not (math.isfinite(x) and C5_LO <= x <= C5_HI)]
+    for t, where, x in bad:
+        print(f"#   outside: t = {t:.2f}, {where}, density over field strength {x:.4f}")
+    lo = min(min(v[4], v[7]) for v in sel)
+    hi = max(max(v[4], v[7]) for v in sel)
+    print(f"check 5: density over field strength at t >= {C5_FROM:g} ({len(sel)} outputs, band and stream) "
+          f"{lo:.4f} to {hi:.4f}; criterion [{C5_LO:g}, {C5_HI:g}]; {len(bad)} values outside  "
+          f"{'FAIL' if bad else 'PASS'}")
+    return 1 if bad else 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

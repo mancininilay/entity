@@ -11,7 +11,8 @@
 #                the pair; present grid and one card only, the fine grid has another kappa);
 #                check4-r-off.txt check4_gauss.py against R-off alone, reported
 #   gauss.txt    gauss_level.py: the level of the residual in units of one filtered charge
-#   upstream.txt upstream.py (the delivered upstream: density, B^2, proxy, against time)
+#   upstream.txt upstream.py (the delivered upstream: density, B^2, proxy, against time; with
+#                --c5, check 5 of the pre-registration, for the runs s1-*)
 #   scalars.json, interface.json   the late scalars of check 3 and Codex 1's interface measure, by
 #                the scripts of the decomposition question (runs with field output)
 #   ranks.txt    ranks_check.py (check 1 per rank: the sums of the ranks, no species above 90
@@ -31,6 +32,8 @@ OFF="$HOME/ceph/bh-reconnection-claude1-20261121/runs/r-off-7520718"
 OFFS=("$OFF" "$HOME/ceph/bh-reconnection-claude1-20261121/stage-c/runs/r-off-b-7523492" "$HOME/ceph/bh-reconnection-claude1-20261121/stage-c/runs/r-off-c-7523494")
 BP="$HOME/ceph/bh-reconnection-claude1-20261121/stage-c/bp2raw-login"
 module load python/3.11.11 >/dev/null 2>&1
+# the analysis scripts must be those fixed by the pre-registration (series/SCRIPTS.sha256)
+(cd "$src" && sha256sum --quiet -c series/SCRIPTS.sha256) || { echo "the analysis scripts are not the registered ones"; exit 1; }
 export PYTHONDONTWRITEBYTECODE=1
 [[ -x "$BP" ]] || { echo "no bp2raw wrapper"; exit 1; }
 for run in "$@"; do
@@ -58,7 +61,11 @@ for run in "$@"; do
            PYTHONPATH="$SC" nice -n 10 python3 -B "$SC/check4_gauss.py" "$BP" "$CACHE" "$OFF" "$run" > "$out/check4-r-off.txt" 2>> "$log"; echo "check4-r-off exit $?" >> "$out/summary.txt" ;;
       esac
       [[ -s "$run/bh_gauss.txt" ]] && { python3 -B "$HERE/../gauss_level.py" "$OFF" "$run" > "$out/gauss.txt" 2>> "$log"; echo "gauss exit $?" >> "$out/summary.txt"; }
-      [[ -s "$run/bh_profile.txt" ]] && { python3 -B "$HERE/../upstream.py" "$run" > "$out/upstream.txt" 2>> "$log"; echo "upstream exit $?" >> "$out/summary.txt"; }
+      case "$name" in
+        s1-*) c5=--c5 ;;
+        *) c5= ;;
+      esac
+      [[ -s "$run/bh_profile.txt" ]] && { python3 -B "$HERE/../upstream.py" "$run" $c5 > "$out/upstream.txt" 2>> "$log"; echo "upstream${c5:+ (check 5)} exit $?" >> "$out/summary.txt"; }
       PYTHONPATH="$SC:$DC" nice -n 10 python3 -B "$DC/scalars.py" "$BP" "$CACHE" "$run" "$out/scalars.json" > "$out/scalars.log" 2>&1; echo "scalars exit $?" >> "$out/summary.txt"
       PYTHONPATH="$SC:$DC" nice -n 10 python3 -B "$DC/interface.py" "$BP" "$CACHE" "$run" "$out/interface.json" > "$out/interface.log" 2>&1; echo "interface exit $?" >> "$out/summary.txt"
       [[ "$name" == r-low-1card ]] || { nice -n 10 python3 -B "$HERE/../core_series.py" "$BP" "$CACHE" "$run" "$out/core" > "$out/core.log" 2>&1; echo "core_series exit $?" >> "$out/summary.txt"; }
