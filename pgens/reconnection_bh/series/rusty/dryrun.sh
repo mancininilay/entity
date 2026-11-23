@@ -66,7 +66,8 @@ if [[ "$1" == over ]]; then echo "Too many particles to receive (cannot fit into
 exit 0
 STUB
 chmod +x "$T/stubs/"*
-# Slurm stubs: sbatch records its arguments; sacct reports 0.5 h on 4 GPUs per listed job
+# Slurm stubs: sbatch records its arguments; sacct reports every listed job as ended after 0.5 h
+# on 4 GPUs, except a job whose id starts with 55, which is pending with a limit of 300 minutes
 cat > "$T/bin/sbatch" <<'STUB'
 #!/bin/bash
 echo "STUB sbatch $*" >> "$BHP_ROOT/sbatch.calls"
@@ -75,7 +76,10 @@ echo "99$RANDOM"
 STUB
 cat > "$T/bin/sacct" <<'STUB'
 #!/bin/bash
-for id in $(echo "$4" | tr , ' '); do echo "1800 billing=32,cpu=32,gres/gpu=4,mem=256G,node=1"; done
+for id in $(echo "$4" | tr , ' '); do
+  if [[ $id == 55* ]]; then echo "PENDING 0 300 billing=32,cpu=32,gres/gpu=4,mem=256G,node=1"
+  else echo "COMPLETED 1800 60 billing=32,cpu=32,gres/gpu=4,mem=256G,node=1"; fi
+done
 STUB
 chmod +x "$T/bin/"*
 
@@ -119,8 +123,11 @@ sed -e "s|R=\"\$HOME/ceph/bh-resolution-pair-claude1-20261123\"|R=\"$T\"|" "$S/r
   bash "$T/submit-dry.sh" s1-n-a 01:00:00 gpupreempt --test-only
   bash "$T/submit-dry.sh" s1-n-a 01:00:00 gpupreempt
   bash "$T/submit-dry.sh" s1-n-long 02:30:00 gpupreempt
-  for i in $(seq 1 35); do echo "x 77$i" >> jobs.txt; done
+  echo "x 551" >> jobs.txt; echo "x 552" >> jobs.txt
   bash "$T/submit-dry.sh" s1-f-a 05:00:00 gpu
-  echo "submit exit $?" )
+  echo "submit exit $? (expected 0: one ended job charged 2, two pending reserve 40, the new one 20)"
+  echo "x 553" >> jobs.txt
+  bash "$T/submit-dry.sh" s1-f-b 05:00:00 gpu
+  echo "submit exit $? (expected 3: 2 + 60 + 20 above 75)" )
 cat "$T/sbatch.calls"
 echo "DRY RUN DONE ($T)"

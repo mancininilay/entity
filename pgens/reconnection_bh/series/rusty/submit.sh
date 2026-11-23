@@ -3,9 +3,10 @@
 #   submit.sh build [--test-only]
 #   submit.sh <name> <wall limit, hh:mm:ss> <gpu|gpupreempt> [--test-only]
 # The cap of the engine is the wall limit less 10 minutes (less 5 below an hour). The budget
-# rule of the brief is applied before the submission: the A100-hours already charged to the
-# pair (`sacct` over the jobs listed in jobs.txt) plus the GPUs times the wall limit of the
-# job must not exceed BUDGET (75); otherwise nothing is submitted. Every submission (not a test)
+# rule of the brief is applied before the submission: over the jobs listed in jobs.txt, the
+# A100-hours charged by those that have ended (elapsed time times GPUs) plus the GPUs times the
+# wall limit of those still pending or running, plus the GPUs times the wall limit of the new
+# job, must not exceed BUDGET (75); otherwise nothing is submitted. Every submission (not a test)
 # is appended to jobs.txt.
 set -uo pipefail
 R="$HOME/ceph/bh-resolution-pair-claude1-20261123"
@@ -14,10 +15,13 @@ BUDGET=75
 cd "$R" || exit 1
 mkdir -p slurm
 secs() { IFS=: read -r h m s <<< "$1"; echo $((10#$h * 3600 + 10#$m * 60 + 10#$s)); }
-used() { # A100-hours charged so far: elapsed seconds times allocated GPUs, over the jobs of jobs.txt
+used() { # A100-hours: ended jobs at their elapsed time, pending or running ones at their wall limit
   local ids; ids=$(awk '{print $2}' jobs.txt 2>/dev/null | paste -sd, -)
   [[ -z "$ids" ]] && { echo 0; return; }
-  sacct -n -X -j "$ids" -o ElapsedRaw,AllocTRES%80 | awk '{ g = 0; if (match($2, /gres\/gpu=[0-9]+/)) g = substr($2, RSTART + 9, RLENGTH - 9); s += $1 * g } END { printf "%.3f", s / 3600 }'
+  sacct -n -X -j "$ids" -o State%20,ElapsedRaw,TimelimitRaw,ReqTRES%80 | awk '
+    { g = 0; if (match($4, /gres\/gpu=[0-9]+/)) g = substr($4, RSTART + 9, RLENGTH - 9)
+      if ($1 ~ /PENDING|RUNNING|REQUEUED|SUSPENDED|CONFIGURING/) s += 60 * $3 * g; else s += $2 * g }
+    END { printf "%.3f", s / 3600 }'
 }
 if [[ "${1:-}" == build ]]; then
   test="${2:-}"; ngpu=1; limit=00:55:00
@@ -37,7 +41,7 @@ else
   args=(--job-name="bhpair-$name" --time="$limit" --partition="$part" "${q[@]}" "${shape[@]}" "$S/run.sbatch" "$name" "$cap")
 fi
 u=$(used); ask=$(awk -v g="$ngpu" -v l="$(secs "$limit")" 'BEGIN { printf "%.3f", g * l / 3600 }')
-echo "A100-hours charged so far: $u; this job at most $ask; budget $BUDGET"
+echo "A100-hours charged or reserved so far: $u; this job at most $ask; budget $BUDGET"
 awk -v u="$u" -v a="$ask" -v b="$BUDGET" 'BEGIN { exit !(u + a <= b) }' || { echo "over the budget: not submitted"; exit 3; }
 if [[ "$test" == --test-only ]]; then
   sbatch --test-only "${args[@]}"
