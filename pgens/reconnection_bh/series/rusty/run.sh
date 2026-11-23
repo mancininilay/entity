@@ -18,6 +18,12 @@
 # pairs dropped for capacity, a mean K of all leptons of the pairs above FLAG_KPAIR with at least
 # 1e5 of them present, or a species above FLAG_FILL of its capacity on any rank. The reason is
 # written to STOPPED-BY-FLAG.txt.
+# Launch validation (Codex 2's B4): the options of the generator meant for tests only must be off in
+# every science input (negative_control, stale_prev, gauss_local, init_list set to true, injector
+# -1, emission = "custom"); lf-ctl may carry stale_prev and primary_species only, lf-neg must carry
+# negative_control, stale_prev and emission = "custom". Otherwise the run is refused.
+# Memory: the used memory of every visible GPU is sampled with each reading of the flag; the
+# largest values are written to gpu-memory.txt.
 # BHP_ROOT, BHP_FLAG_PERIOD, BHP_SECOND and BHP_SECOND_SHA exist only for the dry run.
 set -uo pipefail
 name="${1:?name of the run}"; cap="${2:?cap in seconds}"
@@ -69,6 +75,24 @@ echo "build: $bld"; echo "executable sha256: $(sha256sum "$x" | cut -d' ' -f1)"
 (cd "$S" && grep " $name.toml\$" INPUTS.sha256 | sha256sum -c -) || { echo "the input is not the registered one"; exit 1; }
 IFS=, read -ra devs <<< "${CUDA_VISIBLE_DEVICES:-}"
 [[ ${#devs[@]} == "$ranks" || -n "${BHP_SHARE_GPU:-}" ]] || { echo "${#devs[@]} GPUs visible, $ranks needed"; exit 1; }
+# launch validation
+inp="$S/$name.toml"
+on() { grep -E -q "^[[:space:]]*$1[[:space:]]*=[[:space:]]*true" "$inp"; }
+custom=0; grep -E -q '^[[:space:]]*emission[[:space:]]*=[[:space:]]*"custom"' "$inp" && custom=1
+noinj=0; grep -E -q '^[[:space:]]*injector[[:space:]]*=[[:space:]]*-1' "$inp" && noinj=1
+bad=""
+case "$name" in
+  lf-ctl) for k in negative_control gauss_local init_list; do on $k && bad="$bad $k"; done; [[ $custom == 1 ]] && bad="$bad custom-emission"
+          on stale_prev || bad="$bad stale_prev-missing" ;;
+  lf-neg) for k in gauss_local init_list; do on $k && bad="$bad $k"; done
+          on negative_control || bad="$bad negative_control-missing"; on stale_prev || bad="$bad stale_prev-missing"
+          [[ $custom == 1 ]] || bad="$bad custom-emission-missing" ;;
+  *)      for k in negative_control stale_prev gauss_local init_list; do on $k && bad="$bad $k"; done
+          [[ $custom == 1 ]] && bad="$bad custom-emission"; [[ $noinj == 1 ]] && bad="$bad injector=-1" ;;
+esac
+[[ $noinj == 1 && $name == lf-* ]] && bad="$bad injector=-1"
+[[ -z "$bad" ]] || { echo "launch validation: refused ($name):$bad"; exit 1; }
+echo "launch validation: the test-only options are as they must be for $name"
 cp "$S/$name.toml" "$run/$name.toml" || exit 1
 sha256sum "$run/$name.toml"
 df -h "$R" | tail -1
@@ -79,6 +103,7 @@ flag() {
   local e="$1" p="$2"
   while kill -0 "$pid" 2>/dev/null; do
     sleep "${BHP_FLAG_PERIOD:-60}"
+    nvidia-smi --query-gpu=index,memory.used --format=csv,noheader,nounits 2>/dev/null >> "$run/gpu-memory.samples"
     [[ -s "$run/bh_counters.txt" ]] || continue
     reason=$(tail -n 1 "$run/bh_counters.txt" | awk -v kmax="$FLAG_KPAIR" -v e="$e" -v p="$p" '
       NF < 16 || (NF - 8) % 4 != 0 { print "a line of " NF " columns"; exit }
@@ -115,6 +140,11 @@ wait "$pid" || rc=$?
 kill "$fpid" 2>/dev/null
 wait "$fpid" 2>/dev/null
 echo "RUN $name rc=$rc seconds=$((SECONDS - T0)) cap=$cap"
+if [[ -s "$run/gpu-memory.samples" ]]; then
+  awk -F', *' '$2 ~ /^[0-9]+$/ { if ($2 > m[$1]) m[$1] = $2; n[$1]++ } END { for (g in m) printf "GPU %s: largest used memory %d MiB over %d samples\n", g, m[g], n[g] }' \
+    "$run/gpu-memory.samples" | sort > "$run/gpu-memory.txt"
+  cat "$run/gpu-memory.txt"
+fi
 [[ -f "$run/STOPPED-BY-FLAG.txt" ]] && { echo "==== stopped by the flag"; cut -c1-400 "$run/STOPPED-BY-FLAG.txt"; }
 cat "$run"/gpu.* 2>/dev/null
 nvidia-smi --query-gpu=index,name,memory.used,utilization.gpu --format=csv || true

@@ -14,6 +14,7 @@
 #   lf (lf-neg)       leptons first, five species: no flag
 #   second (r-low-1card)  one rank, the executable of the decomposition runs (a stub, its hash given)
 #   badinput          an input changed after registration: the driver must refuse it
+#   testoption        a science input carrying a test-only option: the driver must refuse it
 #   submit            submit.sh: the budget rule (one case within, one beyond) and the one-hour rule
 set -uo pipefail
 F="$(cd "${1:?folder series/}" && pwd)"
@@ -116,6 +117,14 @@ echo "# changed" >> "$S/s1-n-b.toml"
 git -C "$T/src" rev-parse HEAD > "$T/COMMIT"
 ( export SLURM_JOB_ID=2999 BHP_DRY_C="$c24" BHP_DRY_R="$r4" CUDA_VISIBLE_DEVICES=0,1,2,3; bash "$S/rusty/run.sbatch" s1-n-b 60 )
 echo "exit status $(cat "$T/runs/s1-n-b-2999/exit-status" 2>/dev/null)"; grep -E 'registered|not clean|FAILED' "$T/runs/s1-n-b-2999/driver.log"
+echo "================ testoption (a science input carrying stale_prev = true, registered)"
+sed -i 's/^  injector       = 2$/  injector       = 2\n  stale_prev     = true/' "$S/s1-n-c.toml"
+( cd "$S" && sha256sum s1-*.toml lf-*.toml r-low-1card.toml > INPUTS.sha256 )
+( cd "$T/src" && git add . && git -c user.name=dryrun -c user.email=dryrun@localhost commit -q -m testoption )
+git -C "$T/src" rev-parse HEAD > "$T/COMMIT"
+( export SLURM_JOB_ID=2998 BHP_DRY_C="$c24" BHP_DRY_R="$r4" CUDA_VISIBLE_DEVICES=0,1,2,3; bash "$S/rusty/run.sbatch" s1-n-c 60 )
+echo "exit status $(cat "$T/runs/s1-n-c-2998/exit-status" 2>/dev/null)"; grep -E 'launch validation' "$T/runs/s1-n-c-2998/driver.log"
+grep -h 'launch validation' "$T"/runs/lf-neg-*/driver.log "$T"/runs/s1-n-a-*/driver.log
 echo "================ submit (stubs of sbatch and sacct)"
 sed -e "s|R=\"\$HOME/ceph/bh-resolution-pair-claude1-20261123\"|R=\"$T\"|" "$S/rusty/submit.sh" > "$T/submit-dry.sh"
 ( export PATH="$T/bin:$PATH"; cd "$T"

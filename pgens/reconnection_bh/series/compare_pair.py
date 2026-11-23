@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """The comparisons of the resolution pair, R0 to R3 of its pre-registration (Claude 1, 2026-11-23).
 
-    compare_pair.py <bp2raw> <cache> <output directory> --present <run> <run> <run>
-                    --fine <run> <run> <run> [--long <run>]
+    compare_pair.py <bp2raw> <cache> <output directory> --present <run> [<run> ...]
+                    --fine <run> [<run> ...] [--long <run>]
+
+Three members on each grid are needed for a verdict of R1 and R2; with fewer (a member missing
+after its one resubmission) the comparisons are printed and their verdicts are NO VERDICT.
 
 Every run directory must hold `analysis/core.npz` (series/core_series.py). Writes
 <output directory>/compare.txt and compare.json.
@@ -23,15 +26,29 @@ grid, its nominal 95 percent interval d +- 2.776 s_p sqrt(2 / 3) (independent eq
 Gaussian errors, three runs per grid), and the critical difference. Exit code of R1: 0 nothing
 flagged, 1 something flagged, 2 no verdict.
 
-R0, the loaded regime, on each grid: the outputs at which the pairs are at least half the
-primaries inside 5 skin depths of the densest block of the pairs, in a plasmoid of at least 25
-skin depths (core series), summed over the runs of the grid. At least five: the regime was
-reached on that grid. Otherwise R2 for that grid reads "no test of the loaded regime".
+R0, the loaded regime, on each grid: the field outputs at which the number density of the leptons
+of the pairs (both species) is at least half that of the primaries (both species) inside 5 skin
+depths of the densest block of the pairs, in a plasmoid of equivalent radius at least 25 skin
+depths (core series). The regime was reached on a grid when there are at least five such outputs,
+from at least two of its runs and at least two island histories. Otherwise R2 for that grid reads
+"no test of the loaded regime".
 
-R2, the cores: `scripts/check6_position.py --frame` (6a, 6b by position in the frame of the pairs,
-6c) for every run of the fine grid against the three runs of the present grid as members, and for
-every run of the present grid against the three of the fine grid; the same with the energies in
-the lab frame, reported. Exit codes collected.
+R2, the cores, in two parts.
+  R2a, the quantitative contrasts. Per run, over its eligible epochs (plasmoid of equivalent
+  radius at least 25 skin depths) and the aperture of 5 skin depths: the mean loading (pairs over
+  primaries), the mean density of the pairs (n0), the median over epochs of the median K of the
+  pairs in their frame, and the same in the lab frame. One number per run and endpoint; the
+  difference of the means of the grids, its nominal 95 percent interval (2.776 s_p sqrt(2 / 3)),
+  and a flag when it exceeds the Bonferroni bound for the four endpoints (4.315 s_p sqrt(2 / 3)).
+  A run without eligible epochs has no endpoint; with fewer than three runs per grid having one,
+  R2a is NO VERDICT.
+  R2b, the screen of gross heating: `scripts/check6_position.py --frame` (6a, 6b by position in the
+  frame of the pairs, 6c) for every run of the fine grid against the three runs of the present grid
+  as members, and for every run of the present grid against the three of the fine grid; the same
+  with the energies in the lab frame, reported. Exit codes collected. A factor-two screen, not a
+  quantitative comparison.
+A flag of R1 or R2a, or a failure of R2b, names a difference; their absence does not show that the
+grids agree, which a non-significant test cannot show.
 
 R3, stationarity (reported, no criterion): the inflow rate and the mean K of the ions in the
 windows 1000 <= t < 2000 and 2000 <= t <= 3000 of every run of 3000 time units, and in blocks of
@@ -54,6 +71,7 @@ import check3_ensemble as ens  # noqa: E402
 from bhio import Run, threshold  # noqa: E402
 
 T_FAMILY, T_SINGLE = 5.5976, 2.7764
+T_FAMILY_R2 = 4.3147      # t(1 - 0.05 / 8, 4): four endpoints, two-sided
 LOADED_RATIO, LOADED_SIZE, LOADED_MIN = 0.5, 25.0, 5
 
 
@@ -106,7 +124,21 @@ def core_table(run_dir):
 def loaded_count(run_dir):
     c = core_table(run_dir)
     m = (c["radius"] == 5.0) & (c["size"] >= LOADED_SIZE) & (c["n_pair"] >= LOADED_RATIO * c["n_prim"])
-    return int(m.sum()), [float(t) for t in c["time"][m]]
+    hist = c["history"][m] if "history" in c else np.zeros(int(m.sum()))
+    return int(m.sum()), [float(t) for t in c["time"][m]], {int(x) for x in hist}
+
+
+def endpoints(run_dir):
+    """R2a: one number per endpoint from the eligible epochs of one run (aperture 5)."""
+    c = core_table(run_dir)
+    m = (c["radius"] == 5.0) & (c["size"] >= LOADED_SIZE)
+    if not m.any():
+        return None
+    with np.errstate(invalid="ignore", divide="ignore"):
+        load = c["n_pair"][m] / c["n_prim"][m]
+    return {"loading": float(np.nanmean(load)), "pair density": float(np.nanmean(c["n_pair"][m])),
+            "median K, frame of the pairs": float(np.nanmedian(c["lep_medK_frame"][m])),
+            "median K, lab": float(np.nanmedian(c["lep_medK"][m])), "epochs": int(m.sum())}
 
 
 def main():
@@ -114,8 +146,8 @@ def main():
     ap.add_argument("bp2raw")
     ap.add_argument("cache")
     ap.add_argument("out")
-    ap.add_argument("--present", nargs=3, required=True)
-    ap.add_argument("--fine", nargs=3, required=True)
+    ap.add_argument("--present", nargs="+", required=True)
+    ap.add_argument("--fine", nargs="+", required=True)
     ap.add_argument("--long")
     a = ap.parse_args()
     out = Path(a.out)
@@ -124,17 +156,20 @@ def main():
     say = text.append
 
     # ---- scalars and independence
+    complete = len(a.present) == 3 and len(a.fine) == 3
     meas = {}
     for kind in ("present", "fine"):
         meas[kind] = [ens.measure(p, a.bp2raw, a.cache) for p in getattr(a, kind)]
     say("resolution pair: R0 to R3; present grid " + ", ".join(m["name"] for m in meas["present"])
         + "; fine grid " + ", ".join(m["name"] for m in meas["fine"]) + (f"; long run {Path(a.long).name}" if a.long else ""))
+    if not complete:
+        say(f"  a member is missing ({len(a.present)} present, {len(a.fine)} fine): R1 and R2 have no verdict")
     independent = True
     rec["independence"] = {}
     for kind in ("present", "fine"):
         ms = meas[kind]
-        for i in range(3):
-            for j in range(i + 1, 3):
+        for i in range(len(ms)):
+            for j in range(i + 1, len(ms)):
                 ti, pi = ms[i]["times"], ms[i]["profiles"]
                 tj, pj = ms[j]["times"], ms[j]["profiles"]
                 late = [k for k, t in enumerate(ti) if t >= 2.0 * ms[i]["runtime"] / 3.0 and k < len(tj)]
@@ -153,7 +188,7 @@ def main():
     for key in meas["present"][0]["q"]:
         p = np.array([m["q"][key] for m in meas["present"]])
         f = np.array([m["q"][key] for m in meas["fine"]])
-        sp = float(np.sqrt((p.var(ddof=1) + f.var(ddof=1)) / 2.0))
+        sp = float(np.sqrt(((p.size - 1) * p.var(ddof=1) + (f.size - 1) * f.var(ddof=1)) / (p.size + f.size - 2)))
         d = float(f.mean() - p.mean())
         half_f, half_s = T_FAMILY * sp * np.sqrt(2.0 / 3.0), T_SINGLE * sp * np.sqrt(2.0 / 3.0)
         out_f = abs(d) > half_f
@@ -165,8 +200,8 @@ def main():
             f"d {100 * d / base:+.1f}% of the present mean, nominal 95% interval [{100 * (d - half_s) / base:+.1f}, "
             f"{100 * (d + half_s) / base:+.1f}]%; critical difference {100 * half_f / base:.1f}% (family), "
             f"{100 * half_s / base:.1f}% (single); {'FLAGGED' if out_f else 'not flagged'}")
-    code_r1 = 2 if not independent else (1 if flagged else 0)
-    say(f"R1 verdict: {['nothing flagged', 'FLAGGED', 'NO VERDICT (independence screen failed)'][code_r1]} "
+    code_r1 = 2 if not (independent and complete) else (1 if flagged else 0)
+    say(f"R1 verdict: {['nothing flagged (which does not show that the grids agree)', 'FLAGGED', 'NO VERDICT (independence screen failed or a member missing)'][code_r1]} "
         f"({flagged} of {len(rec['R1'])} scalars flagged)")
     rec["R1_code"] = code_r1
 
@@ -174,17 +209,50 @@ def main():
     rec["R0"] = {}
     loaded = {}
     for kind in ("present", "fine"):
-        n_tot, detail = 0, {}
+        n_tot, detail, runs, hists = 0, {}, 0, set()
         for p in getattr(a, kind):
-            n, ts = loaded_count(p)
+            n, ts, hs = loaded_count(p)
             n_tot += n
+            runs += n > 0
+            hists |= {(Path(p).name, x) for x in hs}
             detail[Path(p).name] = ts
-        loaded[kind] = n_tot >= LOADED_MIN
-        rec["R0"][kind] = {"outputs": n_tot, "reached": loaded[kind], "times": detail}
+        loaded[kind] = n_tot >= LOADED_MIN and runs >= 2 and len(hists) >= 2
+        rec["R0"][kind] = {"outputs": n_tot, "runs": runs, "histories": len(hists), "reached": loaded[kind], "times": detail}
         say(f"R0 {kind} grid: {n_tot} outputs with pairs >= {LOADED_RATIO:g} of the primaries inside 5 d_e in a plasmoid "
-            f">= {LOADED_SIZE:g} d_e: {'reached' if loaded[kind] else 'NOT reached (R2: no test of the loaded regime)'}")
+            f"of radius >= {LOADED_SIZE:g} d_e, from {runs} runs and {len(hists)} histories: "
+            f"{'reached' if loaded[kind] else 'NOT reached (R2: no test of the loaded regime)'}")
 
-    # ---- R2
+    # ---- R2a
+    say("R2a, the cores, quantitative contrasts (aperture 5, eligible epochs; one number per run):")
+    ends = {kind: [endpoints(p) for p in getattr(a, kind)] for kind in ("present", "fine")}
+    rec["R2a"] = {"per run": {Path(p).name: e for kind in ("present", "fine") for p, e in zip(getattr(a, kind), ends[kind])}}
+    have = {kind: [e for e in ends[kind] if e is not None] for kind in ends}
+    flagged2 = 0
+    if len(have["present"]) < 3 or len(have["fine"]) < 3:
+        code_r2a = 2
+        say(f"  runs with eligible epochs: {len(have['present'])} present, {len(have['fine'])} fine: R2a NO VERDICT")
+    else:
+        for key in ("loading", "pair density", "median K, frame of the pairs", "median K, lab"):
+            p = np.array([e[key] for e in have["present"]])
+            f = np.array([e[key] for e in have["fine"]])
+            sp = float(np.sqrt((p.var(ddof=1) + f.var(ddof=1)) / 2.0))
+            d = float(f.mean() - p.mean())
+            half_s, half_f = T_SINGLE * sp * np.sqrt(2.0 / 3.0), T_FAMILY_R2 * sp * np.sqrt(2.0 / 3.0)
+            out_f = abs(d) > half_f
+            flagged2 += out_f
+            base = abs(p.mean()) if p.mean() != 0 else 1.0
+            rec["R2a"][key] = {"present": p.tolist(), "fine": f.tolist(), "s_p": sp, "d": d, "flagged": bool(out_f)}
+            say(f"  {key}: present {', '.join(f'{x:.4g}' for x in p)}; fine {', '.join(f'{x:.4g}' for x in f)}; d "
+                f"{100 * d / base:+.1f}% [{100 * (d - half_s) / base:+.1f}, {100 * (d + half_s) / base:+.1f}]%; critical "
+                f"{100 * half_f / base:.1f}% (four endpoints); {'FLAGGED' if out_f else 'not flagged'}")
+        code_r2a = 1 if flagged2 else 0
+        if not (loaded["present"] and loaded["fine"]):
+            say("  the loaded regime was not reached on both grids: R2a compares the cores that formed, not loaded ones")
+    rec["R2a_code"] = code_r2a
+    say(f"R2a verdict: {['nothing flagged (which does not show that the grids agree)', 'FLAGGED', 'NO VERDICT'][code_r2a]}")
+
+    # ---- R2b
+    say("R2b, the screen of gross heating (check 6 by position):")
     rec["R2"] = {}
     for kind, other in (("fine", "present"), ("present", "fine")):
         refs = [str(Path(p) / "analysis" / "core.npz") for p in getattr(a, other)]
