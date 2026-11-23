@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# After a run, or for an existing run (Rusty login node, no Slurm, niced): the scalars and the
-# interface measure of one run as JSON files; with "checks" also checks 1 and 2 of the
+# After a run, or for an existing run (Rusty login node, no Slurm, niced): the scalars, the
+# interface measure and the reconnection rate per output of one run as JSON files; with "checks" also checks 1 and 2 of the
 # shakedown, the fill per rank and the timers, as for the run of M4.
 #   measure_d.sh <output directory> <run directory> [checks]
 # The raw extractions go to a temporary directory of this node, removed at the end.
@@ -26,6 +26,8 @@ nice -n 10 python3 -B "$D/scalars.py" "$WRAP" "$CACHE" "$RUN" "$out/json/$label.
 echo "scalars exit $?" >> "$log"
 nice -n 10 python3 -B "$D/interface.py" "$WRAP" "$CACHE" "$RUN" "$out/json/$label.interface.json" > "$out/$label/interface.txt" 2>&1
 echo "interface exit $?" >> "$log"
+nice -n 10 python3 -B "$D/rate_series.py" "$WRAP" "$CACHE" "$RUN" "$out/json/$label.rates.json" > "$out/$label/rates.txt" 2>&1
+echo "rate series exit $?" >> "$log"
 if [[ "$checks" == checks ]]; then
   nice -n 10 python3 -B "$S/check1_counters.py" "$WRAP" "$CACHE" "$RUN" > "$out/$label/check1.txt" 2>&1; echo "check1 exit $?" >> "$log"
   nice -n 10 python3 -B "$S/check2_paircount.py" "$WRAP" "$CACHE" "$RUN" "$J" > "$out/$label/check2.txt" 2>&1; echo "check2 exit $?" >> "$log"

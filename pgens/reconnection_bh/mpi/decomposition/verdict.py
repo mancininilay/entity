@@ -23,7 +23,11 @@ scalar alone and the interval at 95 percent for its family (Bonferroni).
   not established      the single interval includes zero
   bound                |D| + half-width of the single interval: a shift larger than this
                        is excluded at 95 percent, for this scalar alone
-Exit 0: no shift established in the confirmatory comparison; 1: established; 2: no verdict.
+The late family carries the verdict on a shift by the decomposition. In the early family the
+runs of one group share most of their initial noise, so a difference between the groups there
+can come from the noise realisation as well as from the decomposition (PREREGISTRATION-D.md).
+Exit 0: no difference established in the confirmatory comparison of either family; 1: one
+established; 2: no verdict.
 """
 import json
 import math
@@ -39,7 +43,8 @@ LATE = [("ions, mean K", "late", 0.25), ("ions, K 99 percent", "late", 0.25),
         ("ions, K 99.9 percent", "late", 0.25), ("reconnection rate", "late", 0.10),
         ("pairs created", "reported", 0.15)]
 EARLY = [("pairs created up to t = 750", "early", 0.10), ("ions, mean K at t = 750", "early", 0.10),
-         ("reconnection rate over 300 <= t <= 700", "early", 0.10)]
+         ("reconnection rate over 300 <= t <= 700", "early", 0.10),
+         ("ions present at t = 750", "series:ions:750", 0.10), ("ions, mean K at t = 1000", "series:ions, mean K:1000", 0.10)]
 REPORTED = [("reconnection rate over t >= 2 runtime / 3", "reported"), ("ions, fraction above threshold", "late"),
             ("ions, slope sigma/2..2 sigma", "late"), ("electrons, mean K", "late"),
             ("electrons, K 99 percent", "late"), ("electrons, K 99.9 percent", "late"),
@@ -123,6 +128,12 @@ def load(directory, label):
 
 
 def value(run, name, where):
+    if where.startswith("series:"):
+        _, column, at = where.split(":")
+        k = min(range(len(run["series"]["time"])), key=lambda i: abs(run["series"]["time"][i] - float(at)))
+        if abs(run["series"]["time"][k] - float(at)) > 5.0:
+            raise SystemExit(f"{run['label']}: no counter line near t = {at}")
+        return run["series"][column][k]
     v = run[where][name]
     if name.startswith("pairs") and run["emitting"]:
         v *= TAU / run["optical_depth"]          # per unit of optical depth, at the optical depth of R-low
@@ -154,7 +165,7 @@ def compare(text, a, b, s, df, family, scale, stated):
                                               else "not established")
     bound = (abs(d) + h1) / scale
     print(f"    {text} ({a.size} against {b.size}): D = {d:+.5g} ({d / scale:+.1%}); standard error "
-          f"{se / scale:.1%}; t = {d / se:+.2f} ({df} d.o.f.); single interval [{(d - h1) / scale:+.1%}, "
+          f"{se / scale:.1%}; t = {(d / se if se > 0 else float('nan')):+.2f} ({df} d.o.f.); single interval [{(d - h1) / scale:+.1%}, "
           f"{(d + h1) / scale:+.1%}]; family interval [{(d - hf) / scale:+.1%}, {(d + hf) / scale:+.1%}]: "
           f"{word}; a shift above {bound:.1%} is excluded"
           + (f" ({'below' if bound < stated else 'not below'} the stated size {stated:.0%})" if stated else ""))
@@ -195,7 +206,7 @@ def independence(groups):
 # ------------------------------------------------------------- interfaces
 def seam_medians(run):
     """{(plane, field): (median over the outputs after the first of the ratio to the two adjacent planes,
-    of the ratio to the planes 4 to 7 cells away, of the signed jump in units of its standard error)}"""
+    of the ratio to the planes 4 to 7 cells away, and the mean excess signed jump in units of its standard error)}"""
     out = {}
     if run["interface"] is None:
         return out
@@ -209,7 +220,9 @@ def seam_medians(run):
         near = 0.5 * (rms[7] + rms[9])
         far = float(np.median(rms[[1, 2, 3, 4, 12, 13, 14, 15]]))
         n = cells[row["plane"][0]]
-        z = jump[8] / (rms[8] / math.sqrt(n)) if rms[8] > 0 else float("nan")
+        # the signed jump across the plane beyond that of the two adjacent planes (a smooth gradient
+        # cancels), in units of its standard error if the three were independent
+        z = ((jump[8] - 0.5 * (jump[7] + jump[9])) / (rms[8] * math.sqrt(1.5 / n))) if rms[8] > 0 else float("nan")
         acc.setdefault((row["plane"], row["field"]), []).append(
             (rms[8] / near if near > 0 else float("nan"), rms[8] / far if far > 0 else float("nan"), z))
     for key, rows in acc.items():
@@ -273,11 +286,12 @@ def interfaces(groups):
                   + f": {'ALL OUTSIDE THE RANGE of the runs without the cut' if out else 'not separated'}")
         chance = 2.0 / math.comb(len(cut) + len(free), len(cut))
         print(f"    chance of 'all outside the range' for one field if the cut does nothing: {chance:.3f}")
-    print("  signed jump across the plane, mean over the outputs, in units of its standard error (reported, no rule):")
+    print("  signed jump across the plane beyond that of the two adjacent planes, mean over the outputs, in units of its "
+          "standard error (reported, no rule; * marks a rank boundary of that run):")
     for plane in X_PLANES + [Y_PLANE]:
         for r in runs:
-            if is_boundary(r, plane):
-                print(f"    {r['label']} {plane}: " + ", ".join(f"{name} {med[r['label']][(plane, f)][2]:+.1f}" for f, name in SEAM_FIELDS))
+            star = "*" if is_boundary(r, plane) else " "
+            print(f"    {plane:9s} {r['label'] + star:16s} " + ", ".join(f"{name} {med[r['label']][(plane, f)][2]:+5.1f}" for f, name in SEAM_FIELDS))
     return flagged_x, control_x, flagged_y
 
 
@@ -334,7 +348,7 @@ def main():
                   + ("" if has_o else "; the runs without the policy have no pairs") + ")")
             if not new:
                 n_f = len(family)
-                df_w = df + 3 if not has_o else df + 3      # two more in F22, one in F41
+                df_w = df + 3                               # two more in F22, one in F41
                 for text, na, nb in (("four new runs against S", 4, 3), ("all five on four cards against S", 5, 3),
                                      ("[4, 1] against the two new [2, 2]", 2, 2), ("[4, 1] against the three [2, 2]", 2, 3)):
                     se = s * math.sqrt(1.0 / na + 1.0 / nb)
@@ -345,6 +359,9 @@ def main():
                         len(family), scale, 0)
                 continue
             c1 = compare("C1 confirmatory: the four new runs against S", v(new), v(S), s, df, len(family), scale, stated)
+            s0, df0 = pooled([v(S)] + ([v(O)] if has_o else []))
+            compare("C1 with the scatter of the single-card runs alone, which was known before the runs (sensitivity)",
+                    v(new), v(S), s0, df0, len(family), scale, stated)
             compare("C2 all five runs on four cards against S (includes the run that raised the question)", v(f22 + f41), v(S),
                     s, df, len(family), scale, stated)
             compare("C3 the two new [2, 2] against S", v(n22), v(S), s, df, len(family), scale, stated)
@@ -370,21 +387,24 @@ def main():
                 word = "NO VERDICT (independence or an incomplete run)"
                 codes[title] = 2
             elif e1:
-                word = "A SHIFT IS ESTABLISHED in " + ", ".join(e1)
+                word = "A DIFFERENCE BETWEEN THE GROUPS IS ESTABLISHED in " + ", ".join(e1)
                 codes[title] = 1
             elif all(under):
-                word = "NO SHIFT ESTABLISHED, and a shift above the stated sizes is EXCLUDED for every scalar"
+                word = "NO DIFFERENCE ESTABLISHED, and a difference above the stated sizes is EXCLUDED for every scalar"
                 codes[title] = 0
             else:
-                word = "NO SHIFT ESTABLISHED; not excluded at the stated sizes"
+                word = "NO DIFFERENCE ESTABLISHED; not excluded at the stated sizes"
                 codes[title] = 0
             print(f"  verdict, {title} scalars, four cards against one (C1): {word}"
                   + (f"; indicated at the single level only: {', '.join(i1)}" if i1 else "")
                   + "; bounds: " + ", ".join(f"{n} {b:.1%}" for n, b, _ in bounds))
-            print(f"  verdict, {title} scalars, [4, 1] against [2, 2] (C5): "
-                  + ("A DIFFERENCE IS ESTABLISHED in " + ", ".join(e5) if e5 else "no difference established")
-                  + (f"; indicated at the single level only: {', '.join(i5)}" if i5 else "")
-                  + "; bounds: " + ", ".join(f"{n} {b:.1%}" for n, _, b in bounds))
+            if not (n22 and f41):
+                print(f"  verdict, {title} scalars, [4, 1] against [2, 2] (C5): NO VERDICT (no new run on one side)")
+            else:
+                print(f"  verdict, {title} scalars, [4, 1] against [2, 2] (C5): "
+                      + ("A DIFFERENCE IS ESTABLISHED in " + ", ".join(e5) if e5 else "no difference established")
+                      + (f"; indicated at the single level only: {', '.join(i5)}" if i5 else "")
+                      + "; bounds: " + ", ".join(f"{n} {b:.1%}" for n, _, b in bounds))
     print("reported without a rule:")
     for name, where in REPORTED:
         print(f"  {name}: {table(name, where)}")
