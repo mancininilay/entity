@@ -31,6 +31,11 @@ distance from the middle of the box.
   6c  the box, as in check6_health.py, when the run directories are given: the largest mean K
       of all leptons of the pairs is at most twice the largest over the members.
 
+With --frame (series of `series/core_series.py`) 6b uses the median K and the mean of 1 / gamma
+of the leptons of the pairs in the zero-momentum frame of the pairs in each aperture
+(`lep_medK_frame`, `lep_invgamma_frame`) instead of the lab values (added 2026-11-23 for the
+resolution pair, after Codex 1's review of stage C, C3).
+
 Exit 0 pass, 1 fail, 2 no verdict.
 """
 import argparse
@@ -49,12 +54,15 @@ JUDGED_MIN = 3
 FACTOR = 2.0
 
 
+KCOL, GCOL = "lep_medK", "lep_invgamma"
+
+
 def points(c, radius, half_length):
     """Counting outputs of one run: (time, bin, distance, median K, <1/gamma>, size)."""
-    m = h.at(c, radius) & (c["size"] >= SIZE_MIN) & np.isfinite(c["lep_medK"]) & np.isfinite(c["lep_invgamma"])
+    m = h.at(c, radius) & (c["size"] >= SIZE_MIN) & np.isfinite(c[KCOL]) & np.isfinite(c[GCOL])
     d = np.abs(c["xc"][m])
     b = np.minimum((d / (half_length / BINS)).astype(int), BINS - 1)
-    return c["time"][m], b, d, c["lep_medK"][m], c["lep_invgamma"][m], c["size"][m]
+    return c["time"][m], b, d, c[KCOL][m], c[GCOL][m], c["size"][m]
 
 
 def main():
@@ -64,12 +72,17 @@ def main():
     ap.add_argument("--ref", nargs="+", required=True)
     ap.add_argument("--test-dir")
     ap.add_argument("--ref-dirs", nargs="*", default=[])
+    ap.add_argument("--frame", action="store_true")
     a = ap.parse_args()
+    global KCOL, GCOL
+    if a.frame:
+        KCOL, GCOL = "lep_medK_frame", "lep_invgamma_frame"
     test, test_name = h.series(a.test)
     refs = [h.series(r) for r in a.ref]
     width = a.half_length / BINS
     print(f"check 6 by position: {test_name} against the members " + ", ".join(n for _, n in refs)
-          + f"; bins of {width:g} skin depths of distance from the middle of the box")
+          + f"; bins of {width:g} skin depths of distance from the middle of the box; energies "
+          + ("in the frame of the pairs" if a.frame else "in the lab frame"))
     codes = []
 
     # ---- 6a (as check6_health.py)

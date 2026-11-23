@@ -10,7 +10,10 @@
 #   upstream.txt upstream.py (the delivered upstream: density, B^2, proxy, against time)
 #   scalars.json, interface.json   the late scalars of check 3 and Codex 1's interface measure, by
 #                the scripts of the decomposition question (runs with field output)
-#   series.*     check6_series.py (the core series for check 6 by position)
+#   ranks.txt    ranks_check.py (check 1 per rank: the sums of the ranks, no species above 90
+#                percent of its capacity on a rank)
+#   core.*       core_series.py (the core series: one centre, physical footprints, the frame of
+#                the pairs), read by compare_pair.py
 #   summary.txt  the exit codes
 # For lf-ctl and lf-neg only the Gauss files are compared (lf.txt in the first directory given).
 set -uo pipefail
@@ -30,19 +33,21 @@ for run in "$@"; do
   CACHE=$(mktemp -d "$R/scratch-cache.XXXXXX") || exit 1
   log="$out/analysis.log"
   { hostname; date -u; echo "run $run (exit status $(cat "$run/exit-status" 2>/dev/null))"; echo "commit $(git -C "$R/src" rev-parse HEAD)"
-    (cd "$SC" && sha256sum check1_counters.py check2_paircount.py check4_gauss.py check6_series.py bhio.py)
+    (cd "$SC" && sha256sum check1_counters.py check2_paircount.py check4_gauss.py check6_position.py bhio.py)
+    (cd "$HERE/.." && sha256sum ranks_check.py core_series.py compare_pair.py)
     (cd "$DC" && sha256sum scalars.py interface.py check3_ensemble.py); sha256sum "$J" "$HERE/../upstream.py"; } > "$log" 2>&1
   : > "$out/summary.txt"
   case "$name" in
     lf-ctl|lf-neg) ;;
     *)
       PYTHONPATH="$SC" nice -n 10 python3 -B "$SC/check1_counters.py" "$BP" "$CACHE" "$run" "$OFF" > "$out/check1.txt" 2>> "$log"; echo "check1 exit $?" >> "$out/summary.txt"
+      [[ -s "$run/bh_ranks.txt" ]] && { python3 -B "$HERE/../ranks_check.py" "$run" > "$out/ranks.txt" 2>> "$log"; echo "ranks exit $?" >> "$out/summary.txt"; }
       [[ "$name" == r-low-1card ]] || { PYTHONPATH="$SC" nice -n 10 python3 -B "$SC/check2_paircount.py" "$BP" "$CACHE" "$run" "$J" > "$out/check2.txt" 2>> "$log"; echo "check2 exit $?" >> "$out/summary.txt"; }
       PYTHONPATH="$SC" nice -n 10 python3 -B "$SC/check4_gauss.py" "$BP" "$CACHE" "$OFF" "$run" > "$out/check4.txt" 2>> "$log"; echo "check4 exit $?" >> "$out/summary.txt"
       [[ -s "$run/bh_profile.txt" ]] && { python3 -B "$HERE/../upstream.py" "$run" > "$out/upstream.txt" 2>> "$log"; echo "upstream exit $?" >> "$out/summary.txt"; }
       PYTHONPATH="$SC:$DC" nice -n 10 python3 -B "$DC/scalars.py" "$BP" "$CACHE" "$run" "$out/scalars.json" > "$out/scalars.log" 2>&1; echo "scalars exit $?" >> "$out/summary.txt"
       PYTHONPATH="$SC:$DC" nice -n 10 python3 -B "$DC/interface.py" "$BP" "$CACHE" "$run" "$out/interface.json" > "$out/interface.log" 2>&1; echo "interface exit $?" >> "$out/summary.txt"
-      PYTHONPATH="$SC" nice -n 10 python3 -B "$SC/check6_series.py" "$BP" "$CACHE" "$run" "$out/series" > "$out/series.log" 2>&1; echo "check6_series exit $?" >> "$out/summary.txt"
+      [[ "$name" == r-low-1card ]] || { nice -n 10 python3 -B "$HERE/../core_series.py" "$BP" "$CACHE" "$run" "$out/core" > "$out/core.log" 2>&1; echo "core_series exit $?" >> "$out/summary.txt"; }
       ;;
   esac
   rm -rf -- "$CACHE"
