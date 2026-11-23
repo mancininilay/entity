@@ -218,7 +218,10 @@ namespace ntt {
       npart_recv_tot                += nrecv;
       npptag_recv_vec[tag_recv - 2]  = nrecv;
 
-      raise::ErrorIf((npart() + npart_recv_tot) >= maxnpart(),
+      // received particles first fill the holes (dead and outgoing particles
+      // among the first npart slots) and only the rest is appended, so the
+      // species ends with max(npart, npart_alive + received) slots in use
+      raise::ErrorIf(npart_recv_tot > maxnpart() - npart_alive,
                      "Too many particles to receive (cannot fit into maxptl)",
                      HERE);
     }

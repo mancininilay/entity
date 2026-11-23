@@ -58,6 +58,28 @@ endif()
 
 if(${mpi})
   gen_test(comm-mpi true)
+
+  # the capacity test of the particle exchange: three cases that must pass on 1
+  # and on 2 ranks, and one overflow on 2 ranks that must stop the engine
+  set(cap_exec test-framework-comm-capacity.xc)
+  add_executable(${cap_exec} comm-capacity.cpp)
+  set(cap_libs ntt_framework ntt_global ntt_metrics)
+  add_dependencies(${cap_exec} ${cap_libs})
+  target_link_libraries(${cap_exec} PRIVATE ${cap_libs})
+  foreach(cap_case full fill holes)
+    foreach(cap_np 1 2)
+      add_test(NAME "FRAMEWORK::comm-capacity-${cap_case}-${cap_np}"
+               COMMAND "${MPIEXEC_EXECUTABLE}" "${MPIEXEC_NUMPROC_FLAG}"
+                       "${cap_np}" "$<TARGET_FILE:${cap_exec}>" "${cap_case}")
+    endforeach()
+  endforeach()
+  add_test(NAME "FRAMEWORK::comm-capacity-over-2"
+           COMMAND "${MPIEXEC_EXECUTABLE}" "${MPIEXEC_NUMPROC_FLAG}" "2"
+                   "$<TARGET_FILE:${cap_exec}>" "over")
+  set_tests_properties(
+    "FRAMEWORK::comm-capacity-over-2"
+    PROPERTIES PASS_REGULAR_EXPRESSION "Too many particles to receive"
+               FAIL_REGULAR_EXPRESSION "OVERFLOW NOT DETECTED")
 else()
   gen_test(comm-nompi false)
 endif()
