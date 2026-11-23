@@ -27,7 +27,15 @@
  *                         from an empty region), and the rule sees the density
  *                         averaged over blocks of `setup.smooth_cells` cells
  *                         along x1 and three rows (so that the shot noise of a
- *                         single cell does not trigger it). One domain, 2D.
+ *                         single cell does not trigger it). 2D. The code is
+ *                         `bhr::ReplenishCorrected` of
+ *                         `pgens/reconnection_bh/bhr_common.hpp`, the one the
+ *                         reconnection generator uses; it is valid on several
+ *                         domains.
+ *
+ *   setup.profile_interval   `bh_profile.txt` every so many steps (0 = never,
+ *                            the default; and after the first and the last
+ *                            step): see `bhr_common.hpp`.
  */
 
 #ifndef PROBLEM_GENERATOR_H
@@ -46,6 +54,8 @@
 #include "archetypes/spatial_dist.h"
 #include "archetypes/utils.h"
 #include "framework/domain/metadomain.h"
+
+#include "../reconnection_bh/bhr_common.hpp"
 
 #include <Kokkos_Core.hpp>
 
@@ -125,7 +135,8 @@ namespace user {
 
     const real_t bg_B, bg_temperature, inj_ypad, flow_beta;
     const real_t ymin, ymax;
-    const int    replenish, smooth_cells;
+    const int    replenish, smooth_cells, profile_interval;
+    bool         profile_started { false };
 
     InitFields<D> init_flds;
 
@@ -140,6 +151,7 @@ namespace user {
       , ymax { m.mesh().extent(in::x2).second }
       , replenish { params.template get<int>("setup.replenish", 0) }
       , smooth_cells { params.template get<int>("setup.smooth_cells", 64) }
+      , profile_interval { bhr::opt<int>(params, "setup.profile_interval", 0) }
       , init_flds { bg_B, flow_beta } {}
 
     auto MatchFieldsInX2(simtime_t) const -> BoundaryFieldsInX2<D> {
@@ -158,54 +170,48 @@ namespace user {
                                           { drift, drift });
     }
 
-    // The correction: component 1 of the buffer, on the cells of the box, gets
-    // the density of component 0 averaged over blocks of `smooth_cells` cells
-    // along x1 and over the row and its two neighbours inside the box.
-    void SmoothBox(Domain<S, M>& domain, const boundaries_t<real_t>& box) const {
-      boundaries_t<bool> incl_ghosts;
-      for (auto d = 0; d < M::Dim; ++d) {
-        incl_ghosts.emplace_back(false, false);
+    void CustomPostStep(timestep_t step, simtime_t time, Domain<S, M>& domain) {
+      if (replenish == 1) {
+        bhr::ReplenishCorrected(params,
+                                metadomain,
+                                domain,
+                                1,
+                                2,
+                                bg_temperature,
+                                ymin,
+                                ymax,
+                                inj_ypad,
+                                smooth_cells);
+      } else {
+        Stock(domain);
       }
-      const auto extent = domain.mesh.ExtentToRange(box, incl_ghosts);
-      const auto i_min = extent[0].first, i_max = extent[0].second;
-      const auto j_min = extent[1].first, j_max = extent[1].second;
-      if (i_max <= i_min or j_max <= j_min) {
-        return;
+      if (profile_interval > 0) {
+        const auto dt = params.template get<real_t>("algorithms.timestep.dt");
+        const auto max_steps = static_cast<timestep_t>(
+          params.template get<simtime_t>("simulation.runtime") / dt);
+        const auto steps_done = static_cast<long long>(step) + 1;
+        if (steps_done == 1 or steps_done >= static_cast<long long>(max_steps) or
+            steps_done % profile_interval == 0) {
+          std::vector<std::pair<long, long>> regions;
+          if (replenish == 1) {
+            regions = bhr::Regions(metadomain, domain, ymin, ymax, inj_ypad);
+          }
+          bhr::WriteProfile(params,
+                            metadomain,
+                            domain,
+                            1,
+                            2,
+                            ZERO,
+                            ZERO,
+                            regions,
+                            steps_done,
+                            static_cast<double>(time) + static_cast<double>(dt),
+                            profile_started);
+        }
       }
-      const ncells_t    ni = i_max - i_min, nj = j_max - j_min;
-      const ncells_t    w    = static_cast<ncells_t>(smooth_cells);
-      const ncells_t    nb   = (ni + w - 1) / w;
-      auto              buff = domain.fields.buff;
-      array_t<real_t**> block("replenish_block", nb, nj);
-      Kokkos::parallel_for(
-        "ReplenishBlock",
-        CreateRangePolicy<Dim::_2D>({ 0, 0 }, { nb, nj }),
-        Lambda(cellidx_t b, cellidx_t r) {
-          const ncells_t lo = b * w;
-          const ncells_t hi = (lo + w < ni) ? lo + w : ni;
-          real_t         s { ZERO };
-          for (auto k = lo; k < hi; ++k) {
-            s += buff(i_min + k, j_min + r, 0);
-          }
-          block(b, r) = s / static_cast<real_t>(hi - lo);
-        });
-      Kokkos::parallel_for(
-        "ReplenishSmooth",
-        CreateRangePolicy<Dim::_2D>({ i_min, j_min }, { i_max, j_max }),
-        Lambda(cellidx_t i, cellidx_t j) {
-          const ncells_t b  = (i - i_min) / w;
-          const ncells_t r  = j - j_min;
-          const ncells_t r0 = (r > 0) ? r - 1 : 0;
-          const ncells_t r1 = (r + 1 < nj) ? r + 1 : nj - 1;
-          real_t         s { ZERO };
-          for (auto q = r0; q <= r1; ++q) {
-            s += block(b, q);
-          }
-          buff(i, j, 1) = s / static_cast<real_t>(r1 - r0 + 1);
-        });
     }
 
-    void CustomPostStep(timestep_t, simtime_t, Domain<S, M>& domain) {
+    void Stock(Domain<S, M>& domain) {
       // ---- from here: `pgens/reconnection`, CustomPostStep, unchanged ----
       const auto energy_dist = arch::energy_dist::Maxwellian<M::Dim, M::CoordType>(
         domain.random_pool(),
@@ -229,23 +235,12 @@ namespace user {
                                                            domain,
                                                            { 1, 2 },
                                                            domain.fields.buff);
-      // ---- the correction: the region reaches the boundary, and the rule
-      // ---- reads the smoothed density
-      idx_t density_component = 0u;
-      if (replenish == 1) {
-        inj_box_up[1]   = { ymax - inj_ypad - 10 * dx, ymax };
-        inj_box_down[1] = { ymin, ymin + inj_ypad + 10 * dx };
-        SmoothBox(domain, inj_box_up);
-        SmoothBox(domain, inj_box_down);
-        density_component = 1u;
-      }
 
       const auto replenish_sdist = arch::spatial_dist::ReplenishUniform<M, 3>(
         domain.mesh.metric,
         domain.fields.buff,
-        density_component,
+        0u,
         ONE);
-      // ---- from here unchanged again ----
       arch::InjectNonUniform<S, M, decltype(energy_dist), decltype(energy_dist), decltype(replenish_sdist)>(
         params,
         domain,

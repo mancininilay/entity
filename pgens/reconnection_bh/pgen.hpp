@@ -26,7 +26,13 @@
  *     `ntt::kernel::ComputeDivergence_kernel`, kappa = q0 / (B0 V0). The
  *     deposit and the filter conserve this residual exactly away from the
  *     boundaries, where particles are absorbed or injected and the fields
- *     are matched. 2D, one domain, zig-zag deposit only.
+ *     are matched. 2D, zig-zag deposit only. On several domains the charge
+ *     is deposited by every rank on the nodes of the global grid and summed
+ *     over the ranks, the filter is applied to that sum, and every rank
+ *     evaluates the nodes whose cell it owns (the first ghost cells of E
+ *     hold the neighbour's values of the same step); the window must then
+ *     leave out the MATCH layers. On one domain the arithmetic and its
+ *     order are those of the one-domain diagnostic.
  *
  *   - `bh_ranks.txt`, every `setup.rank_interval` steps (0 = never; and
  *     after the first and the last step): one line per rank with the fill of
@@ -37,6 +43,36 @@
  *
  * Columns are given in the first line of each file. The time is that of the
  * state written: the time at the end of the step.
+ *
+ *   - `bh_profile.txt`, every `setup.profile_interval` steps (0 = never):
+ *     see `bhr_common.hpp`.
+ *
+ * Options of `[setup]` added for the resolved series. With none of them
+ * given the generator does what `pgens/reconnection` does:
+ *
+ *   injector          0 (default): the stock replenishing block, unchanged;
+ *                     1: the corrected rule of `bhr_common.hpp` (2D);
+ *                     -1: no replenishment (tests only).
+ *   smooth_cells      block length of the corrected rule along x1 (64).
+ *   primary_species   the two species of the initial plasma and of the
+ *                     replenishment ([1, 2]); with the lepton species of the
+ *                     policy listed first in the input, [3, 4].
+ *   seed              0 (default): the random pool as the engine built it;
+ *                     otherwise the pool of every domain is rebuilt from this
+ *                     number before its first use (another realisation).
+ *   profile_interval, profile_xmax   `bh_profile.txt`.
+ *   init_list         tests only: the initial plasma from one list that is
+ *                     the same on every rank, so that runs on different
+ *                     decompositions start from the same particles (2D).
+ *   negative_control  tests only: with `emission = "custom"` on the emitter,
+ *                     the policy with the write of the previous position of
+ *                     the new leptons left out (the charge check must fail
+ *                     when the lepton species are listed before the emitter).
+ *   stale_prev        tests only: the previous positions of the unused slots
+ *                     of the two lepton species are set to random points of
+ *                     the domain, different for the two species.
+ *   gauss_local       tests only: the charge of the Gauss-law diagnostic is
+ *                     not summed over the ranks (a deliberate fault).
  *
  * The file compiles against a tree without the policy (the counters are then
  * zero).
@@ -58,6 +94,9 @@
 #include "archetypes/spatial_dist.h"
 #include "archetypes/utils.h"
 #include "framework/domain/metadomain.h"
+#include "kernels/injectors.hpp"
+
+#include "bhr_common.hpp"
 
 #if __has_include("archetypes/emission/bethe_heitler.h")
   #include "archetypes/emission/bethe_heitler.h"
@@ -71,7 +110,11 @@
 #include <Kokkos_Core.hpp>
 
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
+#include <map>
+#include <random>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -79,54 +122,106 @@
 namespace user {
   using namespace ntt;
 
-  // helpers of the diagnostics (see the note at the top of the file)
+  // helpers of the tests (the helpers of the diagnostics are in
+  // `bhr_common.hpp`)
   namespace bhr {
-    inline auto is_root() -> bool {
-#if defined(MPI_ENABLED)
-      int rank;
-      MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-      return rank == 0;
-#else
-      return true;
-#endif
+    // counter-based generator: uniform in [0, 1) from (seed, particle, draw)
+    inline auto uniform(std::uint64_t seed,
+                        std::uint64_t particle,
+                        std::uint64_t draw) -> double {
+      std::uint64_t z = seed * 0x9E3779B97F4A7C15ULL +
+                        particle * 0xBF58476D1CE4E5B9ULL +
+                        draw * 0x94D049BB133111EBULL + 0x2545F4914F6CDD1DULL;
+      z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+      z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+      z = z ^ (z >> 31);
+      z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+      z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+      z = z ^ (z >> 31);
+      return static_cast<double>(z >> 11) * 0x1.0p-53;
     }
 
-    // values of every rank, rank after rank, on the root rank
-    inline auto gather(const std::vector<double>& v) -> std::vector<double> {
-#if defined(MPI_ENABLED)
-      int size, rank;
-      MPI_Comm_size(MPI_COMM_WORLD, &size);
-      MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-      std::vector<double> out(rank == 0 ? v.size() * size : 0, 0.0);
-      MPI_Gather(v.data(),
-                 static_cast<int>(v.size()),
-                 MPI_DOUBLE,
-                 out.data(),
-                 static_cast<int>(v.size()),
-                 MPI_DOUBLE,
-                 0,
-                 MPI_COMM_WORLD);
-      return out;
-#else
-      return v;
-#endif
-    }
+#if defined(BHR_HAS_POLICY)
+    /**
+     * The policy with the write of the previous position left out (negative
+     * control of the charge test): the insertion of the built-in policies.
+     */
+    template <MetricClass M>
+    struct NoPrevWrite {
+      using base_t  = ::arch::emission::BetheHeitler<M>;
+      using Payload = typename base_t::Payload;
+      base_t base;
 
-    inline void reduce(std::vector<double>& v, bool maximum) {
-#if defined(MPI_ENABLED)
-      std::vector<double> out(v.size(), 0.0);
-      MPI_Allreduce(v.data(),
-                    out.data(),
-                    static_cast<int>(v.size()),
-                    MPI_DOUBLE,
-                    maximum ? MPI_MAX : MPI_SUM,
-                    MPI_COMM_WORLD);
-      v = out;
-#else
-      (void)v;
-      (void)maximum;
-#endif
-    }
+      NoPrevWrite(const base_t& base) : base { base } {}
+
+      auto emitted_species_indices() const -> std::vector<spidx_t> {
+        return base.emitted_species_indices();
+      }
+
+      auto numbers_injected() const -> std::vector<npart_t> {
+        return base.numbers_injected();
+      }
+
+      Inline auto shouldEmit(const coord_t<M::PrtlDim>& x_Cd,
+                             const coord_t<M::PrtlDim>& x_Ph,
+                             const vec_t<Dim::_3D>&     u_Ph,
+                             const vec_t<Dim::_3D>&     ep_Ph,
+                             const vec_t<Dim::_3D>&     bp_Ph,
+                             vec_t<Dim::_3D>&           delta_u_Ph,
+                             Payload& payload) const -> Kokkos::pair<bool, bool> {
+        return base.shouldEmit(x_Cd, x_Ph, u_Ph, ep_Ph, bp_Ph, delta_u_Ph, payload);
+      }
+
+      Inline void emit(const tuple_t<int, M::Dim>&      xi_Cd,
+                       const tuple_t<prtldx_t, M::Dim>& dxi_Cd,
+                       const vec_t<Dim::_3D>&,
+                       real_t         weight,
+                       real_t         phi,
+                       const Payload& payload) const {
+        const auto w = static_cast<real_t>(base.pair_weight) * weight;
+        kernel::InjectParticle<M::Dim, M::CoordType, false>(
+          base.electron_offset + payload.ticket,
+          base.electron_i1,
+          base.electron_i2,
+          base.electron_i3,
+          base.electron_dx1,
+          base.electron_dx2,
+          base.electron_dx3,
+          base.electron_ux1,
+          base.electron_ux2,
+          base.electron_ux3,
+          base.electron_phi,
+          base.electron_weight,
+          base.electron_tag,
+          base.electron_pld_i,
+          xi_Cd,
+          dxi_Cd,
+          { payload.u_electron[0], payload.u_electron[1], payload.u_electron[2] },
+          w,
+          phi);
+        kernel::InjectParticle<M::Dim, M::CoordType, false>(
+          base.positron_offset + payload.ticket,
+          base.positron_i1,
+          base.positron_i2,
+          base.positron_i3,
+          base.positron_dx1,
+          base.positron_dx2,
+          base.positron_dx3,
+          base.positron_ux1,
+          base.positron_ux2,
+          base.positron_ux3,
+          base.positron_phi,
+          base.positron_weight,
+          base.positron_tag,
+          base.positron_pld_i,
+          xi_Cd,
+          dxi_Cd,
+          { payload.u_positron[0], payload.u_positron[1], payload.u_positron[2] },
+          w,
+          phi);
+      }
+    };
+#endif // BHR_HAS_POLICY
   } // namespace bhr
 
   template <Dimension D>
@@ -278,6 +373,14 @@ namespace user {
     bool              ranks_started { false };
     array_t<double**> gauss_rho, gauss_tmp;
 
+    // options of the resolved series (see the note at the top of the file)
+    const spidx_t          sp_a, sp_b;
+    const int              injector, smooth_cells, seed, profile_interval;
+    const real_t           profile_xmax;
+    const bool             init_list, negative_control, stale_prev, gauss_local;
+    bool                   profile_started { false };
+    std::set<unsigned int> seeded;
+
     PGen(const SimulationParams& p, Metadomain<S, M>& m)
       : params { p }
       , metadomain { m }
@@ -304,8 +407,47 @@ namespace user {
       , gauss_xpad { params.template get<real_t>("setup.gauss_xpad", (real_t)20.0) }
       , gauss_ypad { params.template get<real_t>(
           "setup.gauss_ypad",
-          params.template get<real_t>("setup.inj_ypad", (real_t)0.05) +
-            (real_t)10.0) } {}
+          params.template get<real_t>("setup.inj_ypad", (real_t)0.05) + (real_t)10.0) }
+      , sp_a { primary(params, 0) }
+      , sp_b { primary(params, 1) }
+      , injector { bhr::opt<int>(params, "setup.injector", 0) }
+      , smooth_cells { bhr::opt<int>(params, "setup.smooth_cells", 64) }
+      , seed { bhr::opt<int>(params, "setup.seed", 0) }
+      , profile_interval { bhr::opt<int>(params, "setup.profile_interval", 0) }
+      , profile_xmax { bhr::opt<real_t>(params, "setup.profile_xmax", ZERO) }
+      , init_list { bhr::opt<bool>(params, "setup.init_list", false) }
+      , negative_control { bhr::opt<bool>(params, "setup.negative_control", false) }
+      , stale_prev { bhr::opt<bool>(params, "setup.stale_prev", false) }
+      , gauss_local { bhr::opt<bool>(params, "setup.gauss_local", false) } {
+      raise::ErrorIf(injector < -1 or injector > 1,
+                     "reconnection_bh: setup.injector is -1, 0 or 1",
+                     HERE);
+      raise::ErrorIf(smooth_cells < 1,
+                     "reconnection_bh: setup.smooth_cells must be positive",
+                     HERE);
+    }
+
+    static auto primary(const SimulationParams& p, std::size_t k) -> spidx_t {
+      const auto v = bhr::opt<std::vector<int>>(p,
+                                                "setup.primary_species",
+                                                std::vector<int> { 1, 2 });
+      raise::ErrorIf(v.size() != 2 or v[0] < 1 or v[1] < 1 or v[0] == v[1],
+                     "reconnection_bh: setup.primary_species needs two "
+                     "different species indices",
+                     HERE);
+      return static_cast<spidx_t>(v[k]);
+    }
+
+    // another realisation: the pool of the domain rebuilt from `setup.seed`
+    void ApplySeed(Domain<S, M>& domain) {
+      if (seed == 0 or seeded.count(domain.index()) > 0) {
+        return;
+      }
+      domain.random_pool() = random_number_pool_t(
+        constant::RandomSeed + static_cast<std::uint64_t>(domain.index()) +
+        0x9E3779B97F4A7C15ULL * static_cast<std::uint64_t>(seed));
+      seeded.insert(domain.index());
+    }
 
     auto MatchFieldsInX1(simtime_t) const -> BoundaryFieldsInX1<D> {
       return BoundaryFieldsInX1<D> { bg_B,     bg_Bguide, (real_t)0.1,
@@ -317,12 +459,20 @@ namespace user {
     }
 
     void InitPrtls(Domain<S, M>& local_domain) {
+      ApplySeed(local_domain);
+      if (init_list) {
+        InitFromList(local_domain);
+        if (stale_prev) {
+          FillStalePrev(local_domain);
+        }
+        return;
+      }
       // background
       arch::InjectUniformMaxwellian<S, M>(params,
                                           local_domain,
                                           ONE,
                                           bg_temperature,
-                                          { 1, 2 });
+                                          { sp_a, sp_b });
 
       const auto sigma = params.template get<real_t>("scales.sigma0");
       const auto c_omp = params.template get<real_t>("scales.skindepth0");
@@ -340,13 +490,153 @@ namespace user {
       arch::InjectNonUniform<S, M, decltype(edist_cs), decltype(edist_cs), decltype(sdist_cs)>(
         params,
         local_domain,
-        { 1, 2 },
+        { sp_a, sp_b },
         { edist_cs, edist_cs },
         sdist_cs,
         cs_overdensity);
+      if (stale_prev) {
+        FillStalePrev(local_domain);
+      }
     }
 
+    // Tests only. The initial plasma from one list, the same on every rank
+    // (a fixed sequence, cell by cell of the global mesh); each rank keeps
+    // the particles of its own cells. Background at `bg_temperature` and a
+    // layer with the profile and the overdensity of the stock setup, electron
+    // and ion at the same place; the momenta are normal variates (a stand-in
+    // for the stock distributions, not a copy of them).
+    void InitFromList(Domain<S, M>& local_domain) {
+      if constexpr (M::Dim == Dim::_2D) {
+        const long   NX = static_cast<long>(metadomain.mesh().n_active(in::x1));
+        const long   NY = static_cast<long>(metadomain.mesh().n_active(in::x2));
+        const auto   gx1  = metadomain.mesh().extent(in::x1);
+        const auto   gx2  = metadomain.mesh().extent(in::x2);
+        const double x_lo = static_cast<double>(gx1.first);
+        const double y_lo = static_cast<double>(gx2.first);
+        const double dxg  = (static_cast<double>(gx1.second) - x_lo) / NX;
+        const double dyg  = (static_cast<double>(gx2.second) - y_lo) / NY;
+        const int    per_species = static_cast<int>(
+          params.template get<real_t>("particles.ppc0") / 2);
+        const double t_bg = static_cast<double>(bg_temperature);
+        const double t_cs = 0.5 *
+                            static_cast<double>(
+                              params.template get<real_t>("scales.sigma0")) /
+                            static_cast<double>(cs_overdensity);
+        std::mt19937_64                            gen(20261122ULL);
+        std::uniform_real_distribution<double>     uni(0.0, 1.0);
+        std::normal_distribution<double>           nrm(0.0, 1.0);
+        std::map<std::string, std::vector<real_t>> a, b;
+        const auto add = [&](long I, long J, double s) {
+          const double x = x_lo +
+                           (static_cast<double>(I) + 0.001 + 0.998 * uni(gen)) * dxg;
+          const double y = y_lo +
+                           (static_cast<double>(J) + 0.001 + 0.998 * uni(gen)) * dyg;
+          for (auto* m : { &a, &b }) {
+            (*m)["x1"].push_back(static_cast<real_t>(x));
+            (*m)["x2"].push_back(static_cast<real_t>(y));
+            (*m)["ux1"].push_back(static_cast<real_t>(s * nrm(gen)));
+            (*m)["ux2"].push_back(static_cast<real_t>(s * nrm(gen)));
+            (*m)["ux3"].push_back(static_cast<real_t>(s * nrm(gen)));
+          }
+        };
+        for (long J = 0; J < NY; ++J) {
+          for (long I = 0; I < NX; ++I) {
+            for (int k = 0; k < per_species; ++k) {
+              add(I, J, std::sqrt(t_bg));
+            }
+            const double xc = x_lo + (static_cast<double>(I) + 0.5) * dxg;
+            const double yc = y_lo + (static_cast<double>(J) + 0.5) * dyg;
+            const double ch = std::cosh(
+              (yc - static_cast<double>(cs_y)) / static_cast<double>(cs_width));
+            const double ex = (xc - static_cast<double>(cs_x)) /
+                              static_cast<double>(cs_width);
+            const double want = per_species * static_cast<double>(cs_overdensity) *
+                                (1.0 - std::exp(-ex * ex)) / (ch * ch);
+            int n = static_cast<int>(std::floor(want));
+            if (uni(gen) < want - n) {
+              ++n;
+            }
+            for (int k = 0; k < n; ++k) {
+              add(I, J, std::sqrt(t_cs));
+            }
+          }
+        }
+        arch::InjectGlobally<S, M>(metadomain, local_domain, sp_a, a);
+        arch::InjectGlobally<S, M>(metadomain, local_domain, sp_b, b);
+      } else {
+        raise::Error("reconnection_bh: setup.init_list is 2D only", HERE);
+      }
+    }
+
+    // Tests only. Previous positions of the unused slots of the two lepton
+    // species of the policy set to random points of the domain, as dead
+    // particles would leave them, different for the two species.
+    void FillStalePrev(Domain<S, M>& domain) const {
+      if constexpr (M::Dim == Dim::_2D) {
+        for (const char* key :
+             { "radiation.emission.bethe_heitler.electron_species",
+               "radiation.emission.bethe_heitler.positron_species" }) {
+          if (not params.contains(key)) {
+            continue;
+          }
+          const auto species = params.template get<spidx_t>(key);
+          auto&      sp      = domain.species[species - 1];
+          const int  n1      = static_cast<int>(domain.mesh.n_active(in::x1));
+          const int  n2      = static_cast<int>(domain.mesh.n_active(in::x2));
+          auto       i1_h    = Kokkos::create_mirror_view(sp.i1_prev);
+          auto       i2_h    = Kokkos::create_mirror_view(sp.i2_prev);
+          auto       dx1_h   = Kokkos::create_mirror_view(sp.dx1_prev);
+          auto       dx2_h   = Kokkos::create_mirror_view(sp.dx2_prev);
+          Kokkos::deep_copy(i1_h, sp.i1_prev);
+          Kokkos::deep_copy(i2_h, sp.i2_prev);
+          Kokkos::deep_copy(dx1_h, sp.dx1_prev);
+          Kokkos::deep_copy(dx2_h, sp.dx2_prev);
+          const auto stream = static_cast<std::uint64_t>(20261122u) +
+                              7919u * species + 104729u * domain.index();
+          for (npart_t p = sp.npart(); p < sp.maxnpart(); ++p) {
+            i1_h(p) = static_cast<int>(n1 * bhr::uniform(stream, p, 10));
+            i2_h(p) = static_cast<int>(n2 * bhr::uniform(stream, p, 11));
+            dx1_h(p) = static_cast<prtldx_t>(0.999 * bhr::uniform(stream, p, 12));
+            dx2_h(p) = static_cast<prtldx_t>(0.999 * bhr::uniform(stream, p, 13));
+          }
+          Kokkos::deep_copy(sp.i1_prev, i1_h);
+          Kokkos::deep_copy(sp.i2_prev, i2_h);
+          Kokkos::deep_copy(sp.dx1_prev, dx1_h);
+          Kokkos::deep_copy(sp.dx2_prev, dx2_h);
+        }
+      } else {
+        raise::Error("reconnection_bh: setup.stale_prev is 2D only", HERE);
+      }
+    }
+
+#if defined(BHR_HAS_POLICY)
+    // Tests only (`emission = "custom"` on the emitter): the policy with the
+    // write of the previous position of the new leptons left out.
+    auto EmissionPolicy(simtime_t, spidx_t emitter, Domain<S, M>& domain) const {
+      raise::ErrorIf(not negative_control,
+                     "reconnection_bh: emission = custom needs "
+                     "setup.negative_control = true",
+                     HERE);
+      const auto dt    = params.template get<real_t>("algorithms.timestep.dt");
+      const auto e_idx = params.template get<spidx_t>(
+        "radiation.emission.bethe_heitler.electron_species");
+      const auto p_idx = params.template get<spidx_t>(
+        "radiation.emission.bethe_heitler.positron_species");
+      auto& tables = ::arch::emission::bh::GetTables(params, dt);
+      return bhr::NoPrevWrite<M> {
+        ::arch::emission::BetheHeitler<M> { domain.species[e_idx - 1],
+                                           domain.species[p_idx - 1],
+                                           e_idx, p_idx,
+                                           domain.species[emitter - 1].mass(),
+                                           dt, domain.index(),
+                                           params, tables,
+                                           domain.random_pool() }
+      };
+    }
+#endif
+
     void CustomPostStep(timestep_t step, simtime_t time, Domain<S, M>& domain) {
+      ApplySeed(domain);
       // open boundaries if not yet opened at time = t_open
       if ((t_open > 0.0) and (not bc_opened) and (time > t_open)) {
         bc_opened = true;
@@ -356,52 +646,71 @@ namespace user {
         metadomain.setPrtlBC(bc_in::Px1, PrtlBC::ABSORB);
       }
 
-      const auto energy_dist = arch::energy_dist::Maxwellian<M::Dim, M::CoordType>(
-        domain.random_pool(),
-        bg_temperature);
+      if (injector == 0) {
+        // the block of `pgens/reconnection`, unchanged but for the species
+        // indices, which are 1 and 2 by default
+        const auto energy_dist = arch::energy_dist::Maxwellian<M::Dim, M::CoordType>(
+          domain.random_pool(),
+          bg_temperature);
 
-      const auto dx = domain.mesh.metric.template sqrt_h_<1, 1>({});
+        const auto dx = domain.mesh.metric.template sqrt_h_<1, 1>({});
 
-      boundaries_t<real_t> inj_box_up, inj_box_down;
-      inj_box_up.push_back(Range::All);
-      inj_box_down.push_back(Range::All);
-      inj_box_up.push_back({ ymax - inj_ypad - 10 * dx, ymax - inj_ypad });
-      inj_box_down.push_back({ ymin + inj_ypad, ymin + inj_ypad + 10 * dx });
-
-      if constexpr (M::Dim == Dim::_3D) {
+        boundaries_t<real_t> inj_box_up, inj_box_down;
         inj_box_up.push_back(Range::All);
         inj_box_down.push_back(Range::All);
+        inj_box_up.push_back({ ymax - inj_ypad - 10 * dx, ymax - inj_ypad });
+        inj_box_down.push_back({ ymin + inj_ypad, ymin + inj_ypad + 10 * dx });
+
+        if constexpr (M::Dim == Dim::_3D) {
+          inj_box_up.push_back(Range::All);
+          inj_box_down.push_back(Range::All);
+        }
+
+        // compute density of species #1 and #2
+        arch::ComputeMomentWithSpecies<S, M, FldsID::Rho, 3>(params,
+                                                             domain,
+                                                             { sp_a, sp_b },
+                                                             domain.fields.buff);
+
+        const auto replenish_sdist = arch::spatial_dist::ReplenishUniform<M, 3>(
+          domain.mesh.metric,
+          domain.fields.buff,
+          0u,
+          ONE);
+        arch::InjectNonUniform<S, M, decltype(energy_dist), decltype(energy_dist), decltype(replenish_sdist)>(
+          params,
+          domain,
+          { sp_a, sp_b },
+          { energy_dist, energy_dist },
+          replenish_sdist,
+          ONE,
+          params.template get<bool>("particles.use_weights"),
+          inj_box_up);
+        arch::InjectNonUniform<S, M, decltype(energy_dist), decltype(energy_dist), decltype(replenish_sdist)>(
+          params,
+          domain,
+          { sp_a, sp_b },
+          { energy_dist, energy_dist },
+          replenish_sdist,
+          ONE,
+          params.template get<bool>("particles.use_weights"),
+          inj_box_down);
+      } else if (injector == 1) {
+        if constexpr (M::Dim == Dim::_2D) {
+          bhr::ReplenishCorrected(params,
+                                  metadomain,
+                                  domain,
+                                  sp_a,
+                                  sp_b,
+                                  bg_temperature,
+                                  ymin,
+                                  ymax,
+                                  inj_ypad,
+                                  smooth_cells);
+        } else {
+          raise::Error("reconnection_bh: setup.injector = 1 is 2D only", HERE);
+        }
       }
-
-      // compute density of species #1 and #2
-      arch::ComputeMomentWithSpecies<S, M, FldsID::Rho, 3>(params,
-                                                           domain,
-                                                           { 1, 2 },
-                                                           domain.fields.buff);
-
-      const auto replenish_sdist = arch::spatial_dist::ReplenishUniform<M, 3>(
-        domain.mesh.metric,
-        domain.fields.buff,
-        0u,
-        ONE);
-      arch::InjectNonUniform<S, M, decltype(energy_dist), decltype(energy_dist), decltype(replenish_sdist)>(
-        params,
-        domain,
-        { 1, 2 },
-        { energy_dist, energy_dist },
-        replenish_sdist,
-        ONE,
-        params.template get<bool>("particles.use_weights"),
-        inj_box_up);
-      arch::InjectNonUniform<S, M, decltype(energy_dist), decltype(energy_dist), decltype(replenish_sdist)>(
-        params,
-        domain,
-        { 1, 2 },
-        { energy_dist, energy_dist },
-        replenish_sdist,
-        ONE,
-        params.template get<bool>("particles.use_weights"),
-        inj_box_down);
 
       // diagnostics: read-only
       Diagnostics(step, time, domain);
@@ -412,7 +721,8 @@ namespace user {
     // state is that after `step + 1` steps, at the time `time + dt`.
     // ---------------------------------------------------------------------- //
     void Diagnostics(timestep_t step, simtime_t time, Domain<S, M>& domain) {
-      if (diag_interval <= 0 and gauss_interval <= 0 and rank_interval <= 0) {
+      if (diag_interval <= 0 and gauss_interval <= 0 and rank_interval <= 0 and
+          profile_interval <= 0) {
         return;
       }
       const auto dt = params.template get<real_t>("algorithms.timestep.dt");
@@ -431,6 +741,27 @@ namespace user {
       }
       if (rank_interval > 0 and (edge or steps_done % rank_interval == 0)) {
         WriteRanks(steps_done, time_now, domain);
+      }
+      if (profile_interval > 0 and (edge or steps_done % profile_interval == 0)) {
+        if constexpr (M::Dim == Dim::_2D) {
+          std::vector<std::pair<long, long>> regions;
+          if (injector == 1) {
+            regions = bhr::Regions(metadomain, domain, ymin, ymax, inj_ypad);
+          }
+          bhr::WriteProfile(params,
+                            metadomain,
+                            domain,
+                            sp_a,
+                            sp_b,
+                            cs_x,
+                            profile_xmax,
+                            regions,
+                            steps_done,
+                            time_now,
+                            profile_started);
+        } else {
+          raise::Error("reconnection_bh: bh_profile.txt is 2D only", HERE);
+        }
       }
     }
 
@@ -583,14 +914,29 @@ namespace user {
 #endif
         const auto res = params.template get<std::vector<ncells_t>>(
           "grid.resolution");
-        const int nx = static_cast<int>(domain.mesh.n_active(in::x1));
-        const int ny = static_cast<int>(domain.mesh.n_active(in::x2));
-        raise::ErrorIf(nx != static_cast<int>(res[0]) or
-                         ny != static_cast<int>(res[1]),
-                       "reconnection_bh: the Gauss-law diagnostic needs one "
-                       "domain",
-                       HERE);
-        // nodes (i, j), i = 0 .. nx - 1 (wrapped in x1), j = 0 .. ny
+        // the global grid (nx, ny), and the cells of this domain in it
+        const int  nx  = static_cast<int>(res[0]);
+        const int  ny  = static_cast<int>(res[1]);
+        const int  lx  = static_cast<int>(domain.mesh.n_active(in::x1));
+        const int  ly  = static_cast<int>(domain.mesh.n_active(in::x2));
+        const auto off = domain.offset_ncells();
+        const int  ox = static_cast<int>(off[0]), oy = static_cast<int>(off[1]);
+        const bool one_domain = (lx == nx and ly == ny);
+        if (not one_domain and params.contains("grid.boundaries.match.ds")) {
+          // the ghost cells of E are the neighbour's values of this step only
+          // outside the MATCH layers (applied after the exchange)
+          const auto ds = params.template get<boundaries_t<real_t>>(
+            "grid.boundaries.match.ds");
+          raise::ErrorIf(
+            ds.size() < 2 or gauss_xpad < std::max(ds[0].first, ds[0].second) or
+              gauss_ypad < std::max(ds[1].first, ds[1].second),
+            "reconnection_bh: on several domains the window of the Gauss-law "
+            "diagnostic must leave out the MATCH layers (gauss_xpad, "
+            "gauss_ypad >= grid.boundaries.match.ds)",
+            HERE);
+        }
+        // nodes (i, j) of the global grid, i = 0 .. nx - 1 (wrapped in x1),
+        // j = 0 .. ny
         if (gauss_rho.extent(0) == 0) {
           gauss_rho = array_t<double**> { "bhr_rho",
                                           static_cast<std::size_t>(nx),
@@ -618,10 +964,11 @@ namespace user {
               if (tag(p) != ParticleTag::alive) {
                 return;
               }
-              const int i = i1(p), j = i2(p);
-              if (i < 0 or i >= nx or j < 0 or j >= ny) {
+              const int li = i1(p), lj = i2(p);
+              if (li < 0 or li >= lx or lj < 0 or lj >= ly) {
                 return;
               }
+              const int    i = ox + li, j = oy + lj;
               const double fx = static_cast<double>(dx1(p));
               const double fy = static_cast<double>(dx2(p));
               const double w  = q * static_cast<double>(weight(p));
@@ -631,6 +978,11 @@ namespace user {
               Kokkos::atomic_add(&rho(i, j + 1), w * (1.0 - fx) * fy);
               Kokkos::atomic_add(&rho(ip, j + 1), w * fx * fy);
             });
+        }
+        // a node on a rank boundary gets the charge of the particles on both
+        // sides through the sum over the ranks
+        if (not one_domain and not gauss_local) {
+          bhr::reduce_view(rho);
         }
         // the filter of the currents: (1/4, 1/2, 1/4) in each direction per
         // pass; rows beyond the ends in x2 count as empty and x1 is wrapped,
@@ -663,8 +1015,8 @@ namespace user {
           std::swap(rho, tmp);
         }
         // the window
-        const auto   x1 = domain.mesh.extent(in::x1);
-        const auto   x2 = domain.mesh.extent(in::x2);
+        const auto   x1 = metadomain.mesh().extent(in::x1);
+        const auto   x2 = metadomain.mesh().extent(in::x2);
         const double dx = static_cast<double>(x1.second - x1.first) / nx;
         const double dy = static_cast<double>(x2.second - x2.first) / ny;
         const int px = std::max(1, static_cast<int>(std::ceil(gauss_xpad / dx)));
@@ -681,46 +1033,67 @@ namespace user {
         const int  ng   = static_cast<int>(N_GHOSTS);
         double     s_r2 = 0.0, s_q2 = 0.0, s_d2 = 0.0;
         double     m_r = 0.0, m_q = 0.0, m_d = 0.0;
-        Kokkos::parallel_reduce(
-          "BHRGauss",
-          CreateRangePolicy<Dim::_2D>(
-            { static_cast<ncells_t>(px), static_cast<ncells_t>(py) },
-            { static_cast<ncells_t>(nx - px), static_cast<ncells_t>(ny + 1 - py) }),
-          Lambda(cellidx_t ii,
-                 cellidx_t jj,
-                 double&   l_r2,
-                 double&   l_q2,
-                 double&   l_d2,
-                 double&   l_r,
-                 double&   l_q,
-                 double&   l_d) {
-            const int    i = static_cast<int>(ii), j = static_cast<int>(jj);
-            const double div =
-              (static_cast<double>(EM(i + ng, j + ng, em::ex1)) -
-               static_cast<double>(EM(i - 1 + ng, j + ng, em::ex1))) +
-              (static_cast<double>(EM(i + ng, j + ng, em::ex2)) -
-               static_cast<double>(EM(i + ng, j - 1 + ng, em::ex2)));
-            const double q  = kappa * rho(i, j);
-            const double r  = div - q;
-            l_r2           += r * r;
-            l_q2           += q * q;
-            l_d2           += div * div;
-            if (math::abs(r) > l_r) {
-              l_r = math::abs(r);
-            }
-            if (math::abs(q) > l_q) {
-              l_q = math::abs(q);
-            }
-            if (math::abs(div) > l_d) {
-              l_d = math::abs(div);
-            }
-          },
-          s_r2,
-          s_q2,
-          s_d2,
-          Kokkos::Max<double>(m_r),
-          Kokkos::Max<double>(m_q),
-          Kokkos::Max<double>(m_d));
+        // the nodes of the window whose cell this domain owns (local indices);
+        // on one domain: px <= i < nx - px, py <= j < ny + 1 - py
+        const int i_lo = std::max(px - ox, 0), i_hi = std::min(nx - px - ox, lx);
+        const int j_lo = std::max(py - oy, 0);
+        const int j_hi = std::min(ny + 1 - py - oy, ly);
+        if (i_hi > i_lo and j_hi > j_lo) {
+          Kokkos::parallel_reduce(
+            "BHRGauss",
+            CreateRangePolicy<Dim::_2D>(
+              { static_cast<ncells_t>(i_lo), static_cast<ncells_t>(j_lo) },
+              { static_cast<ncells_t>(i_hi), static_cast<ncells_t>(j_hi) }),
+            Lambda(cellidx_t ii,
+                   cellidx_t jj,
+                   double&   l_r2,
+                   double&   l_q2,
+                   double&   l_d2,
+                   double&   l_r,
+                   double&   l_q,
+                   double&   l_d) {
+              const int    i = static_cast<int>(ii), j = static_cast<int>(jj);
+              const double div =
+                (static_cast<double>(EM(i + ng, j + ng, em::ex1)) -
+                 static_cast<double>(EM(i - 1 + ng, j + ng, em::ex1))) +
+                (static_cast<double>(EM(i + ng, j + ng, em::ex2)) -
+                 static_cast<double>(EM(i + ng, j - 1 + ng, em::ex2)));
+              const double q  = kappa * rho(ox + i, oy + j);
+              const double r  = div - q;
+              l_r2           += r * r;
+              l_q2           += q * q;
+              l_d2           += div * div;
+              if (math::abs(r) > l_r) {
+                l_r = math::abs(r);
+              }
+              if (math::abs(q) > l_q) {
+                l_q = math::abs(q);
+              }
+              if (math::abs(div) > l_d) {
+                l_d = math::abs(div);
+              }
+            },
+            s_r2,
+            s_q2,
+            s_d2,
+            Kokkos::Max<double>(m_r),
+            Kokkos::Max<double>(m_q),
+            Kokkos::Max<double>(m_d));
+        }
+        if (not one_domain) {
+          std::vector<double> sums { s_r2, s_q2, s_d2 }, maxs { m_r, m_q, m_d };
+          bhr::reduce(sums, false);
+          bhr::reduce(maxs, true);
+          s_r2 = sums[0];
+          s_q2 = sums[1];
+          s_d2 = sums[2];
+          m_r  = maxs[0];
+          m_q  = maxs[1];
+          m_d  = maxs[2];
+          if (not bhr::is_root()) {
+            return;
+          }
+        }
         const double nodes = static_cast<double>(nx - 2 * px) *
                              static_cast<double>(ny + 1 - 2 * py);
         std::FILE* f = std::fopen("bh_gauss.txt", gauss_started ? "a" : "w");
