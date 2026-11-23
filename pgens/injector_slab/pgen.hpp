@@ -33,6 +33,9 @@
  *                         reconnection generator uses; it is valid on several
  *                         domains.
  *
+ *   setup.replenish = 2   the corrected rule with a target that follows the
+ *                         field strength (`follow_field` of `bhr_common.hpp`).
+ *
  *   setup.profile_interval   `bh_profile.txt` every so many steps (0 = never,
  *                            the default; and after the first and the last
  *                            step): see `bhr_common.hpp`.
@@ -171,7 +174,7 @@ namespace user {
     }
 
     void CustomPostStep(timestep_t step, simtime_t time, Domain<S, M>& domain) {
-      if (replenish == 1) {
+      if (replenish == 1 or replenish == 2) {
         bhr::ReplenishCorrected(params,
                                 metadomain,
                                 domain,
@@ -181,7 +184,10 @@ namespace user {
                                 ymin,
                                 ymax,
                                 inj_ypad,
-                                smooth_cells);
+                                smooth_cells,
+                                replenish == 2,
+                                bg_B,
+                                bhr::opt<int>(params, "setup.smooth_rows", 1));
       } else {
         Stock(domain);
       }
@@ -193,7 +199,7 @@ namespace user {
         if (steps_done == 1 or steps_done >= static_cast<long long>(max_steps) or
             steps_done % profile_interval == 0) {
           std::vector<std::pair<long, long>> regions;
-          if (replenish == 1) {
+          if (replenish == 1 or replenish == 2) {
             regions = bhr::Regions(metadomain, domain, ymin, ymax, inj_ypad);
           }
           bhr::WriteProfile(params,

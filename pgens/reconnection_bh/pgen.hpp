@@ -52,8 +52,12 @@
  *
  *   injector          0 (default): the stock replenishing block, unchanged;
  *                     1: the corrected rule of `bhr_common.hpp` (2D);
+ *                     2: the corrected rule with a target that follows the
+ *                     field, n0 times the smoothed field strength over bg_B;
  *                     -1: no replenishment (tests only).
  *   smooth_cells      block length of the corrected rule along x1 (64).
+ *   smooth_rows       rows averaged on each side of a row (1). At twice the
+ *                     resolution, 128 and 2 keep the footprint of 64 and 1.
  *   primary_species   the two species of the initial plasma and of the
  *                     replenishment ([1, 2]); with the lepton species of the
  *                     policy listed first in the input, [3, 4].
@@ -375,7 +379,8 @@ namespace user {
 
     // options of the resolved series (see the note at the top of the file)
     const spidx_t          sp_a, sp_b;
-    const int              injector, smooth_cells, seed, profile_interval;
+    const int              injector, smooth_cells, smooth_rows, seed;
+    const int              profile_interval;
     const real_t           profile_xmax;
     const bool             init_list, negative_control, stale_prev, gauss_local;
     bool                   profile_started { false };
@@ -412,6 +417,7 @@ namespace user {
       , sp_b { primary(params, 1) }
       , injector { bhr::opt<int>(params, "setup.injector", 0) }
       , smooth_cells { bhr::opt<int>(params, "setup.smooth_cells", 64) }
+      , smooth_rows { bhr::opt<int>(params, "setup.smooth_rows", 1) }
       , seed { bhr::opt<int>(params, "setup.seed", 0) }
       , profile_interval { bhr::opt<int>(params, "setup.profile_interval", 0) }
       , profile_xmax { bhr::opt<real_t>(params, "setup.profile_xmax", ZERO) }
@@ -419,8 +425,8 @@ namespace user {
       , negative_control { bhr::opt<bool>(params, "setup.negative_control", false) }
       , stale_prev { bhr::opt<bool>(params, "setup.stale_prev", false) }
       , gauss_local { bhr::opt<bool>(params, "setup.gauss_local", false) } {
-      raise::ErrorIf(injector < -1 or injector > 1,
-                     "reconnection_bh: setup.injector is -1, 0 or 1",
+      raise::ErrorIf(injector < -1 or injector > 2,
+                     "reconnection_bh: setup.injector is -1, 0, 1 or 2",
                      HERE);
       raise::ErrorIf(smooth_cells < 1,
                      "reconnection_bh: setup.smooth_cells must be positive",
@@ -695,7 +701,7 @@ namespace user {
           ONE,
           params.template get<bool>("particles.use_weights"),
           inj_box_down);
-      } else if (injector == 1) {
+      } else if (injector == 1 or injector == 2) {
         if constexpr (M::Dim == Dim::_2D) {
           bhr::ReplenishCorrected(params,
                                   metadomain,
@@ -706,9 +712,12 @@ namespace user {
                                   ymin,
                                   ymax,
                                   inj_ypad,
-                                  smooth_cells);
+                                  smooth_cells,
+                                  injector == 2,
+                                  bg_B,
+                                  smooth_rows);
         } else {
-          raise::Error("reconnection_bh: setup.injector = 1 is 2D only", HERE);
+          raise::Error("reconnection_bh: setup.injector = 1 or 2 is 2D only", HERE);
         }
       }
 
@@ -745,7 +754,7 @@ namespace user {
       if (profile_interval > 0 and (edge or steps_done % profile_interval == 0)) {
         if constexpr (M::Dim == Dim::_2D) {
           std::vector<std::pair<long, long>> regions;
-          if (injector == 1) {
+          if (injector == 1 or injector == 2) {
             regions = bhr::Regions(metadomain, domain, ymin, ymax, inj_ypad);
           }
           bhr::WriteProfile(params,

@@ -8,9 +8,14 @@
  *     of `pgens/reconnection`: the replenished region runs from the inner
  *     edge of the stock slab to the boundary in x2, and the rule reads the
  *     density averaged over blocks of `smooth_cells` cells along x1 and over
- *     the row and its two neighbours inside the region. Blocks and rows are
+ *     the row and its `smooth_rows` neighbours on each side inside the region
+ *     (one by default). Blocks and rows are
  *     defined on global indices and the block sums are added over the ranks,
- *     so the smoothed density does not depend on the decomposition. 2D;
+ *     so the smoothed density does not depend on the decomposition. 2D.
+ *     With `follow_field` the target of a cell is not n0 but n0 times the
+ *     field strength over `bg_B`, smoothed in the same way: the density a
+ *     flux tube of the inflow carries, so that a compression or rarefaction
+ *     of plasma and field together is not taken for a deficit;
  *
  *   - `bhr::WriteProfile`: `bh_profile.txt`, one line per global row with the
  *     mean over the row of the density of two species (order zero, units of
@@ -149,16 +154,28 @@ namespace user {
     /**
      * Component 1 of the buffer gets, on the cells of the two regions, the
      * density of component 0 averaged over global blocks of `w` cells along x1
-     * and over the row and its neighbours inside the region; every other cell
+     * and over the row and its `smooth_rows` neighbours on each side inside
+     * the region; every other cell
      * of the domain gets `target` there (such a cell is never replenished).
+     * Component 2 gets the target of the cell: `target` everywhere, or, with
+     * `follow_field`, on the cells of the regions, `target` times the field
+     * strength (physical components) over `bg_B`, smoothed like the density.
      */
     template <SimEngine::type S, class M>
     inline void SmoothRegions(const Metadomain<S, M>& metadomain,
                               Domain<S, M>&           domain,
                               const std::vector<std::pair<long, long>>& regions,
                               int    smooth_cells,
-                              real_t target) {
+                              real_t target,
+                              bool   follow_field = false,
+                              real_t bg_B         = ONE,
+                              int    smooth_rows  = 1) {
       static_assert(M::Dim == Dim::_2D, "the corrected rule is 2D only");
+      raise::ErrorIf(smooth_cells < 1 or smooth_rows < 0,
+                     "bhr: smooth_cells must be positive and smooth_rows not "
+                     "negative",
+                     HERE);
+      const long rh  = static_cast<long>(smooth_rows);
       const long w   = static_cast<long>(smooth_cells);
       const long NX  = static_cast<long>(metadomain.mesh().n_active(in::x1));
       const long nb  = (NX + w - 1) / w;
@@ -177,14 +194,26 @@ namespace user {
         CreateRangePolicy<Dim::_2D>(
           { static_cast<ncells_t>(ng), static_cast<ncells_t>(ng) },
           { static_cast<ncells_t>(nx + ng), static_cast<ncells_t>(ny + ng) }),
-        Lambda(cellidx_t i, cellidx_t j) { buff(i, j, 1) = target; });
+        Lambda(cellidx_t i, cellidx_t j) {
+          buff(i, j, 1) = target;
+          buff(i, j, 2) = target;
+        });
       if (nrows <= 0) {
         return;
       }
       array_t<double**> sums("bhr_block_sums",
                              static_cast<std::size_t>(nb),
                              static_cast<std::size_t>(nrows));
-      long              row_offset = 0;
+      // with `follow_field`: the field strength of the same blocks
+      array_t<double**> fsums("bhr_block_field",
+                              static_cast<std::size_t>(follow_field ? nb : 1),
+                              static_cast<std::size_t>(follow_field ? nrows : 1));
+      const auto        EM = domain.fields.em;
+      const double      h1 = static_cast<double>(
+        domain.mesh.metric.template sqrt_h_<1, 1>({}));
+      const double h2 = static_cast<double>(
+        domain.mesh.metric.template sqrt_h_<2, 2>({}));
+      long row_offset = 0;
       for (const auto& r : regions) {
         const long j0 = r.first, j1 = r.second;
         const long jl0 = (j0 - oy > 0) ? j0 - oy : 0;
@@ -200,12 +229,25 @@ namespace user {
               const long i = static_cast<long>(ii), j = static_cast<long>(jj);
               Kokkos::atomic_add(&sums((ox + i) / w, ro + (oy + j - j0)),
                                  static_cast<double>(buff(i + ng, j + ng, 0)));
+              if (follow_field) {
+                const double b1 = h1 * static_cast<double>(
+                                         EM(i + ng, j + ng, em::bx1));
+                const double b2 = h2 * static_cast<double>(
+                                         EM(i + ng, j + ng, em::bx2));
+                const double b3 = static_cast<double>(EM(i + ng, j + ng, em::bx3));
+                Kokkos::atomic_add(&fsums((ox + i) / w, ro + (oy + j - j0)),
+                                   math::sqrt(b1 * b1 + b2 * b2 + b3 * b3));
+              }
             });
         }
         row_offset += j1 - j0;
       }
       reduce_view(sums);
-      row_offset = 0;
+      if (follow_field) {
+        reduce_view(fsums);
+      }
+      const double inv_bg = 1.0 / static_cast<double>(bg_B);
+      row_offset          = 0;
       for (const auto& r : regions) {
         const long j0 = r.first, j1 = r.second;
         const long jl0 = (j0 - oy > 0) ? j0 - oy : 0;
@@ -223,20 +265,62 @@ namespace user {
               const long b     = (ox + i) / w;
               const long cells = (b * w + w <= NX) ? w : NX - b * w;
               const long r     = oy + j - j0;
-              const long r0    = (r > 0) ? r - 1 : 0;
-              const long r1    = (r + 1 < nr) ? r + 1 : nr - 1;
-              double     s     = 0.0;
+              const long r0    = (r > rh) ? r - rh : 0;
+              const long r1    = (r + rh < nr) ? r + rh : nr - 1;
+              double     s = 0.0, f = 0.0;
               for (long q = r0; q <= r1; ++q) {
                 s += sums(b, ro + q);
+                if (follow_field) {
+                  f += fsums(b, ro + q);
+                }
               }
-              buff(i + ng, j + ng, 1) = static_cast<real_t>(
-                s /
-                (static_cast<double>(cells) * static_cast<double>(r1 - r0 + 1)));
+              const double norm = static_cast<double>(cells) *
+                                  static_cast<double>(r1 - r0 + 1);
+              buff(i + ng, j + ng, 1) = static_cast<real_t>(s / norm);
+              if (follow_field) {
+                buff(i + ng, j + ng, 2) = static_cast<real_t>(
+                  static_cast<double>(target) * (f / norm) * inv_bg);
+              }
             });
         }
         row_offset += nr;
       }
     }
+
+    /**
+     * As `arch::spatial_dist::ReplenishUniform`, with the target read cell by
+     * cell from a component of the buffer: below 0.9 of its target a cell
+     * gets the difference to the target (in units of n0).
+     */
+    template <MetricClass M, int N>
+    struct ReplenishToTarget {
+      const M                    metric;
+      const ndfield_t<M::Dim, N> buffer;
+      const idx_t                idx_density, idx_target;
+
+      ReplenishToTarget(const M&                    metric,
+                        const ndfield_t<M::Dim, N>& buffer,
+                        idx_t                       idx_density,
+                        idx_t                       idx_target)
+        : metric { metric }
+        , buffer { buffer }
+        , idx_density { idx_density }
+        , idx_target { idx_target } {}
+
+      Inline auto operator()(const coord_t<M::Dim>& x_Ph) const -> real_t {
+        coord_t<M::Dim> x_Cd { ZERO };
+        metric.template convert<Crd::Ph, Crd::Cd>(x_Ph, x_Cd);
+        const auto i    = static_cast<ncells_t>(x_Cd[0]) + N_GHOSTS;
+        const auto j    = static_cast<ncells_t>(x_Cd[1]) + N_GHOSTS;
+        const auto dens = buffer(i, j, idx_density);
+        const auto tgt  = buffer(i, j, idx_target);
+        if ((real_t)(0.9) * tgt > dens) {
+          return tgt - dens;
+        } else {
+          return ZERO;
+        }
+      }
+    };
 
     // the two replenished regions of the corrected rule, as global rows
     template <SimEngine::type S, class M>
@@ -253,7 +337,9 @@ namespace user {
     /**
      * The corrected replenishing rule. The calls and their order are those of
      * the stock block; what differs is the box (it reaches the boundary) and
-     * the component of the buffer the rule reads (the smoothed density).
+     * the component of the buffer the rule reads (the smoothed density). With
+     * `follow_field` the target is n0 times the smoothed field strength over
+     * `bg_B` instead of n0.
      */
     template <SimEngine::type S, class M>
     inline void ReplenishCorrected(const SimulationParams& params,
@@ -265,7 +351,10 @@ namespace user {
                                    real_t                  ymin,
                                    real_t                  ymax,
                                    real_t                  inj_ypad,
-                                   int                     smooth_cells) {
+                                   int                     smooth_cells,
+                                   bool                    follow_field = false,
+                                   real_t                  bg_B         = ONE,
+                                   int                     smooth_rows  = 1) {
       static_assert(M::Dim == Dim::_2D, "the corrected rule is 2D only");
       const auto energy_dist = arch::energy_dist::Maxwellian<M::Dim, M::CoordType>(
         domain.random_pool(),
@@ -287,31 +376,59 @@ namespace user {
                     domain,
                     Regions(metadomain, domain, ymin, ymax, inj_ypad),
                     smooth_cells,
-                    ONE);
+                    ONE,
+                    follow_field,
+                    bg_B,
+                    smooth_rows);
 
-      const auto replenish_sdist = arch::spatial_dist::ReplenishUniform<M, 3>(
-        domain.mesh.metric,
-        domain.fields.buff,
-        1u,
-        ONE);
-      arch::InjectNonUniform<S, M, decltype(energy_dist), decltype(energy_dist), decltype(replenish_sdist)>(
-        params,
-        domain,
-        { sp_a, sp_b },
-        { energy_dist, energy_dist },
-        replenish_sdist,
-        ONE,
-        params.template get<bool>("particles.use_weights"),
-        inj_box_up);
-      arch::InjectNonUniform<S, M, decltype(energy_dist), decltype(energy_dist), decltype(replenish_sdist)>(
-        params,
-        domain,
-        { sp_a, sp_b },
-        { energy_dist, energy_dist },
-        replenish_sdist,
-        ONE,
-        params.template get<bool>("particles.use_weights"),
-        inj_box_down);
+      if (not follow_field) {
+        const auto replenish_sdist = arch::spatial_dist::ReplenishUniform<M, 3>(
+          domain.mesh.metric,
+          domain.fields.buff,
+          1u,
+          ONE);
+        arch::InjectNonUniform<S, M, decltype(energy_dist), decltype(energy_dist), decltype(replenish_sdist)>(
+          params,
+          domain,
+          { sp_a, sp_b },
+          { energy_dist, energy_dist },
+          replenish_sdist,
+          ONE,
+          params.template get<bool>("particles.use_weights"),
+          inj_box_up);
+        arch::InjectNonUniform<S, M, decltype(energy_dist), decltype(energy_dist), decltype(replenish_sdist)>(
+          params,
+          domain,
+          { sp_a, sp_b },
+          { energy_dist, energy_dist },
+          replenish_sdist,
+          ONE,
+          params.template get<bool>("particles.use_weights"),
+          inj_box_down);
+      } else {
+        const auto replenish_sdist = ReplenishToTarget<M, 3>(domain.mesh.metric,
+                                                             domain.fields.buff,
+                                                             1u,
+                                                             2u);
+        arch::InjectNonUniform<S, M, decltype(energy_dist), decltype(energy_dist), decltype(replenish_sdist)>(
+          params,
+          domain,
+          { sp_a, sp_b },
+          { energy_dist, energy_dist },
+          replenish_sdist,
+          ONE,
+          params.template get<bool>("particles.use_weights"),
+          inj_box_up);
+        arch::InjectNonUniform<S, M, decltype(energy_dist), decltype(energy_dist), decltype(replenish_sdist)>(
+          params,
+          domain,
+          { sp_a, sp_b },
+          { energy_dist, energy_dist },
+          replenish_sdist,
+          ONE,
+          params.template get<bool>("particles.use_weights"),
+          inj_box_down);
+      }
     }
 
     /**
