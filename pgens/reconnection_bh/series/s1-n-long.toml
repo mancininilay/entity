@@ -1,0 +1,111 @@
+[simulation]
+  name    = "s1-n-long"
+  engine  = "srpic"
+  runtime = 9000.0
+
+  [simulation.domain]
+    decomposition = [2, 2]
+
+[grid]
+  resolution = [4096, 2048]
+  extent     = [[-500.0, 500.0], [-250.0, 250.0]]
+
+  [grid.metric]
+    metric = "minkowski"
+
+  [grid.boundaries]
+    fields    = [["PERIODIC"], ["MATCH", "MATCH"]]
+    particles = [["PERIODIC"], ["ABSORB", "ABSORB"]]
+
+    [grid.boundaries.match]
+      ds = [[10.0], [20.0]]
+
+[scales]
+  larmor0    = 0.1
+  skindepth0 = 1.0
+
+[algorithms]
+  current_filters = 8
+
+  [algorithms.timestep]
+    CFL = 0.5
+
+[particles]
+  ppc0 = 8.0
+
+  [[particles.species]]
+    label    = "e-"
+    mass     = 1.0
+    charge   = -1.0
+    maxnpart = 5.8e7
+
+  [[particles.species]]
+    label    = "ion"
+    mass     = 1.0
+    charge   = 1.0
+    maxnpart = 5.8e7
+    emission = "bethe_heitler"
+
+  [[particles.species]]
+    label    = "e-_bh"
+    mass     = 1.0
+    charge   = -1.0
+    maxnpart = 4e7
+
+  [[particles.species]]
+    label    = "e+_bh"
+    mass     = 1.0
+    charge   = 1.0
+    maxnpart = 4e7
+
+[radiation]
+  [radiation.emission]
+    [radiation.emission.bethe_heitler]
+      electron_species = 3
+      positron_species = 4
+      optical_depth    = 0.14333
+      mass_ratio       = 1836.15
+      pair_weight      = 1.0
+      gamma_max        = 0.0
+      photon_spectrum  = "mono"
+      photon_energy    = 1.8
+
+[setup]
+  bg_B           = 1.0
+  bg_Bguide      = 0.0
+  bg_temperature = 1e-4
+  inj_ypad       = 50.0
+  cs_width       = 10.0
+  cs_overdensity = 3.0
+  diag_interval  = 10
+  gauss_interval = 500
+  rank_interval  = 100
+  injector       = 2
+  smooth_cells   = 64
+  smooth_rows    = 1
+  profile_interval = 500
+  profile_xmax   = 400.0
+  seed           = 3
+
+[output]
+  format        = "bpfile"
+  interval_time = 100.0
+
+  [output.fields]
+    quantities = ["N_1", "N_2", "N_3", "N_4", "E", "B", "J"]
+
+  [output.particles]
+    species       = [2, 3, 4]
+    stride        = 5
+    interval_time = 20.0
+
+  [output.spectra]
+    enable           = true
+    e_min            = 1e-3
+    e_max            = 1e4
+    num_energy_bins  = 280
+    num_spatial_bins = [2, 1]
+    interval_time    = 20.0
+
+[checkpoint]
+  keep = 0
