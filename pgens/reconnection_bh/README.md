@@ -31,5 +31,20 @@ identical except for the policy.
   field from the independent reference package `bhref` 0.3.0, written by
   `data/make_j_table.py`; the reference of check 2.
 
-Build: `cmake -D pgen=reconnection_bh -D output=ON ...` (zig-zag deposit, one
-domain for the Gauss-law diagnostic).
+Added for the resolved series (2026-11-22; every new behaviour is behind a key
+of `[setup]` and the defaults reproduce the generator as it was):
+
+- `bhr_common.hpp`: the corrected replenishing rule (`setup.injector = 1`),
+  valid on several domains, and `bh_profile.txt`; shared with
+  `pgens/injector_slab`.
+- `pgen.hpp`: `setup.injector`, `setup.primary_species`, `setup.seed`, the
+  Gauss-law diagnostic on several domains, `bh_ranks.txt` (the fill of the
+  particle arrays per rank), and options for tests only (see the note at the
+  top of the file).
+- `scripts/check6_position.py`, `scripts/test_check6_position.py`: check 6
+  with plasmoids compared at the same position.
+- `series/`: the inputs of the resolution pair, prepared and not run.
+- `stage-c/`, `mpi/`: the inputs and drivers of the earlier runs.
+
+Build: `cmake -D pgen=reconnection_bh -D output=ON ...` (zig-zag deposit). With
+MPI the Gauss-law diagnostic needs its window to leave out the MATCH layers.
